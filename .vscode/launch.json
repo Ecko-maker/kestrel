@@ -1,0 +1,22 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Kestrel (Gemini)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "kestrel",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Kestrel (Groq)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "kestrel",
+            "args": ["--provider", "groq"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
