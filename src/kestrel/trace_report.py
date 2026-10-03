@@ -47,6 +47,7 @@ def percentile(values: list[float], p: float) -> float | None:
 
 # --- Queries (shared by the CLI and the web API) ------------------------------
 
+
 def _trace_dict(row: sqlite3.Row) -> dict:
     d = dict(row)
     d.pop("messages", None)  # the full conversation is only needed for export
@@ -73,19 +74,24 @@ def get_trace(conn: sqlite3.Connection, trace_id: str) -> dict | None:
     if row is None:
         return None
     trace = _trace_dict(row)
-    trace["spans"] = [dict(s) | {"attributes": json.loads(s["attributes"] or "{}")}
-                      for s in conn.execute("SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time", (trace_id,))]
+    trace["spans"] = [
+        dict(s) | {"attributes": json.loads(s["attributes"] or "{}")}
+        for s in conn.execute("SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time", (trace_id,))
+    ]
     return trace
 
 
 def timeseries(conn: sqlite3.Connection, limit: int = 500) -> list[dict]:
     """Per-request points for charts, oldest first."""
     rows = conn.execute("SELECT * FROM traces ORDER BY start_time DESC LIMIT ?", (limit,)).fetchall()
-    return [{k: t[k] for k in ("trace_id", "start_time", "latency_ms", "tokens", "list_price_usd", "status", "rating")}
-            for t in map(_trace_dict, reversed(rows))]
+    return [
+        {k: t[k] for k in ("trace_id", "start_time", "latency_ms", "tokens", "list_price_usd", "status", "rating")}
+        for t in map(_trace_dict, reversed(rows))
+    ]
 
 
 # --- kestrel traces -----------------------------------------------------------
+
 
 def print_traces(conn: sqlite3.Connection, limit: int = 20, out: Out = print) -> None:
     rows = list_traces(conn, limit)
@@ -98,23 +104,31 @@ def print_traces(conn: sqlite3.Connection, limit: int = 20, out: Out = print) ->
         rating = r["rating"] or ""
         if r["status"] == "error":
             rating = f"{rating} (error)".strip()
-        out(f"{fmt_time(r['start_time']):<12} {r['trace_id'][:8]:<8}  {short(r['user_message'], 42):<42} "
-            f"{r['steps'] or 0:>5} {tokens:>7,} {fmt_ms(latency):>8}  {rating}")
+        out(
+            f"{fmt_time(r['start_time']):<12} {r['trace_id'][:8]:<8}  {short(r['user_message'], 42):<42} "
+            f"{r['steps'] or 0:>5} {tokens:>7,} {fmt_ms(latency):>8}  {rating}"
+        )
     out(f"{DIM}Latency excludes time spent waiting for your approvals. Details: kestrel trace <id>{RESET}")
 
 
 # --- kestrel trace <id> -------------------------------------------------------
 
+
 def _label(span: dict, attrs: dict) -> str:
     name, dur = span["name"], fmt_ms(span["duration_ms"])
     if name == "agent_run":
         tokens = attrs.get("gen_ai.usage.input_tokens", 0) + attrs.get("gen_ai.usage.output_tokens", 0)
-        return (f"agent_run {dur}  [{attrs.get('kestrel.stop_reason')}, {attrs.get('kestrel.steps')} steps, "
-                f"{tokens:,} tokens, list price {fmt_usd(attrs.get('kestrel.list_price_usd'))}]")
+        return (
+            f"agent_run {dur}  [{attrs.get('kestrel.stop_reason')}, {attrs.get('kestrel.steps')} steps, "
+            f"{tokens:,} tokens, list price {fmt_usd(attrs.get('kestrel.list_price_usd'))}]"
+        )
     if name == "llm_call":
         est = ", estimated" if attrs.get("kestrel.usage.estimated") else ""
-        text = (f"llm_call {attrs.get('gen_ai.provider.name')} {dur} "
-                f"({attrs.get('gen_ai.usage.input_tokens', '?')} in / {attrs.get('gen_ai.usage.output_tokens', '?')} out{est})")
+        text = (
+            f"llm_call {attrs.get('gen_ai.provider.name')} {dur} "
+            f"({attrs.get('gen_ai.usage.input_tokens', '?')} in / "
+            f"{attrs.get('gen_ai.usage.output_tokens', '?')} out{est})"
+        )
         if calls := attrs.get("kestrel.tool_calls"):
             text += f" -> {', '.join(calls)}"
         elif span["status"] == "ok":
@@ -135,19 +149,29 @@ def _label(span: dict, attrs: dict) -> str:
         return text
     if name == "approval":
         reason = attrs.get("kestrel.approval.reason")
-        return f"approval {attrs.get('kestrel.approval.decision')} {dur} (your time)" + (f": {reason!r}" if reason else "")
+        return f"approval {attrs.get('kestrel.approval.decision')} {dur} (your time)" + (
+            f": {reason!r}" if reason else ""
+        )
     return f"{name} {dur}"
 
 
 def print_trace(conn: sqlite3.Connection, trace_id: str, out: Out = print) -> None:
     trace = get_trace(conn, trace_id)
+    if trace is None:
+        out(f"No trace {trace_id}")
+        return
     children: dict[str | None, list[dict]] = defaultdict(list)
     for s in trace["spans"]:
         children[s["parent_id"]].append(s)
 
-    out(f"Trace {trace_id}  {datetime.fromtimestamp(trace['start_time']):%Y-%m-%d %H:%M:%S}"
-        + (f"  rated {trace['rating']}" + (f": {trace['rating_note']!r}" if trace["rating_note"] else "")
-           if trace["rating"] else ""))
+    out(
+        f"Trace {trace_id}  {datetime.fromtimestamp(trace['start_time']):%Y-%m-%d %H:%M:%S}"
+        + (
+            f"  rated {trace['rating']}" + (f": {trace['rating_note']!r}" if trace["rating_note"] else "")
+            if trace["rating"]
+            else ""
+        )
+    )
     out(f"  you > {short(trace['user_message'], 100)}")
     out(f"  kestrel > {short(trace['final_answer'], 100)}\n")
 
@@ -168,6 +192,7 @@ def print_trace(conn: sqlite3.Connection, trace_id: str, out: Out = print) -> No
 
 # --- kestrel stats ------------------------------------------------------------
 
+
 def compute_stats(conn: sqlite3.Connection) -> dict:
     traces = conn.execute("SELECT * FROM traces").fetchall()
     spans = conn.execute("SELECT name, duration_ms, status, attributes FROM spans").fetchall()
@@ -176,7 +201,7 @@ def compute_stats(conn: sqlite3.Connection) -> dict:
         return {"traces": 0}
 
     llm_latency: dict[str, list[float]] = defaultdict(list)
-    tools, approvals = Counter(), Counter()
+    tools, approvals = Counter[str](), Counter[str]()
     tool_errors = 0
     for s in spans:
         attrs = json.loads(s["attributes"] or "{}")
@@ -201,8 +226,9 @@ def compute_stats(conn: sqlite3.Connection) -> dict:
     return {
         "requests_today": sum(t["start_time"] >= midnight for t in traces),
         "providers": dict(providers.most_common()),
-        "list_price_usd_per_conversation":
-            sum(per_conversation.values()) / len(per_conversation) if per_conversation else None,
+        "list_price_usd_per_conversation": sum(per_conversation.values()) / len(per_conversation)
+        if per_conversation
+        else None,
         "traces": n,
         "first": min(t["start_time"] for t in traces),
         "last": max(t["start_time"] for t in traces),
@@ -232,19 +258,32 @@ def print_stats(conn: sqlite3.Connection, out: Out = print) -> None:
     if not s["traces"]:
         out("No traces yet. Chat with Kestrel first: uv run kestrel")
         return
-    pct = lambda x: "n/a" if x is None else f"{x:.0%}"
+
+    def pct(x: float | None) -> str:
+        return "n/a" if x is None else f"{x:.0%}"
+
     out(f"Traces: {s['traces']}  ({fmt_time(s['first'])} to {fmt_time(s['last'])})\n")
-    out(f"Latency per request   p50 {fmt_ms(s['latency_p50_ms'])}   p95 {fmt_ms(s['latency_p95_ms'])}"
-        f"   {DIM}(excludes your approval time){RESET}")
+    out(
+        f"Latency per request   p50 {fmt_ms(s['latency_p50_ms'])}   p95 {fmt_ms(s['latency_p95_ms'])}"
+        f"   {DIM}(excludes your approval time){RESET}"
+    )
     for provider, (p50, p95, count) in s["llm_latency_ms"].items():
         out(f"  llm_call {provider:<10} p50 {fmt_ms(p50)}   p95 {fmt_ms(p95)}   ({count} calls)")
-    out(f"Tokens per request    {s['tokens_per_request']:,.0f}   (total {s['tokens_total']:,}"
-        + (f", {pct(s['tokens_estimated_share'])} of requests estimated" if s["tokens_estimated_share"] else "") + ")")
+    out(
+        f"Tokens per request    {s['tokens_per_request']:,.0f}   (total {s['tokens_total']:,}"
+        + (f", {pct(s['tokens_estimated_share'])} of requests estimated" if s["tokens_estimated_share"] else "")
+        + ")"
+    )
     out(f"Steps per request     {s['steps_per_request']:.1f}")
-    out(f"Cost                  {fmt_usd(s['cost_usd_total'])} actual   "
+    out(
+        f"Cost                  {fmt_usd(s['cost_usd_total'])} actual   "
         f"list price {fmt_usd(s['list_price_usd_per_request'])}/request, {fmt_usd(s['list_price_usd_total'])} total"
-        + (f"   {DIM}({pct(s['list_price_coverage'])} of requests have a list price){RESET}"
-           if s["list_price_coverage"] < 1 else ""))
+        + (
+            f"   {DIM}({pct(s['list_price_coverage'])} of requests have a list price){RESET}"
+            if s["list_price_coverage"] < 1
+            else ""
+        )
+    )
     tools = ", ".join(f"{k} {v}" for k, v in s["tool_calls"].items()) or "none"
     out(f"Tool calls            {tools}   (error rate {pct(s['tool_error_rate'])})")
     if s["approvals"]:
@@ -256,19 +295,21 @@ def print_stats(conn: sqlite3.Connection, out: Out = print) -> None:
 
 # --- kestrel export -----------------------------------------------------------
 
+
 def weight_current_turn(messages: list[dict]) -> list[dict]:
     """A trace stores the whole conversation, but its rating is for the last turn only.
     Earlier assistant messages stay as context with weight 0 (the OpenAI fine-tuning
     convention for "don't learn from this"), so a good example never teaches an
     earlier answer that may have been rated bad."""
     last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
-    return [m | {"weight": 0 if i < last_user else 1} if m.get("role") == "assistant" else m
-            for i, m in enumerate(messages)]
+    return [
+        m | {"weight": 0 if i < last_user else 1} if m.get("role") == "assistant" else m for i, m in enumerate(messages)
+    ]
 
 
 def export(conn: sqlite3.Connection, rated: str, out_path: Path, tools: list[dict]) -> tuple[int, int]:
     """Write traces as chat-format JSONL: {"messages": [...], "tools": [...], "metadata": {...}}.
-    Returns (written, skipped). Skipped: no stored messages (content off) or errored runs."""
+    Returns (written, skipped). Skipped: no stored messages (content off), errored runs, demo mode."""
     query = "SELECT * FROM traces"
     params: tuple = ()
     if rated in ("good", "bad"):
@@ -279,8 +320,8 @@ def export(conn: sqlite3.Connection, rated: str, out_path: Path, tools: list[dic
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as f:
         for t in conn.execute(query, params):
-            if not t["messages"] or t["status"] == "error":
-                skipped += 1
+            if not t["messages"] or t["status"] == "error" or "demo" in json.loads(t["providers"] or "[]"):
+                skipped += 1  # no stored text, a failed run, or scripted demo replies (never training data)
                 continue
             record = {
                 "messages": weight_current_turn(json.loads(t["messages"])),
@@ -288,9 +329,11 @@ def export(conn: sqlite3.Connection, rated: str, out_path: Path, tools: list[dic
                 "metadata": {
                     "trace_id": t["trace_id"],
                     "time": datetime.fromtimestamp(t["start_time"]).isoformat(timespec="seconds"),
-                    "rating": t["rating"], "rating_note": t["rating_note"],
+                    "rating": t["rating"],
+                    "rating_note": t["rating_note"],
                     "providers": json.loads(t["providers"] or "[]"),
-                    "steps": t["steps"], "stop_reason": t["stop_reason"],
+                    "steps": t["steps"],
+                    "stop_reason": t["stop_reason"],
                 },
             }
             f.write(json.dumps(record, ensure_ascii=False) + "\n")

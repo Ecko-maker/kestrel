@@ -32,13 +32,18 @@ class StreamingFakeLLM:
         if on_text and reply.get("content"):
             text = reply["content"]
             for i in range(0, len(text), 4):
-                on_text(text[i:i + 4])
+                on_text(text[i : i + 4])
         return reply
 
 
 def call(name, **args):
-    return {"role": "assistant", "content": None, "tool_calls": [
-        {"id": f"call-{name}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]}
+    return {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": f"call-{name}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+        ],
+    }
 
 
 def say(text):
@@ -78,11 +83,13 @@ def setup(tmp_path, registry):
         llm = StreamingFakeLLM(*replies)
 
         def make_agent(on_event, approver):
-            return Agent(llm, tools=registry, on_event=on_event, tracer=tracer,
-                         gate=ApprovalGate(approver, log_path=audit))
+            return Agent(
+                llm, tools=registry, on_event=on_event, tracer=tracer, gate=ApprovalGate(approver, log_path=audit)
+            )
 
-        config = WebConfig(token=TOKEN, port=8765, static_dir=static_dir, approval_timeout=timeout,
-                           extra_hosts=("testserver",))  # what the test client sends for WebSockets
+        config = WebConfig(
+            token=TOKEN, port=8765, static_dir=static_dir, approval_timeout=timeout, extra_hosts=("testserver",)
+        )  # what the test client sends for WebSockets
         return TestClient(create_app(make_agent, tracer, config), base_url=BASE)
 
     return make_client, tracer, audit
@@ -104,6 +111,7 @@ def connect(client):
 
 # --- streaming --------------------------------------------------------------------
 
+
 def test_websocket_streams_events_in_order(setup):
     make_client, _, _ = setup
     client = make_client(call("lookup", q="x"), say("Here is the answer."))
@@ -114,8 +122,17 @@ def test_websocket_streams_events_in_order(setup):
 
     kinds = [e["type"] for e in events]
     collapsed = [k for i, k in enumerate(kinds) if i == 0 or k != kinds[i - 1]]
-    assert collapsed == ["step_started", "llm_call", "tool_call", "tool_result",
-                         "step_started", "text_delta", "llm_call", "answer", "done"]
+    assert collapsed == [
+        "step_started",
+        "llm_call",
+        "tool_call",
+        "tool_result",
+        "step_started",
+        "text_delta",
+        "llm_call",
+        "answer",
+        "done",
+    ]
     assert "".join(e["text"] for e in events if e["type"] == "text_delta") == "Here is the answer."
     assert kinds.count("text_delta") > 1  # streamed in pieces
     trace_ids = {e["trace_id"] for e in events}
@@ -141,6 +158,7 @@ def test_busy_agent_refuses_a_second_message(setup, ran):
 
 
 # --- approvals --------------------------------------------------------------------
+
 
 def run_until_approval(ws, text="save it"):
     ws.receive_json()  # ready
@@ -168,8 +186,14 @@ def test_edit_round_trip_previews_again_and_runs_the_edit(setup, ran):
     make_client, _, audit = setup
     with connect(make_client(call("save", text="draft"), say("Saved."))) as ws:
         first = run_until_approval(ws)
-        ws.send_json({"type": "approval_response", "approval_id": first["approval_id"], "decision": "edit",
-                      "args": {"text": "edited by me"}})
+        ws.send_json(
+            {
+                "type": "approval_response",
+                "approval_id": first["approval_id"],
+                "decision": "edit",
+                "args": {"text": "edited by me"},
+            }
+        )
         events = events_until(ws, "approval_required")
         assert next(e for e in events if e["type"] == "approval_resolved")["decision"] == "edited"
         second = events[-1]
@@ -181,11 +205,17 @@ def test_edit_round_trip_previews_again_and_runs_the_edit(setup, ran):
 
 
 def test_reject_round_trip_sends_reason_to_the_model(setup, ran):
-    make_client, tracer, _ = setup
+    make_client, _tracer, _ = setup
     with connect(make_client(call("save", text="x"), say("Okay, I won't."))) as ws:
         approval = run_until_approval(ws)
-        ws.send_json({"type": "approval_response", "approval_id": approval["approval_id"], "decision": "reject",
-                      "reason": "not today"})
+        ws.send_json(
+            {
+                "type": "approval_response",
+                "approval_id": approval["approval_id"],
+                "decision": "reject",
+                "reason": "not today",
+            }
+        )
         events = events_until(ws, "done")
     assert ran == []
     result = next(e for e in events if e["type"] == "tool_result")
@@ -222,7 +252,7 @@ def test_disconnect_during_approval_rejects(setup, ran):
 
 
 def test_no_answer_times_out_as_rejection(setup, ran):
-    make_client, _, audit = setup
+    make_client, _, _audit = setup
     with connect(make_client(call("save", text="x"), say("ok"), timeout=0.3)) as ws:
         run_until_approval(ws)
         events = events_until(ws, "done")
@@ -231,6 +261,7 @@ def test_no_answer_times_out_as_rejection(setup, ran):
 
 
 # --- security ---------------------------------------------------------------------
+
 
 def test_requests_without_the_token_are_refused(setup):
     make_client, _, _ = setup
@@ -252,7 +283,10 @@ def test_token_in_url_becomes_a_cookie_and_is_removed_from_the_url(setup, tmp_pa
     client = make_client(static_dir=dist)
     response = client.get(f"/?token={TOKEN}", follow_redirects=False)
     assert response.status_code == 307 and response.headers["location"] == "/"
-    assert "httponly" in response.headers["set-cookie"].lower() and "samesite=strict" in response.headers["set-cookie"].lower()
+    assert (
+        "httponly" in response.headers["set-cookie"].lower()
+        and "samesite=strict" in response.headers["set-cookie"].lower()
+    )
     assert client.cookies.get(COOKIE) == TOKEN
     assert client.get("/").text == "<html>console</html>"  # cookie now works
     assert client.get("/traces/abc").text == "<html>console</html>"  # client-side route
@@ -273,16 +307,21 @@ def test_wrong_host_and_foreign_origin_are_refused(setup):
 def test_cors_only_allows_the_dev_server(setup):
     make_client, _, _ = setup
     client = make_client()
-    ok = client.options("/api/traces", headers={"origin": "http://localhost:5173", "access-control-request-method": "GET"})
-    bad = client.options("/api/traces", headers={"origin": "https://evil.example", "access-control-request-method": "GET"})
+    ok = client.options(
+        "/api/traces", headers={"origin": "http://localhost:5173", "access-control-request-method": "GET"}
+    )
+    bad = client.options(
+        "/api/traces", headers={"origin": "https://evil.example", "access-control-request-method": "GET"}
+    )
     assert ok.headers.get("access-control-allow-origin") == "http://localhost:5173"
     assert "access-control-allow-origin" not in bad.headers
 
 
 # --- REST ---------------------------------------------------------------------
 
+
 def test_traces_stats_and_rating(setup):
-    make_client, tracer, _ = setup
+    make_client, _tracer, _ = setup
     client = make_client(say("First answer"))
     with connect(client) as ws:
         ws.receive_json()
@@ -315,7 +354,10 @@ def test_chat_unavailable_still_serves_traces(tmp_path):
     def make_agent(on_event, approver):
         raise RuntimeError("missing GEMINI_API_KEY")
 
-    client = TestClient(create_app(make_agent, tracer, WebConfig(token=TOKEN, static_dir=None, extra_hosts=("testserver",))), base_url=BASE)
+    client = TestClient(
+        create_app(make_agent, tracer, WebConfig(token=TOKEN, static_dir=None, extra_hosts=("testserver",))),
+        base_url=BASE,
+    )
     with connect(client) as ws:
         event = ws.receive_json()
     assert event["type"] == "error" and "missing GEMINI_API_KEY" in event["message"]

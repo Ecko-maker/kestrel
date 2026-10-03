@@ -22,6 +22,8 @@ import sqlite3
 import sys
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,11 +34,16 @@ DEFAULT_DB = Path("logs") / "traces.db"
 MAX_ATTR_CHARS = 2_000  # long strings (tool results, answers) are cut in span attributes
 
 # Attributes that hold message text or user data; dropped when content recording is off.
-CONTENT_ATTRS = frozenset({
-    "kestrel.user_message", "kestrel.final_answer",
-    "gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
-    "kestrel.approval.reason", "kestrel.approval.args",
-})
+CONTENT_ATTRS = frozenset(
+    {
+        "kestrel.user_message",
+        "kestrel.final_answer",
+        "gen_ai.tool.call.arguments",
+        "gen_ai.tool.call.result",
+        "kestrel.approval.reason",
+        "kestrel.approval.args",
+    }
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS traces (
@@ -128,7 +135,7 @@ def redact_value(value: Any) -> Any:
 
 @dataclass
 class Span:
-    tracer: "Tracer"
+    tracer: Tracer
     trace_id: str
     span_id: str
     parent_id: str | None
@@ -141,11 +148,11 @@ class Span:
     _t0: float = field(default_factory=time.perf_counter)
     duration_ms: float | None = None
 
-    def set(self, key: str, value: Any) -> "Span":
+    def set(self, key: str, value: Any) -> Span:
         self.tracer._set(self, key, value)
         return self
 
-    def fail(self, error: BaseException | str) -> "Span":
+    def fail(self, error: BaseException | str) -> Span:
         self.status = "error"
         if isinstance(error, BaseException):
             detail = f"{type(error).__name__}: {error}"
@@ -166,8 +173,9 @@ def _new_id(n_bytes: int) -> str:
 
 
 class Tracer:
-    def __init__(self, db_path: str | Path | None = DEFAULT_DB, record_content: bool | None = None,
-                 prices: Prices | None = None):
+    def __init__(
+        self, db_path: str | Path | None = DEFAULT_DB, record_content: bool | None = None, prices: Prices | None = None
+    ):
         """db_path=None keeps traces in memory only (used when tracing is off)."""
         self.db_path = Path(db_path) if db_path else None
         if record_content is None:
@@ -244,7 +252,8 @@ class Tracer:
             "fallback": int(any(s.attributes.get("kestrel.fallback") for s in llm_spans)),
             "session_id": a.get("kestrel.session_id"),
             "messages": json.dumps(redact_value(_clean_messages(messages)), ensure_ascii=False)
-                        if messages is not None and self.record_content else None,
+            if messages is not None and self.record_content
+            else None,
         }
         root.set("gen_ai.usage.input_tokens", input_tokens)
         root.set("gen_ai.usage.output_tokens", output_tokens)
@@ -257,12 +266,26 @@ class Tracer:
             return
         try:
             with self.connect() as conn:
-                conn.execute(f"INSERT INTO traces ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
-                             list(row.values()))
+                conn.execute(
+                    f"INSERT INTO traces ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})", list(row.values())
+                )
                 conn.executemany(
                     "INSERT INTO spans VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [(s.span_id, s.trace_id, s.parent_id, s.name, s.start_time, s.end_time, s.duration_ms,
-                      s.status, s.error, json.dumps(s.attributes, ensure_ascii=False, default=str)) for s in spans],
+                    [
+                        (
+                            s.span_id,
+                            s.trace_id,
+                            s.parent_id,
+                            s.name,
+                            s.start_time,
+                            s.end_time,
+                            s.duration_ms,
+                            s.status,
+                            s.error,
+                            json.dumps(s.attributes, ensure_ascii=False, default=str),
+                        )
+                        for s in spans
+                    ],
                 )
         except Exception as e:  # tracing must never break the agent
             if not self._warned:
@@ -271,23 +294,31 @@ class Tracer:
 
     # Reading -----------------------------------------------------------------
 
-    def connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        """`with tracer.connect() as conn:` commits on success, rolls back on error, and always
+        closes. (sqlite3's own `with` only handles the transaction and leaves the connection open.)"""
         if self.db_path is None:
             raise RuntimeError("this tracer has no database")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.executescript(SCHEMA)
-        columns = {r["name"] for r in conn.execute("PRAGMA table_info(traces)")}
-        if "session_id" not in columns:  # databases created before conversations were tracked
-            conn.execute("ALTER TABLE traces ADD COLUMN session_id TEXT")
-        return conn
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.executescript(SCHEMA)
+            columns = {r["name"] for r in conn.execute("PRAGMA table_info(traces)")}
+            if "session_id" not in columns:  # databases created before conversations were tracked
+                conn.execute("ALTER TABLE traces ADD COLUMN session_id TEXT")
+            with conn:  # the transaction
+                yield conn
+        finally:
+            conn.close()
 
     def find_trace_id(self, prefix: str) -> str:
         """Full trace id from a prefix (like a short git hash). Raises LookupError."""
         with self.connect() as conn:
-            rows = conn.execute("SELECT trace_id FROM traces WHERE trace_id LIKE ? LIMIT 2",
-                                (prefix.lower() + "%",)).fetchall()
+            rows = conn.execute(
+                "SELECT trace_id FROM traces WHERE trace_id LIKE ? LIMIT 2", (prefix.lower() + "%",)
+            ).fetchall()
         if not rows:
             raise LookupError(f"no trace starts with '{prefix}'")
         if len(rows) > 1:
@@ -299,8 +330,10 @@ class Tracer:
             raise ValueError("rating must be 'good' or 'bad'")
         note = redact(note) if self.record_content else ""
         with self.connect() as conn:
-            updated = conn.execute("UPDATE traces SET rating = ?, rating_note = ?, rated_at = ? WHERE trace_id = ?",
-                                   (rating, note, time.time(), trace_id)).rowcount
+            updated = conn.execute(
+                "UPDATE traces SET rating = ?, rating_note = ?, rated_at = ? WHERE trace_id = ?",
+                (rating, note, time.time(), trace_id),
+            ).rowcount
         if not updated:
             raise LookupError(f"trace {trace_id} not found")
 

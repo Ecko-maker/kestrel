@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
+import { ArrowUp, FlaskConical, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
 import { rateTrace, type SessionInfo, type Stats } from "../api";
 import { AgentTrace } from "../components/AgentTrace";
 import { ApprovalCard } from "../components/ApprovalCard";
@@ -108,18 +108,20 @@ function AssistantTurn({ turn, onRespond, onRated }: { turn: Turn; onRespond: Ch
 function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  const update = (value: string) => {
+    setText(value);
+    const el = ref.current; // grow with the text, up to 200px
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
   const submit = () => {
     const value = text.trim();
     if (!value || disabled) return;
     chat.send(value);
     setText("");
+    if (ref.current) ref.current.style.height = "auto";
   };
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, [text]);
 
   return (
     <div className="rounded-2xl bg-white p-2 ring-1 ring-stone-300 shadow-sm focus-within:ring-2 focus-within:ring-accent-500 dark:bg-stone-900 dark:ring-stone-700">
@@ -128,7 +130,7 @@ function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
           ref={ref}
           rows={1}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => update(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -151,18 +153,30 @@ export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; sessio
   const bottom = useRef<HTMLDivElement>(null);
   const last = chat.turns[chat.turns.length - 1];
   const progress = last ? last.steps.reduce((n, s) => n + s.text.length + s.tools.length * 1000 + s.tools.reduce((m, t) => m + t.approvals.length * 100 + (t.result ? 10 : 0), 0), 0) : 0;
+  // Changes whenever the conversation grows, so the effect below keeps the newest content in view.
+  const scrollKey = `${chat.turns.length}:${progress}:${last?.done}`;
   useEffect(() => {
     // Braces matter: newer browsers return a Promise from scrollIntoView, and an effect
     // must return nothing or a cleanup function.
-    bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [chat.turns.length, progress, last?.done]);
+    if (scrollKey) bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [scrollKey]);
 
   const unavailable = session && !session.chat_available;
+  const suggestions = session?.demo_prompts?.length ? session.demo_prompts : SUGGESTIONS;
   return (
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6">
+            {session?.demo && (
+              <div className="flex items-start gap-3 rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900 ring-1 ring-violet-200 dark:bg-violet-950/40 dark:text-violet-200 dark:ring-violet-900">
+                <FlaskConical className="mt-0.5 size-4 shrink-0" />
+                <div>
+                  <span className="font-semibold">Demo mode.</span>{" "}
+                  {(session.demo_notice ?? "").replace(/^Demo mode:\s*(.)/, (_, c: string) => c.toUpperCase())} Add a free Gemini or Groq key to <code>.env</code> to use a real model.
+                </div>
+              </div>
+            )}
             {chat.turns.length === 0 && (
               <div className="pt-[8vh]">
                 <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">What should Kestrel do?</h1>
@@ -170,7 +184,7 @@ export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; sessio
                   It can read your workspace, search and fetch the web, and draft notes and messages. Anything that changes a file or sends something waits for your approval.
                 </p>
                 <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                  {SUGGESTIONS.map((s) => (
+                  {suggestions.map((s) => (
                     <button
                       key={s}
                       onClick={() => chat.send(s)}

@@ -105,7 +105,7 @@ export function TimeChart({
 }
 
 export function HBars({ data, tone = "accent" }: { data: Record<string, number>; tone?: "accent" | "violet" | "amber" }) {
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  const entries = Object.entries(data).toSorted((a, b) => b[1] - a[1]);
   if (!entries.length) return <div className="py-6 text-center text-sm text-stone-400">Nothing yet</div>;
   const max = Math.max(...entries.map(([, v]) => v));
   const fill = { accent: "bg-accent-500", violet: "bg-violet-500", amber: "bg-amber-500" }[tone];

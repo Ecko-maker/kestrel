@@ -1,0 +1,16 @@
+# Runs on every `git commit`. Set up once with:
+#   uv run pre-commit install
+# Run on everything with:
+#   uv run pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks # blocks a commit that contains anything that looks like a key

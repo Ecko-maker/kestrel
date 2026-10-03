@@ -45,12 +45,15 @@ def fake_llm(outcomes, provider="ollama") -> tuple[LLM, FakeCompletions, list[fl
     return llm, completions, waits
 
 
-@pytest.mark.parametrize("error", [
-    status_error(openai.RateLimitError, 429),
-    status_error(openai.InternalServerError, 503),
-    openai.APITimeoutError(request=REQUEST),
-    openai.APIConnectionError(request=REQUEST),
-])
+@pytest.mark.parametrize(
+    "error",
+    [
+        status_error(openai.RateLimitError, 429),
+        status_error(openai.InternalServerError, 503),
+        openai.APITimeoutError(request=REQUEST),
+        openai.APIConnectionError(request=REQUEST),
+    ],
+)
 def test_temporary_errors_are_retried_with_backoff(error):
     llm, completions, waits = fake_llm([error, error, ok_response("finally")])
     assert llm.chat([{"role": "user", "content": "x"}])["content"] == "finally"
@@ -61,7 +64,7 @@ def test_temporary_errors_are_retried_with_backoff(error):
 def test_gives_up_after_max_tries():
     error = status_error(openai.RateLimitError, 429)
     llm, completions, waits = fake_llm([error] * 3)
-    with pytest.raises(LLMError, match="rate limited.*3 tries"):
+    with pytest.raises(LLMError, match=r"rate limited.*3 tries"):
         llm.chat([])
     assert len(completions.requests) == 3 and len(waits) == 2
 
@@ -81,12 +84,15 @@ def test_long_retry_after_hands_over_immediately():
     assert len(completions.requests) == 1 and waits == []
 
 
-@pytest.mark.parametrize("error, message", [
-    (status_error(openai.AuthenticationError, 401), "API key rejected"),
-    (status_error(openai.PermissionDeniedError, 403), "API key rejected"),
-    (status_error(openai.NotFoundError, 404), "not found"),
-    (status_error(openai.BadRequestError, 400), "request rejected \\(400\\)"),
-])
+@pytest.mark.parametrize(
+    "error, message",
+    [
+        (status_error(openai.AuthenticationError, 401), "API key rejected"),
+        (status_error(openai.PermissionDeniedError, 403), "API key rejected"),
+        (status_error(openai.NotFoundError, 404), "not found"),
+        (status_error(openai.BadRequestError, 400), "request rejected \\(400\\)"),
+    ],
+)
 def test_permanent_errors_fail_fast(error, message):
     llm, completions, waits = fake_llm([error, ok_response()])
     with pytest.raises(LLMError, match=message):
@@ -108,11 +114,21 @@ def test_missing_key_is_clear(monkeypatch):
 
 def test_gemini_extras_stripped_for_other_providers_and_placeholder_added_for_gemini(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    history = [{"role": "assistant", "content": None, "tool_calls": [
-        {"id": "1", "type": "function", "function": {"name": "f", "arguments": "{}"},
-         "extra_content": {"google": {"thought_signature": "sig"}}},
-        {"id": "2", "type": "function", "function": {"name": "f", "arguments": "{}"}},
-    ]}]
+    history = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "1",
+                    "type": "function",
+                    "function": {"name": "f", "arguments": "{}"},
+                    "extra_content": {"google": {"thought_signature": "sig"}},
+                },
+                {"id": "2", "type": "function", "function": {"name": "f", "arguments": "{}"}},
+            ],
+        }
+    ]
     groq_calls = LLM("ollama")._prepare(history)[0]["tool_calls"]
     assert all("extra_content" not in tc for tc in groq_calls)
 
@@ -186,11 +202,24 @@ class FakeChunk(SimpleNamespace):
 
 
 def stream_of(*texts, usage=(10, 5)):
-    chunks = [FakeChunk(choices=[SimpleNamespace(delta=SimpleNamespace(content=t, tool_calls=None), finish_reason=None)],
-                        usage=None, model="m") for t in texts]
-    chunks.append(FakeChunk(choices=[SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=None), finish_reason="stop")],
-                            usage=None, model="m"))
-    chunks.append(FakeChunk(choices=[], usage=SimpleNamespace(prompt_tokens=usage[0], completion_tokens=usage[1]), model="m"))
+    chunks = [
+        FakeChunk(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=t, tool_calls=None), finish_reason=None)],
+            usage=None,
+            model="m",
+        )
+        for t in texts
+    ]
+    chunks.append(
+        FakeChunk(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=None), finish_reason="stop")],
+            usage=None,
+            model="m",
+        )
+    )
+    chunks.append(
+        FakeChunk(choices=[], usage=SimpleNamespace(prompt_tokens=usage[0], completion_tokens=usage[1]), model="m")
+    )
     return iter(chunks)
 
 

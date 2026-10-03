@@ -99,6 +99,7 @@ def make_agent(llm, registry, approver, log_path):
 
 # --- the gate -----------------------------------------------------------------
 
+
 def test_confirm_tool_never_runs_without_an_approver(registry, ran, tmp_path):
     llm = ScriptedLLM(calls(call("c1", "save", text="hi")), say("ok"))
     agent = Agent(llm, tools=registry, gate=ApprovalGate(log_path=tmp_path / "a.jsonl"))  # default: deny all
@@ -199,7 +200,11 @@ def test_tiers_are_frozen_and_hidden_from_the_schema(registry):
 
 def test_session_approve_skips_later_prompts_for_that_tool_only(registry, ran, log_path):
     approver = FakeApprover(Decision("approved", for_session=True), Decision("approved"))
-    llm = ScriptedLLM(calls(call("c1", "save", text="1")), calls(call("c2", "save", text="2"), call("c3", "mail", to="a@b.co")), say("ok"))
+    llm = ScriptedLLM(
+        calls(call("c1", "save", text="1")),
+        calls(call("c2", "save", text="2"), call("c3", "mail", to="a@b.co")),
+        say("ok"),
+    )
     make_agent(llm, registry, approver, log_path).run("go")
     assert ran == [("save", "1"), ("save", "2"), ("mail", "a@b.co")]
     assert [r["tool"] for r in approver.requests] == ["save", "mail"]  # second save wasn't asked
@@ -218,17 +223,30 @@ def test_session_approve_is_refused_for_send_message_style_tools(registry, ran, 
 
 
 def test_audit_log_records_every_decision(registry, log_path):
-    approver = FakeApprover(Decision("approved"), Decision("rejected", reason="nope"),
-                            Decision("edited", args={"text": "b"}), Decision("approved"))
+    approver = FakeApprover(
+        Decision("approved"),
+        Decision("rejected", reason="nope"),
+        Decision("edited", args={"text": "b"}),
+        Decision("approved"),
+    )
     llm = ScriptedLLM(
-        calls(call("c1", "save", text="a" * 500), call("c2", "save", text="x"), call("c3", "save", text="a"),
-              call("c4", "destroy", path="p"), call("c5", "look", x="safe")),
+        calls(
+            call("c1", "save", text="a" * 500),
+            call("c2", "save", text="x"),
+            call("c3", "save", text="a"),
+            call("c4", "destroy", path="p"),
+            call("c5", "look", x="safe"),
+        ),
         say("ok"),
     )
     make_agent(llm, registry, approver, log_path).run("go")
     entries = audit(log_path)
     assert [(e["tool"], e["decision"]) for e in entries] == [
-        ("save", "approved"), ("save", "rejected"), ("save", "edited"), ("destroy", "forbidden")]
+        ("save", "approved"),
+        ("save", "rejected"),
+        ("save", "edited"),
+        ("destroy", "forbidden"),
+    ]
     assert entries[1]["reason"] == "nope"
     assert entries[0]["args"]["text"].endswith("(500 chars)")  # long args summarized
     assert all({"time", "tool", "args", "decision", "reason"} <= e.keys() for e in entries)
@@ -236,14 +254,17 @@ def test_audit_log_records_every_decision(registry, log_path):
 
 def test_approved_actions_run_in_order_after_all_approvals(registry, ran, log_path):
     approver = FakeApprover(Decision("approved"), Decision("approved"))
-    llm = ScriptedLLM(calls(call("c1", "save", text="first"), call("c2", "look", x="mid"),
-                            call("c3", "save", text="second")), say("ok"))
+    llm = ScriptedLLM(
+        calls(call("c1", "save", text="first"), call("c2", "look", x="mid"), call("c3", "save", text="second")),
+        say("ok"),
+    )
     make_agent(llm, registry, approver, log_path).run("go")
     assert [r for r in ran if r[0] == "save"] == [("save", "first"), ("save", "second")]
     assert llm.tool_results(1) == ["saved first", "saw mid", "saved second"]
 
 
 # --- terminal approver --------------------------------------------------------
+
 
 def terminal(*answers):
     answers = list(answers)
@@ -288,6 +309,7 @@ def test_terminal_edit_by_retyping():
 
 # --- the real action tools ----------------------------------------------------
 
+
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
     ws = tmp_path / "workspace"
@@ -309,7 +331,9 @@ def test_write_file_preview_is_a_diff_or_new_file(workspace):
 
 
 def test_write_and_append(workspace):
-    assert tools.registry.execute("write_file", {"path": "a/b.txt", "content": "x"}, approved=True).startswith("Created")
+    assert tools.registry.execute("write_file", {"path": "a/b.txt", "content": "x"}, approved=True).startswith(
+        "Created"
+    )
     assert (workspace / "a" / "b.txt").read_text(encoding="utf-8") == "x"
     assert "+I finished Step 4" in preview("append_to_file", path="notes.txt", content="I finished Step 4")
     tools.registry.execute("append_to_file", {"path": "notes.txt", "content": "I finished Step 4"}, approved=True)
@@ -326,8 +350,9 @@ def test_create_note_never_overwrites(workspace):
 def test_send_message_previews_full_message_and_saves_to_outbox(workspace):
     p = preview("send_message", to="sam@example.com", subject="Running late", body="10 minutes late, sorry!")
     assert "To:      sam@example.com" in p and "Subject: Running late" in p and "10 minutes late" in p
-    result = tools.registry.execute("send_message", {"to": "sam@example.com", "subject": "Late", "body": "Sorry"},
-                                    approved=True)
+    result = tools.registry.execute(
+        "send_message", {"to": "sam@example.com", "subject": "Late", "body": "Sorry"}, approved=True
+    )
     assert "simulated" in result
     [saved] = (workspace / "outbox").iterdir()
     assert "To: sam@example.com" in saved.read_text(encoding="utf-8")
@@ -336,9 +361,11 @@ def test_send_message_previews_full_message_and_saves_to_outbox(workspace):
 def test_bad_action_arguments_are_refused_before_asking(workspace, log_path):
     approver = FakeApprover()
     gate = ApprovalGate(approver, log_path=log_path)
-    for name, args in [("write_file", {"path": "../escape.txt", "content": "x"}),
-                       ("write_file", {"path": ".env", "content": "KEY=x"}),
-                       ("send_message", {"to": "not-an-email", "subject": "s", "body": "b"})]:
+    for name, args in [
+        ("write_file", {"path": "../escape.txt", "content": "x"}),
+        ("write_file", {"path": ".env", "content": "KEY=x"}),
+        ("send_message", {"to": "not-an-email", "subject": "s", "body": "b"}),
+    ]:
         verdict = gate.check(tools.registry.tools[name], args)
         assert verdict.args is None and verdict.message.startswith("Error:")
     assert approver.requests == []
@@ -352,6 +379,16 @@ def test_file_and_web_content_is_labelled_untrusted(workspace):
 
 def test_only_diffs_get_diff_colors():
     from kestrel.approval import colorize
+
     message = "To: a@b.co\n----\n- a bullet in the body"
     assert colorize(message) == message
     assert "\033[31m" in colorize("--- a (current)\n+++ a (after)\n-old\n+new")
+
+
+def test_audit_log_redacts_secrets(registry, log_path):
+    fake_key = "gsk_" + "Zz9" * 10  # built at runtime so secret scanners don't flag the test itself
+    approver = FakeApprover(Decision("rejected", reason=f"don't paste {fake_key}"))
+    llm = ScriptedLLM(calls(call("c1", "save", text=f"my key is {fake_key}")), say("ok"))
+    make_agent(llm, registry, approver, log_path).run("go")
+    logged = log_path.read_text(encoding="utf-8")
+    assert fake_key not in logged and "[REDACTED]" in logged

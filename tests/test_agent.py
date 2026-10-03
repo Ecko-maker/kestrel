@@ -8,8 +8,7 @@ def tool_call(call_id: str, name: str, **args) -> dict:
     return {
         "role": "assistant",
         "content": None,
-        "tool_calls": [{"id": call_id, "type": "function",
-                        "function": {"name": name, "arguments": json.dumps(args)}}],
+        "tool_calls": [{"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}],
     }
 
 

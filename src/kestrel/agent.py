@@ -5,6 +5,7 @@ under a token budget, and every run ends with an explicit reason instead of a cr
 Every risky tool call passes through the ApprovalGate before it can run.
 """
 
+import contextlib
 import json
 import time
 import uuid
@@ -16,7 +17,8 @@ from typing import Literal, Protocol
 
 from kestrel.approval import ApprovalGate
 from kestrel.llm import LLMError
-from kestrel.tools import Tool, ToolCallError, ToolRegistry, registry as default_registry
+from kestrel.tools import Tool, ToolCallError, ToolRegistry
+from kestrel.tools import registry as default_registry
 from kestrel.tracing import Span, Tracer
 
 SYSTEM_PROMPT = (
@@ -37,6 +39,7 @@ MAX_PARALLEL_TOOLS = 8
 
 
 class ChatModel(Protocol):
+    # Real providers also accept on_text=... for streaming; the agent checks supports_streaming first.
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict: ...
 
 
@@ -111,15 +114,24 @@ class Agent:
             root.fail(result.text)
         self.tracer.finish_trace(root, snapshot)
         result.trace_id = root.trace_id
-        result.tokens = root.attributes.get("gen_ai.usage.input_tokens", 0) + root.attributes.get("gen_ai.usage.output_tokens", 0)
+        result.tokens = root.attributes.get("gen_ai.usage.input_tokens", 0) + root.attributes.get(
+            "gen_ai.usage.output_tokens", 0
+        )
         result.duration_ms = root.duration_ms
 
         if result.stop_reason == "error":
             self.emit("error", message=result.text)
-        self.emit("answer", text=result.text, stop_reason=result.stop_reason, steps=result.steps,
-                  tokens=result.tokens, duration_ms=result.duration_ms, providers=result.providers,
-                  cost_usd=root.attributes.get("kestrel.cost_usd"),
-                  list_price_usd=root.attributes.get("kestrel.list_price_usd"))
+        self.emit(
+            "answer",
+            text=result.text,
+            stop_reason=result.stop_reason,
+            steps=result.steps,
+            tokens=result.tokens,
+            duration_ms=result.duration_ms,
+            providers=result.providers,
+            cost_usd=root.attributes.get("kestrel.cost_usd"),
+            list_price_usd=root.attributes.get("kestrel.list_price_usd"),
+        )
         self.emit("done")
         return result
 
@@ -127,15 +139,13 @@ class Agent:
         """Send one event to on_event. A failing listener must never break the agent."""
         if self.on_event is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self.on_event({"type": event_type, "trace_id": self._trace_id, **data})
-        except Exception:
-            pass
 
     def _run(self, user_text: str, root: Span) -> tuple[AgentResult, list[dict]]:
         checkpoint = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
-        steps, providers, tools_used = 0, [], Counter()
+        steps, providers, tools_used = 0, [], Counter[str]()
 
         try:
             while steps < self.max_steps:
@@ -153,7 +163,7 @@ class Agent:
                     text = reply.get("content") or "(The model returned an empty reply. Try rephrasing.)"
                     return AgentResult(text, steps, "answered", providers), list(self.messages)
 
-                for call, result in zip(calls, self._run_tools(calls, root, steps)):
+                for call, result in zip(calls, self._run_tools(calls, root, steps), strict=True):
                     tools_used[call.get("function", {}).get("name", "?")] += 1
                     self.messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
         except LLMError as e:
@@ -168,8 +178,10 @@ class Agent:
             return AgentResult(text, steps, "error", providers), snapshot
 
         used = ", ".join(f"{name} x{n}" for name, n in tools_used.items())
-        text = (f"I hit my limit of {self.max_steps} steps before finishing, so I stopped rather than "
-                f"loop forever. Tools I ran: {used}. Ask me to continue, or try a narrower question.")
+        text = (
+            f"I hit my limit of {self.max_steps} steps before finishing, so I stopped rather than "
+            f"loop forever. Tools I ran: {used}. Ask me to continue, or try a narrower question."
+        )
         self.messages.append({"role": "assistant", "content": text})
         return AgentResult(text, steps, "max_steps", providers), list(self.messages)
 
@@ -188,27 +200,42 @@ class Agent:
 
         try:
             if self.on_event and getattr(self.llm, "supports_streaming", False):
-                reply = self.llm.chat(self.messages, schemas, on_text=on_text)
+                reply = self.llm.chat(self.messages, schemas, on_text=on_text)  # type: ignore[call-arg]
             else:
                 reply = self.llm.chat(self.messages, schemas)
         except Exception as e:
             self._record_call(span, None, schemas)
             span.fail(e)
             span.end()
-            self.emit("llm_call", step=step, ok=False, error=span.error, duration_ms=span.duration_ms,
-                      provider=span.attributes.get("gen_ai.provider.name"))
+            self.emit(
+                "llm_call",
+                step=step,
+                ok=False,
+                error=span.error,
+                duration_ms=span.duration_ms,
+                provider=span.attributes.get("gen_ai.provider.name"),
+            )
             raise
         self._record_call(span, reply, schemas)
         span.end()
         if not streamed and reply.get("content"):  # non-streaming model: deliver the text in one piece
             self.emit("text_delta", step=step, text=reply["content"])
         a = span.attributes
-        self.emit("llm_call", step=step, ok=True, duration_ms=span.duration_ms,
-                  provider=a.get("gen_ai.provider.name"), model=a.get("gen_ai.request.model"),
-                  input_tokens=a.get("gen_ai.usage.input_tokens"), output_tokens=a.get("gen_ai.usage.output_tokens"),
-                  estimated=bool(a.get("kestrel.usage.estimated")), tool_calls=a.get("kestrel.tool_calls", []),
-                  fallback=a.get("kestrel.fallback", False), retries=a.get("kestrel.retries", 0),
-                  list_price_usd=a.get("kestrel.list_price_usd"))
+        self.emit(
+            "llm_call",
+            step=step,
+            ok=True,
+            duration_ms=span.duration_ms,
+            provider=a.get("gen_ai.provider.name"),
+            model=a.get("gen_ai.request.model"),
+            input_tokens=a.get("gen_ai.usage.input_tokens"),
+            output_tokens=a.get("gen_ai.usage.output_tokens"),
+            estimated=bool(a.get("kestrel.usage.estimated")),
+            tool_calls=a.get("kestrel.tool_calls", []),
+            fallback=a.get("kestrel.fallback", False),
+            retries=a.get("kestrel.retries", 0),
+            list_price_usd=a.get("kestrel.list_price_usd"),
+        )
         return reply
 
     def _record_call(self, span: Span, reply: dict | None, schemas: list[dict]) -> None:
@@ -217,10 +244,10 @@ class Agent:
         model = getattr(info, "model", None) or getattr(self.llm, "model", None)
         span.set("gen_ai.provider.name", provider)
         span.set("gen_ai.request.model", model)
-        if getattr(info, "response_model", None):
-            span.set("gen_ai.response.model", info.response_model)
-        if getattr(info, "finish_reason", None):
-            span.set("gen_ai.response.finish_reasons", [info.finish_reason])
+        if response_model := getattr(info, "response_model", None):
+            span.set("gen_ai.response.model", response_model)
+        if finish_reason := getattr(info, "finish_reason", None):
+            span.set("gen_ai.response.finish_reasons", [finish_reason])
         attempts = getattr(info, "attempts", None) or []
         span.set("kestrel.retries", getattr(info, "retries", 0))
         span.set("kestrel.fallback", len(attempts) > 1)
@@ -259,10 +286,17 @@ class Agent:
 
         def result_event(i: int, result: str, ran: bool, span: Span, decision: str = "") -> None:
             fn = calls[i].get("function") or {}
-            self.emit("tool_result", step=step, call_id=calls[i].get("id", ""), name=fn.get("name"),
-                      ok=not result.startswith("Error:") and decision not in ("rejected", "forbidden", "refused"),
-                      ran=ran, decision=decision, result=result[:MAX_EVENT_RESULT_CHARS],
-                      duration_ms=span.attributes.get("kestrel.tool.exec_ms", span.duration_ms))
+            self.emit(
+                "tool_result",
+                step=step,
+                call_id=calls[i].get("id", ""),
+                name=fn.get("name"),
+                ok=not result.startswith("Error:") and decision not in ("rejected", "forbidden", "refused"),
+                ran=ran,
+                decision=decision,
+                result=result[:MAX_EVENT_RESULT_CHARS],
+                duration_ms=span.attributes.get("kestrel.tool.exec_ms", span.duration_ms),
+            )
 
         for i, call in enumerate(calls):
             fn = call.get("function") or {}
@@ -278,13 +312,28 @@ class Agent:
                 span.set("kestrel.tool.ran", False)
                 span.fail(results[i])
                 span.end()
-                self.emit("tool_call", step=step, call_id=call.get("id", ""), name=fn.get("name"),
-                          arguments=fn.get("arguments") or "{}", risk=None, server=None, external=False)
+                self.emit(
+                    "tool_call",
+                    step=step,
+                    call_id=call.get("id", ""),
+                    name=fn.get("name"),
+                    arguments=fn.get("arguments") or "{}",
+                    risk=None,
+                    server=None,
+                    external=False,
+                )
                 result_event(i, results[i], False, span)
                 continue
-            self.emit("tool_call", step=step, call_id=call.get("id", ""), name=tool.name,
-                      arguments=fn.get("arguments") or "{}", risk=tool.risk, server=tool.server,
-                      external=tool.external)
+            self.emit(
+                "tool_call",
+                step=step,
+                call_id=call.get("id", ""),
+                name=tool.name,
+                arguments=fn.get("arguments") or "{}",
+                risk=tool.risk,
+                server=tool.server,
+                external=tool.external,
+            )
             span.set("kestrel.tool.risk", tool.risk)
             span.set("kestrel.tool.external", tool.external)
             if tool.server:
@@ -326,7 +375,7 @@ class Agent:
 
         if len(safe) > 1:
             with ThreadPoolExecutor(max_workers=min(len(safe), MAX_PARALLEL_TOOLS)) as pool:
-                for item, out in zip(safe, pool.map(run_one, safe)):
+                for item, out in zip(safe, pool.map(run_one, safe), strict=True):
                     results[item[0]] = out
         elif safe:
             results[safe[0][0]] = run_one(safe[0])
@@ -335,7 +384,7 @@ class Agent:
             results[item[0]] = run_one(item)
 
         if self.on_tool_step:  # report after, in order, so parallel output isn't interleaved
-            for call, result in zip(calls, results):
+            for call, result in zip(calls, results, strict=True):
                 fn = call.get("function") or {}
                 self.on_tool_step(fn.get("name", "?"), fn.get("arguments") or "{}", result)
         return results
@@ -348,4 +397,4 @@ class Agent:
             turn_starts = [i for i, m in enumerate(self.messages) if m.get("role") == "user"]
             if len(turn_starts) < 2:
                 return  # only the current turn is left; nothing safe to drop
-            del self.messages[turn_starts[0]:turn_starts[1]]
+            del self.messages[turn_starts[0] : turn_starts[1]]

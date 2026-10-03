@@ -34,7 +34,7 @@ export function DiffView({ preview }: { preview: string }) {
             <div
               key={i}
               className={cx(
-                "flex whitespace-pre-wrap break-all px-3",
+                "flex whitespace-pre-wrap px-3 [overflow-wrap:anywhere]",
                 kind === "add" && "bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200",
                 kind === "del" && "bg-red-50 text-red-900 dark:bg-red-950/40 dark:text-red-200",
                 kind === "hunk" && "bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300",

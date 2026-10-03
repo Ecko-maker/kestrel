@@ -4,6 +4,9 @@ export type Risk = "safe" | "confirm" | "forbidden";
 
 export interface SessionInfo {
   ok: boolean;
+  demo?: boolean;
+  demo_notice?: string | null;
+  demo_prompts?: string[];
   chat_available: boolean;
   problem: string | null;
   models: { provider: string; model: string }[];
@@ -94,7 +97,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "same-origin",
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...init?.headers },
   });
   if (response.status === 401) throw new AuthError("Open the link printed by `kestrel web`.");
   if (!response.ok) {

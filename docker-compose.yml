@@ -1,0 +1,31 @@
+# docker compose up                            -> uses your keys from .env
+# KESTREL_PROVIDERS=demo docker compose up     -> demo mode, no keys needed
+# Then open the link from `docker compose logs kestrel` (or set KESTREL_TOKEN in .env).
+
+services:
+  kestrel:
+    build: .
+    image: kestrel:local
+    env_file:
+      - path: .env
+        required: false # demo mode works without one
+    environment:
+      # ${VAR:-default}: your shell, then .env, then the default.
+      KESTREL_PROVIDERS: ${KESTREL_PROVIDERS:-gemini,groq,ollama}
+      KESTREL_TOKEN: ${KESTREL_TOKEN:-}
+      KESTREL_MCP: ${KESTREL_MCP:-on}
+      # Ollama running on your machine (outside the container).
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      # Inside the container the server listens on all of the *container's* interfaces.
+      # That is safe because the only way in is the port mapping below, which Docker binds
+      # to your machine's 127.0.0.1: nothing on your network can reach it.
+      KESTREL_HOST: 0.0.0.0
+      KESTREL_PORT: "8000"
+    ports:
+      - "127.0.0.1:8000:8000" # localhost only; never "8000:8000", which listens on every interface
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # built into Docker Desktop; needed on Linux
+    volumes:
+      - ./workspace:/app/workspace # your files, notes and outbox persist here
+      - ./logs:/app/logs # traces.db and approvals.jsonl persist here
+    restart: unless-stopped

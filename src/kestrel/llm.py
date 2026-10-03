@@ -10,14 +10,15 @@ import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 import openai
 from openai import OpenAI
 
 REQUEST_TIMEOUT = 60.0  # seconds per request; override with KESTREL_REQUEST_TIMEOUT
-MAX_TRIES = 3           # 1 try + 2 retries, waiting ~1s then ~2s
-MAX_RETRY_WAIT = 20.0   # a longer Retry-After means "come back later": hand over to the fallback
-COOLDOWN = 60.0         # after a provider fails, FallbackLLM tries the others first for this long
+MAX_TRIES = 3  # 1 try + 2 retries, waiting ~1s then ~2s
+MAX_RETRY_WAIT = 20.0  # a longer Retry-After means "come back later": hand over to the fallback
+COOLDOWN = 60.0  # after a provider fails, FallbackLLM tries the others first for this long
 
 
 @dataclass(frozen=True)
@@ -29,18 +30,23 @@ class Provider:
 
 
 PROVIDERS = {
-    "gemini": Provider("gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", "GEMINI_API_KEY", "gemini-3-flash"),
+    "gemini": Provider(
+        "gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", "GEMINI_API_KEY", "gemini-3-flash"
+    ),
     "groq": Provider("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY", "openai/gpt-oss-120b"),
     "ollama": Provider("ollama", "http://localhost:11434/v1", None, "qwen3:4b"),
+    # Scripted replies for trying Kestrel with no keys (see demo.py); not an API.
+    "demo": Provider("demo", "", None, "scripted"),
 }
 
 
 @dataclass
 class CallInfo:
     """What happened on the last chat() call, for tracing."""
+
     provider: str | None
     model: str | None
-    input_tokens: int | None = None   # None: the API didn't report usage
+    input_tokens: int | None = None  # None: the API didn't report usage
     output_tokens: int | None = None
     finish_reason: str | None = None
     response_model: str | None = None
@@ -95,7 +101,10 @@ class LLM:
         self.model = model or env_model or self.provider.default_model
         timeout = float(os.getenv("KESTREL_REQUEST_TIMEOUT", REQUEST_TIMEOUT))
         # max_retries=0: the SDK would otherwise retry silently; we do it ourselves, visibly.
-        self.client = OpenAI(base_url=self.provider.base_url, api_key=api_key, timeout=timeout, max_retries=0)
+        # <PROVIDER>_BASE_URL overrides the address, e.g. Ollama on the Docker host:
+        # OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+        base_url = os.getenv(f"{provider.upper()}_BASE_URL") or self.provider.base_url
+        self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0)
         self.on_retry = on_retry
         self.sleep = time.sleep  # swapped out in tests
         self.last_provider: str | None = None
@@ -110,9 +119,16 @@ class LLM:
                 return self.client.chat.completions.create(model=self.model, **kwargs)
             # Permanent: retrying can't help, so fail fast with a message that says what to fix.
             except (openai.AuthenticationError, openai.PermissionDeniedError) as e:
-                raise LLMError(name, f"API key rejected ({e.status_code}). Check {self.provider.key_env} in .env.") from e
+                raise LLMError(
+                    name, f"API key rejected ({e.status_code}). Check {self.provider.key_env} in .env."
+                ) from e
             except openai.NotFoundError as e:
-                raise LLMError(name, f"model '{self.model}' not found. See: kestrel --provider {name} --list-models") from e
+                hint = (
+                    f"Run: ollama pull {self.model}  (or set OLLAMA_MODEL)"
+                    if name == "ollama"
+                    else f"See: kestrel --provider {name} --list-models"
+                )
+                raise LLMError(name, f"model '{self.model}' not found. {hint}") from e
             # Temporary: rate limit, timeout, connection trouble, server error.
             except (openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError) as e:
                 reason = {
@@ -159,14 +175,14 @@ class LLM:
 
     supports_streaming = True
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             on_text: TextCallback | None = None) -> dict:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, on_text: TextCallback | None = None) -> dict:
         """Send the conversation plus tool schemas; return the assistant message as a dict
         with "content" (text or None) and, if the model wants tools, "tool_calls".
         With on_text, the reply is streamed and on_text gets each piece of text as it arrives."""
         kwargs = {"tools": tools} if tools else {}
         self.last_call = info = CallInfo(self.provider.name, self.model, attempts=[self.provider.name])
         prepared = self._prepare(messages)
+        out: dict
         if on_text is not None and self._streaming_ok:
             try:
                 out = self._chat_streaming(prepared, kwargs, on_text, info)
@@ -188,7 +204,7 @@ class LLM:
         info.finish_reason = getattr(response.choices[0], "finish_reason", None)
         info.response_model = getattr(response, "model", None)
         msg = response.choices[0].message
-        out: dict = {"role": "assistant", "content": msg.content}
+        out = {"role": "assistant", "content": msg.content}
         if msg.tool_calls:
             # model_dump keeps provider extras (e.g. Gemini's thought signatures).
             out["tool_calls"] = [tc.model_dump(exclude_none=True) for tc in msg.tool_calls]
@@ -228,8 +244,10 @@ class LLM:
                     on_text(delta.content)
                 for fragment in delta.tool_calls or []:
                     part = fragment.model_dump(exclude_none=True)
-                    slot = calls.setdefault(part.get("index", len(calls)),
-                                            {"id": None, "type": "function", "function": {"name": "", "arguments": ""}})
+                    slot = calls.setdefault(
+                        part.get("index", len(calls)),
+                        {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+                    )
                     slot["id"] = part.get("id") or slot["id"]
                     fn = part.get("function") or {}
                     if fn.get("name") and not slot["function"]["name"]:
@@ -257,6 +275,20 @@ class LLM:
 FallbackCallback = Callable[[str], None]
 
 
+class ChatBackend(Protocol):
+    """What FallbackLLM needs from each provider: LLM, or DemoLLM."""
+
+    provider: Any
+    model: str
+    last_call: CallInfo | None
+
+    def chat(
+        self, messages: list[dict], tools: list[dict] | None = None, on_text: TextCallback | None = None
+    ) -> dict: ...
+
+    def list_models(self) -> list[str]: ...
+
+
 class FallbackLLM:
     """Same chat() interface as LLM, but tries a chain of providers in order.
 
@@ -264,7 +296,7 @@ class FallbackLLM:
     straight to one that works, instead of paying its retry delays every time.
     """
 
-    def __init__(self, llms: list[LLM], on_fallback: FallbackCallback | None = None):
+    def __init__(self, llms: list[ChatBackend], on_fallback: FallbackCallback | None = None):
         if not llms:
             raise ValueError("FallbackLLM needs at least one provider")
         self.llms = llms
@@ -282,7 +314,7 @@ class FallbackLLM:
     def model(self) -> str:
         return self.llms[0].model
 
-    def _ordered(self) -> list[LLM]:
+    def _ordered(self) -> list[ChatBackend]:
         now = self.clock()
         up = [l for l in self.llms if self._down_until.get(l.provider.name, 0) <= now]
         return up + [l for l in self.llms if l not in up]  # cooling-down ones as a last resort
@@ -292,8 +324,7 @@ class FallbackLLM:
 
     supports_streaming = True
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None,
-             on_text: TextCallback | None = None) -> dict:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, on_text: TextCallback | None = None) -> dict:
         errors = []
         chain = self._ordered()
         self.last_call = summary = CallInfo(None, None)
@@ -331,8 +362,14 @@ def build_llm(
 ) -> tuple[FallbackLLM, list[str]]:
     """Build the provider chain. `model` applies to the first provider only. Providers that
     can't be set up (e.g. missing key) are skipped; their reasons are returned as warnings."""
-    llms, skipped = [], []
+    llms: list[ChatBackend] = []
+    skipped: list[str] = []
     for i, name in enumerate(names):
+        if name == "demo":
+            from kestrel.demo import DemoLLM
+
+            llms.append(DemoLLM())
+            continue
         try:
             llms.append(LLM(name, model if i == 0 else None, on_retry=on_retry))
         except LLMError as e:

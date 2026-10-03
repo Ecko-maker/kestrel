@@ -22,7 +22,9 @@ def test_schema_from_hints_and_docstring():
     assert params["required"] == ["query"]
     assert params["properties"]["query"] == {"type": "string", "description": "What to look for."}
     assert params["properties"]["max_results"] == {
-        "type": "integer", "description": "How many to return.", "default": 5,
+        "type": "integer",
+        "description": "How many to return.",
+        "default": 5,
     }
     assert params["properties"]["exact"] == {"type": "boolean", "default": False}
 
@@ -30,16 +32,29 @@ def test_schema_from_hints_and_docstring():
 def test_starter_tools_registered():
     risks = {name: t.risk for name, t in tools.registry.tools.items()}
     assert risks == {
-        "get_current_time": "safe", "calculator": "safe", "list_files": "safe", "read_file": "safe",
-        "web_search": "safe", "write_file": "confirm", "append_to_file": "confirm",
-        "create_note": "confirm", "send_message": "confirm", "delete_file": "forbidden",
+        "get_current_time": "safe",
+        "calculator": "safe",
+        "list_files": "safe",
+        "read_file": "safe",
+        "web_search": "safe",
+        "write_file": "confirm",
+        "append_to_file": "confirm",
+        "create_note": "confirm",
+        "send_message": "confirm",
+        "delete_file": "forbidden",
     }
 
 
 @pytest.mark.parametrize(
     "expr, expected",
-    [("0.175 * 2340", "409.5"), ("2,340 * 0.175", "409.5"), ("(1 + 2) ** 3", "27"),
-     ("-7 // 2", "-4"), ("sqrt(16) + abs(-1)", "5.0"), ("round(pi, 2)", "3.14")],
+    [
+        ("0.175 * 2340", "409.5"),
+        ("2,340 * 0.175", "409.5"),
+        ("(1 + 2) ** 3", "27"),
+        ("-7 // 2", "-4"),
+        ("sqrt(16) + abs(-1)", "5.0"),
+        ("round(pi, 2)", "3.14"),
+    ],
 )
 def test_calculator(expr, expected):
     assert tools.calculator(expr) == expected
@@ -47,8 +62,15 @@ def test_calculator(expr, expected):
 
 @pytest.mark.parametrize(
     "expr",
-    ["__import__('os').system('dir')", "open('x')", "(1).__class__", "[x for x in ()]",
-     "lambda: 1", "9 ** 99999", "'a' * 3"],
+    [
+        "__import__('os').system('dir')",
+        "open('x')",
+        "(1).__class__",
+        "[x for x in ()]",
+        "lambda: 1",
+        "9 ** 99999",
+        "'a' * 3",
+    ],
 )
 def test_calculator_rejects_code(expr):
     result = tools.registry.execute("calculator", {"expression": expr})
@@ -75,8 +97,18 @@ def test_read_and_list_inside_workspace(workspace):
 
 @pytest.mark.parametrize(
     "path",
-    ["../secrets.txt", "..\\secrets.txt", "sub/../../secrets.txt", "..\\..\\secrets",
-     "C:\\Windows\\win.ini", "/etc/passwd", "\\secrets.txt", ".env", "sub/../.env", ".env.local"],
+    [
+        "../secrets.txt",
+        "..\\secrets.txt",
+        "sub/../../secrets.txt",
+        "..\\..\\secrets",
+        "C:\\Windows\\win.ini",
+        "/etc/passwd",
+        "\\secrets.txt",
+        ".env",
+        "sub/../.env",
+        ".env.local",
+    ],
 )
 def test_read_file_blocks_escapes_and_env(workspace, path):
     result = tools.registry.execute("read_file", {"path": path})

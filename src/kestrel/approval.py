@@ -14,11 +14,12 @@ import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
 from kestrel.tools import Tool, forbidden_message
+from kestrel.tracing import redact, redact_value
 
 AUDIT_LOG = Path("logs") / "approvals.jsonl"
 MAX_EDITS = 5
@@ -27,8 +28,8 @@ MAX_EDITS = 5
 @dataclass
 class Decision:
     status: Literal["approved", "edited", "rejected"]
-    args: dict | None = None   # for "edited": the revised arguments, to be previewed again
-    reason: str = ""           # for "rejected": passed back to the model
+    args: dict | None = None  # for "edited": the revised arguments, to be previewed again
+    reason: str = ""  # for "rejected": passed back to the model
     for_session: bool = False  # for "approved": don't ask again for this tool this session
 
 
@@ -47,21 +48,25 @@ class DenyAllApprover:
 class GateResult:
     args: dict | None  # the arguments to run with, or None if the call must not run
     message: str = ""  # tool result to send the model when it doesn't run
-    note: str = ""     # prefix for the tool result when it does run (e.g. "the user edited this")
-    decision: str = "" # for tracing: approved / edited / rejected / forbidden / session-approved / refused
+    note: str = ""  # prefix for the tool result when it does run (e.g. "the user edited this")
+    decision: str = ""  # for tracing: approved / edited / rejected / forbidden / session-approved / refused
     reason: str = ""
 
 
 def _summarize(args: dict, limit: int = 120) -> dict:
     """Arguments for the audit log, with long text shortened."""
-    return {k: (v if not isinstance(v, str) or len(v) <= limit else f"{v[:limit]}... ({len(v):,} chars)")
-            for k, v in args.items()}
+    return {
+        k: (v if not isinstance(v, str) or len(v) <= limit else f"{v[:limit]}... ({len(v):,} chars)")
+        for k, v in args.items()
+    }
 
 
 def rejection_message(tool_name: str, reason: str) -> str:
     because = f" Their reason: {reason!r}." if reason else " They gave no reason; ask them what they'd prefer."
-    return (f"The user REJECTED this {tool_name} call, so it did not run.{because} "
-            f"Do not repeat the same call. Adapt to their reason, or ask them how to proceed.")
+    return (
+        f"The user REJECTED this {tool_name} call, so it did not run.{because} "
+        f"Do not repeat the same call. Adapt to their reason, or ask them how to proceed."
+    )
 
 
 class ApprovalGate:
@@ -95,15 +100,20 @@ class ApprovalGate:
                 revised = decision.args if decision.args is not None else args
                 if problem := tool.check_args(revised):
                     self.record(tool.name, revised, "rejected", f"invalid edit: {problem}")
-                    return GateResult(None, rejection_message(tool.name, f"their edit was invalid ({problem})"),
-                                      decision="rejected", reason=f"invalid edit: {problem}")
+                    return GateResult(
+                        None,
+                        rejection_message(tool.name, f"their edit was invalid ({problem})"),
+                        decision="rejected",
+                        reason=f"invalid edit: {problem}",
+                    )
                 args, edited = dict(revised), edited or revised != original
                 continue  # show the new preview and ask again
 
             if decision.status == "rejected":
                 self.record(tool.name, args, "rejected", decision.reason)
-                return GateResult(None, rejection_message(tool.name, decision.reason),
-                                  decision="rejected", reason=decision.reason)
+                return GateResult(
+                    None, rejection_message(tool.name, decision.reason), decision="rejected", reason=decision.reason
+                )
 
             status = "edited" if edited and args != original else "approved"
             if decision.for_session and tool.allow_session:  # never for e.g. send_message
@@ -111,20 +121,25 @@ class ApprovalGate:
             self.record(tool.name, args, status, session=decision.for_session and tool.allow_session)
             note = ""
             if status == "edited":
-                note = f"Note: the user edited this call before approving it. It ran with: {json.dumps(_summarize(args))}\n"
+                ran_with = json.dumps(_summarize(args))
+                note = f"Note: the user edited this call before approving it. It ran with: {ran_with}\n"
             return GateResult(args, note=note, decision=status)
 
         self.record(tool.name, args, "rejected", "too many edits")
-        return GateResult(None, rejection_message(tool.name, "too many edits without a decision"),
-                          decision="rejected", reason="too many edits")
+        return GateResult(
+            None,
+            rejection_message(tool.name, "too many edits without a decision"),
+            decision="rejected",
+            reason="too many edits",
+        )
 
     def record(self, tool_name: str, args: dict, decision: str, reason: str = "", session: bool = False) -> None:
-        entry = {
-            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        entry: dict[str, object] = {
+            "time": datetime.now(UTC).isoformat(timespec="seconds"),
             "tool": tool_name,
-            "args": _summarize(args),
+            "args": redact_value(_summarize(args)),  # same key redaction as traces
             "decision": decision,
-            "reason": reason,
+            "reason": redact(reason),
         }
         if session:
             entry["session"] = True
@@ -136,7 +151,14 @@ class ApprovalGate:
 # --- Terminal UI --------------------------------------------------------------
 
 RED, GREEN, CYAN, YELLOW, BOLD, DIM, RESET = (
-    "\033[31m", "\033[32m", "\033[36m", "\033[33m", "\033[1m", "\033[2m", "\033[0m")
+    "\033[31m",
+    "\033[32m",
+    "\033[36m",
+    "\033[33m",
+    "\033[1m",
+    "\033[2m",
+    "\033[0m",
+)
 
 
 def colorize(preview: str) -> str:

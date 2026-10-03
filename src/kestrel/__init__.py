@@ -1,6 +1,7 @@
 """Kestrel: a personal AI agent. Step 7: a web console."""
 
 import argparse
+import io
 import json
 import os
 import sys
@@ -10,6 +11,7 @@ from dotenv import load_dotenv
 
 from kestrel.agent import MAX_CONTEXT_TOKENS, Agent
 from kestrel.approval import ApprovalGate, TerminalApprover
+from kestrel.demo import DEMO_NOTICE, DEMO_PROMPTS
 from kestrel.llm import PROVIDERS, LLMError, build_llm
 from kestrel.mcp_client import MCPManager, load_config
 from kestrel.tools import registry
@@ -27,7 +29,7 @@ def format_call(name: str, args_json: str) -> str:
     try:
         args = json.loads(args_json or "{}")
         shown = ", ".join(f"{k}={json.dumps(v, ensure_ascii=False)}" for k, v in args.items())
-    except (json.JSONDecodeError, AttributeError):
+    except json.JSONDecodeError, AttributeError:
         shown = args_json
     return f"{name}({shown})"
 
@@ -37,9 +39,9 @@ class TerminalEvents:
 
     def __init__(self, debug: bool = False):
         self.debug = debug
-        self.open_line = False              # mid-way through printing streamed text
+        self.open_line = False  # mid-way through printing streamed text
         self.streamed: dict[int, str] = {}  # step -> text streamed in that step
-        self.args: dict[str, str] = {}      # call_id -> arguments, for the [tool] line
+        self.args: dict[str, str] = {}  # call_id -> arguments, for the [tool] line
 
     def _end_line(self) -> None:
         if self.open_line:
@@ -78,7 +80,7 @@ def provider_chain(cli_provider: str | None) -> list[str]:
     """--provider pins one provider; otherwise KESTREL_PROVIDERS (e.g. "gemini,groq,ollama")."""
     if cli_provider:
         return [cli_provider]
-    names = [n.strip().lower() for n in os.getenv("KESTREL_PROVIDERS", "gemini").split(",") if n.strip()]
+    names = [n.strip().lower() for n in (os.getenv("KESTREL_PROVIDERS") or "gemini").split(",") if n.strip()]
     unknown = [n for n in names if n not in PROVIDERS]
     if unknown:
         sys.exit(f"KESTREL_PROVIDERS has unknown provider(s) {unknown}. Choose from: {', '.join(PROVIDERS)}")
@@ -111,16 +113,23 @@ def run_report(args: argparse.Namespace, tracer: Tracer) -> None:
         elif args.command == "export":
             out = Path(args.out)
             written, skipped = trace_report.export(conn, args.rated, out, registry.schemas())
-            print(f"Wrote {written} trace(s) to {out}" + (f" ({skipped} skipped: no stored text or errored)" if skipped else ""))
+            print(
+                f"Wrote {written} trace(s) to {out}"
+                + (f" ({skipped} skipped: no stored text, errored, or demo)" if skipped else "")
+            )
 
 
 def main() -> None:
     load_dotenv()  # reads your API keys from the .env file
-    sys.stdout.reconfigure(errors="replace")  # odd characters in files/web results can't crash printing
+    if isinstance(sys.stdout, io.TextIOWrapper):  # odd characters in files/web results can't crash printing
+        sys.stdout.reconfigure(errors="replace")
 
     parser = argparse.ArgumentParser(prog="kestrel", description="Chat with Kestrel, or inspect its traces.")
-    parser.add_argument("--provider", choices=list(PROVIDERS),
-                        help="use only this provider (default: the KESTREL_PROVIDERS chain from .env)")
+    parser.add_argument(
+        "--provider",
+        choices=list(PROVIDERS),
+        help="use only this provider (default: the KESTREL_PROVIDERS chain from .env)",
+    )
     parser.add_argument("--model", help="override the first provider's default model")
     parser.add_argument("--list-models", action="store_true", help="show available model IDs")
     parser.add_argument("--debug", action="store_true", help="print full JSON of each tool call and result")
@@ -132,12 +141,14 @@ def main() -> None:
     p.add_argument("id", help="trace id or its first few characters")
     sub.add_parser("stats", help="latency, tokens, cost, tools, error and fallback rates, ratings")
     p = sub.add_parser("web", help="open the web console (chat, approvals, traces, stats)")
-    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--port", type=int, default=int(os.getenv("KESTREL_PORT", "8765")))
     p.add_argument("--build", action="store_true", help="build the frontend first (needs Node.js)")
     p = sub.add_parser("export", help="export traces as chat-format JSONL")
     p.add_argument("--rated", choices=["good", "bad", "any"], default="good")
     p.add_argument("--out", default="data/traces.jsonl")
     args = parser.parse_args()
+    if os.getenv("KESTREL_MCP", "on").strip().lower() in ("off", "0", "false", "no"):
+        args.no_mcp = True
 
     tracer = Tracer()
     if args.command == "web":
@@ -180,7 +191,8 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     llm, problem = None, None
     try:
         llm, skipped = build_llm(
-            provider_chain(args.provider), args.model,
+            provider_chain(args.provider),
+            args.model,
             on_retry=lambda p, reason, wait: dim(f"[retry] {p} {reason}; waiting {wait:.1f}s"),
             on_fallback=lambda msg: print(f"{YELLOW}[fallback] {msg}{RESET}"),
         )
@@ -194,21 +206,37 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     def make_agent(on_event, approver):
         if llm is None:
             raise RuntimeError(problem)
-        return Agent(llm, on_event=on_event, gate=ApprovalGate(approver), tracer=tracer,
-                     max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)))
+        return Agent(
+            llm,
+            on_event=on_event,
+            gate=ApprovalGate(approver),
+            tracer=tracer,
+            max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)),
+        )
 
+    demo = llm is not None and any(l.provider.name == "demo" for l in llm.llms)
     info = {
+        "demo": demo,
+        "demo_notice": DEMO_NOTICE if demo else None,
+        "demo_prompts": DEMO_PROMPTS if demo else [],
         "chat_available": llm is not None,
         "problem": problem,
         "models": [{"provider": l.provider.name, "model": l.model} for l in llm.llms] if llm else [],
         "tools": [{"name": t.name, "risk": t.risk, "server": t.server} for t in registry.tools.values()],
     }
-    config = WebConfig(port=args.port, session_info=info)
+    extra_hosts = tuple(h.strip() for h in os.getenv("KESTREL_ALLOWED_HOSTS", "").split(",") if h.strip())
+    config = WebConfig(
+        port=args.port, host=os.getenv("KESTREL_HOST", "127.0.0.1"), session_info=info, extra_hosts=extra_hosts
+    )
+    if token := os.getenv("KESTREL_TOKEN"):  # a fixed token, e.g. so a Docker container keeps the same link
+        config.token = token
     app = create_app(make_agent, tracer, config)
     print(f"Kestrel console: {config.url()}", flush=True)
+    if demo:
+        print(f"{YELLOW}{DEMO_NOTICE}{RESET}", flush=True)
     dim("Only this machine can connect; the token in the link is your key. Ctrl+C to stop.")
     try:
-        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+        uvicorn.run(app, host=config.host, port=args.port, log_level="warning")
     finally:
         if mcp:
             mcp.close()
@@ -224,7 +252,9 @@ def start_mcp() -> MCPManager | None:
     if not config or not config.servers:
         return None
     dim(f"[mcp] starting {', '.join(s.name for s in config.servers)}...")
-    manager = MCPManager.from_config(config, on_problem=lambda server, msg: print(f"{YELLOW}[mcp] {server} {msg}{RESET}"))
+    manager = MCPManager.from_config(
+        config, on_problem=lambda server, msg: print(f"{YELLOW}[mcp] {server} {msg}{RESET}")
+    )
     manager.start()
     added = manager.register_tools(registry, config.safe_tools)
     for name in sorted(config.safe_tools - {t.name for t in added}):
@@ -244,6 +274,8 @@ def chat(llm, tracer: Tracer, args: argparse.Namespace) -> None:
     )
     chain = " -> ".join(f"{l.provider.name} / {l.model}" for l in llm.llms)
     print(f"Kestrel is listening ({chain}). Type 'exit' to quit; rate answers with /good or /bad [note].")
+    if any(l.provider.name == "demo" for l in llm.llms):
+        print(f"{YELLOW}{DEMO_NOTICE} Try: {DEMO_PROMPTS[3]!r}{RESET}")
     if not tracer.record_content:
         dim("[trace] KESTREL_TRACE_CONTENT=off: recording timings and token counts only")
     last_trace: str | None = None
@@ -251,7 +283,7 @@ def chat(llm, tracer: Tracer, args: argparse.Namespace) -> None:
     while True:
         try:
             user_text = input("\nyou > ").strip()
-        except (EOFError, KeyboardInterrupt):  # input ran out, Ctrl+Z, or Ctrl+C
+        except EOFError, KeyboardInterrupt:  # input ran out, Ctrl+Z, or Ctrl+C
             break
         if user_text.lower() in {"exit", "quit"}:
             break
@@ -276,8 +308,12 @@ def chat(llm, tracer: Tracer, args: argparse.Namespace) -> None:
             dim("\n[interrupted]")
             continue
         last_trace = result.trace_id
-        details = [f"trace {result.trace_id[:8]}", f"{result.steps} step(s)", f"{result.tokens:,} tokens",
-                   f"{(result.duration_ms or 0) / 1000:.1f}s"]
+        details = [
+            f"trace {(result.trace_id or '?')[:8]}",
+            f"{result.steps} step(s)",
+            f"{result.tokens:,} tokens",
+            f"{(result.duration_ms or 0) / 1000:.1f}s",
+        ]
         primary = llm.provider.name
         if result.stop_reason != "answered":
             details.insert(1, result.stop_reason)

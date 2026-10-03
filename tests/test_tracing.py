@@ -2,25 +2,30 @@
 
 import json
 import sqlite3
+from contextlib import closing
 
 import pytest
 
-from kestrel import trace_report
+from kestrel import parse_feedback, trace_report
 from kestrel.agent import Agent
 from kestrel.approval import ApprovalGate, Decision
 from kestrel.llm import CallInfo, LLMError
 from kestrel.tools import ToolRegistry
 from kestrel.tracing import REDACTED, Tracer, redact
-from kestrel import parse_feedback
 
-PRICES = {"fakeprov": {"fake-model": {"actual_input": 0.0, "actual_output": 0.0,
-                                      "list_input": 1.0, "list_output": 10.0}}}
+PRICES = {
+    "fakeprov": {"fake-model": {"actual_input": 0.0, "actual_output": 0.0, "list_input": 1.0, "list_output": 10.0}}
+}
 SECRET = "gsk_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4"
 
 
 def call(call_id, name, **args):
-    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)},
-            "extra_content": {"google": {"thought_signature": "sig"}}}
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(args)},
+        "extra_content": {"google": {"thought_signature": "sig"}},
+    }
 
 
 class FakeLLM:
@@ -36,8 +41,9 @@ class FakeLLM:
     def chat(self, messages, tools=None):
         reply = self.replies.pop(0)
         tokens = self.usage.pop(0) if self.usage else (None, None)
-        self.last_call = CallInfo(self.provider_name, self.model, *tokens, finish_reason="stop",
-                                  attempts=[self.provider_name])
+        self.last_call = CallInfo(
+            self.provider_name, self.model, *tokens, finish_reason="stop", attempts=[self.provider_name]
+        )
         if isinstance(reply, Exception):
             raise reply
         return reply
@@ -78,19 +84,30 @@ def make_agent(llm, registry, tracer, tmp_path, *decisions):
     return Agent(llm, tools=registry, tracer=tracer, gate=gate)
 
 
+def dump_db(path) -> str:
+    with closing(sqlite3.connect(path)) as conn:
+        return "\n".join(conn.iterdump())
+
+
 def rows(tracer, sql, *params):
     with tracer.connect() as conn:
         return conn.execute(sql, params).fetchall()
 
 
 def spans_of(tracer, trace_id):
-    return [dict(r) | {"attributes": json.loads(r["attributes"])}
-            for r in rows(tracer, "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time", trace_id)]
+    return [
+        dict(r) | {"attributes": json.loads(r["attributes"])}
+        for r in rows(tracer, "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time", trace_id)
+    ]
 
 
 def tool_turn(tmp_path, registry, tracer, *decisions):
     llm = FakeLLM(
-        {"role": "assistant", "content": None, "tool_calls": [call("c1", "lookup", q="x"), call("c2", "save", text="hi")]},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [call("c1", "lookup", q="x"), call("c2", "save", text="hi")],
+        },
         {"role": "assistant", "content": "All done."},
         usage=[(100, 10), (200, 20)],
     )
@@ -102,12 +119,16 @@ def test_run_creates_the_right_span_tree(tmp_path, registry, tracer):
     spans = spans_of(tracer, result.trace_id)
     by_id = {s["span_id"]: s for s in spans}
     shape = sorted((s["name"], by_id[s["parent_id"]]["name"] if s["parent_id"] else None) for s in spans)
-    assert shape == sorted([
-        ("agent_run", None),
-        ("llm_call", "agent_run"), ("llm_call", "agent_run"),
-        ("tool_call", "agent_run"), ("tool_call", "agent_run"),
-        ("approval", "tool_call"),
-    ])
+    assert shape == sorted(
+        [
+            ("agent_run", None),
+            ("llm_call", "agent_run"),
+            ("llm_call", "agent_run"),
+            ("tool_call", "agent_run"),
+            ("tool_call", "agent_run"),
+            ("approval", "tool_call"),
+        ]
+    )
     assert len({s["trace_id"] for s in spans}) == 1
     assert all(s["duration_ms"] is not None and s["end_time"] >= s["start_time"] for s in spans)
 
@@ -185,7 +206,7 @@ def test_secrets_never_reach_the_database(tmp_path, registry, tracer, monkeypatc
     monkeypatch.setenv("MY_SERVICE_TOKEN", "plain-looking-value-42")
     llm = FakeLLM({"role": "assistant", "content": f"echo {SECRET} and plain-looking-value-42"})
     make_agent(llm, registry, tracer, tmp_path).run(f"remember {SECRET}")
-    dump = "\n".join(sqlite3.connect(tracer.db_path).iterdump())
+    dump = dump_db(tracer.db_path)
     assert SECRET not in dump and "plain-looking-value-42" not in dump
     assert REDACTED in dump
 
@@ -199,7 +220,7 @@ def test_content_off_stores_no_text(tmp_path, registry):
     )
     result = make_agent(llm, registry, tracer, tmp_path).run("find the pineapple please")
     tracer.rate(result.trace_id, "good", "pineapple was great")
-    dump = "\n".join(sqlite3.connect(tracer.db_path).iterdump())
+    dump = dump_db(tracer.db_path)
     assert "pineapple" not in dump
     [t] = rows(tracer, "SELECT * FROM traces")
     assert t["user_message"] is None and t["messages"] is None and t["input_tokens"] == 300
@@ -277,8 +298,11 @@ def test_tracing_failure_never_breaks_the_agent(tmp_path, registry, capsys):
 
 
 def test_export_only_trains_on_the_rated_turn(tmp_path, registry, tracer):
-    llm = FakeLLM({"role": "assistant", "content": "bad old answer"}, {"role": "assistant", "content": "good answer"},
-                  usage=[(1, 1), (1, 1)])
+    llm = FakeLLM(
+        {"role": "assistant", "content": "bad old answer"},
+        {"role": "assistant", "content": "good answer"},
+        usage=[(1, 1), (1, 1)],
+    )
     agent = make_agent(llm, registry, tracer, tmp_path)
     tracer.rate(agent.run("first").trace_id, "bad")
     tracer.rate(agent.run("second").trace_id, "good")

@@ -32,8 +32,8 @@ from zoneinfo import ZoneInfo
 # Python type -> JSON Schema type
 JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean", list: "array", dict: "object"}
 
-TOOL_TIMEOUT = 20.0        # seconds a single tool call may run
-MAX_RESULT_CHARS = 8_000   # longer results are cut so one tool can't flood the context window
+TOOL_TIMEOUT = 20.0  # seconds a single tool call may run
+MAX_RESULT_CHARS = 8_000  # longer results are cut so one tool can't flood the context window
 MAX_WRITE_CHARS = 100_000  # largest file content a write tool accepts
 
 Risk = Literal["safe", "confirm", "forbidden"]
@@ -94,13 +94,13 @@ class Tool:
     schema: dict
     risk: Risk = "safe"
     preview: Callable[[dict], str] | None = None  # shows the user what a risky call will do
-    allow_session: bool = True                    # may the user approve it for the whole session?
-    untrusted_output: bool = False                # result comes from files/web: label it as data
+    allow_session: bool = True  # may the user approve it for the whole session?
+    untrusted_output: bool = False  # result comes from files/web: label it as data
     # External (MCP) tools: their schema comes from the server, not a Python signature.
     external: bool = False
     server: str | None = None
-    annotations: dict | None = None               # what the server *claims*; shown, never trusted
-    available: Callable[[], bool] | None = None   # False once its server has died
+    annotations: dict | None = None  # what the server *claims*; shown, never trusted
+    available: Callable[[], bool] | None = None  # False once its server has died
 
     def is_available(self) -> bool:
         return self.available is None or self.available()
@@ -163,7 +163,9 @@ def parse_arguments(arguments: str | dict | None) -> dict:
         if isinstance(args, str):  # some models double-encode the JSON as a string
             args = json.loads(args)
     except json.JSONDecodeError as e:
-        raise ToolCallError(f"arguments are not valid JSON ({e.msg} at position {e.pos}): {arguments[:200]!r}") from None
+        raise ToolCallError(
+            f"arguments are not valid JSON ({e.msg} at position {e.pos}): {arguments[:200]!r}"
+        ) from None
     if not isinstance(args, dict):
         raise ToolCallError(f'arguments must be a JSON object like {{"name": value}}, got {type(args).__name__}')
     return args
@@ -192,8 +194,10 @@ def _run_with_timeout(func: Callable[..., Any], args: dict, timeout: float) -> A
 
 def forbidden_message(tool: Tool, args: dict) -> str:
     shown = ", ".join(f"{k}={v!r}" for k, v in args.items())
-    return (f"Refused: '{tool.name}' is forbidden, so Kestrel will never run it ({shown}). "
-            f"Tell the user they can do this themselves if they want to.")
+    return (
+        f"Refused: '{tool.name}' is forbidden, so Kestrel will never run it ({shown}). "
+        f"Tell the user they can do this themselves if they want to."
+    )
 
 
 class ToolRegistry:
@@ -248,8 +252,19 @@ class ToolRegistry:
             description += " Requires the user's approval; they may edit or reject it."
         parameters = input_schema if input_schema.get("type") == "object" else {"type": "object", "properties": {}}
         schema = {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
-        tool = Tool(name, func, schema, risk, preview, allow_session=True, untrusted_output=True,
-                    external=True, server=server, annotations=annotations, available=available)
+        tool = Tool(
+            name,
+            func,
+            schema,
+            risk,
+            preview,
+            allow_session=True,
+            untrusted_output=True,
+            external=True,
+            server=server,
+            annotations=annotations,
+            available=available,
+        )
         self.tools[name] = tool
         return tool
 
@@ -288,14 +303,18 @@ class ToolRegistry:
         try:
             result = _run_with_timeout(tool.func, args, self.timeout)
         except ExternalToolError as e:
-            return (f'Error: {name} reported a failure. Its message:\n<untrusted_data source="{name}">\n{e}\n'
-                    f"</untrusted_data>\n{UNTRUSTED_NOTE}")
+            return (
+                f'Error: {name} reported a failure. Its message:\n<untrusted_data source="{name}">\n{e}\n'
+                f"</untrusted_data>\n{UNTRUSTED_NOTE}"
+            )
         except Exception as e:
             return f"Error: {type(e).__name__}: {e}"
         text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
         if len(text) > self.max_result_chars:
-            text = (text[: self.max_result_chars]
-                    + f"\n...[truncated: showing {self.max_result_chars:,} of {len(text):,} characters]")
+            text = (
+                text[: self.max_result_chars]
+                + f"\n...[truncated: showing {self.max_result_chars:,} of {len(text):,} characters]"
+            )
         if tool.untrusted_output:
             text = f'<untrusted_data source="{name}">\n{text}\n</untrusted_data>\n{UNTRUSTED_NOTE}'
         return text
@@ -319,12 +338,18 @@ def get_current_time(timezone: str) -> str:
     return now.strftime("%A %Y-%m-%d %H:%M:%S %Z (UTC%z)")
 
 
-_OPERATORS = {
-    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
-    ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod, ast.Pow: operator.pow,
-    ast.USub: operator.neg, ast.UAdd: operator.pos,
+_OPERATORS: dict[type, Callable[..., Any]] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
 }
-_FUNCTIONS = {"sqrt": math.sqrt, "abs": abs, "round": round, "min": min, "max": max}
+_FUNCTIONS: dict[str, Callable[..., Any]] = {"sqrt": math.sqrt, "abs": abs, "round": round, "min": min, "max": max}
 _CONSTANTS = {"pi": math.pi, "e": math.e}
 
 
@@ -365,9 +390,12 @@ WORKSPACE = Path(os.getenv("KESTREL_WORKSPACE", "workspace")).resolve()
 
 
 def _safe_path(path: str) -> Path:
-    """Resolve a path inside WORKSPACE, refusing anything that escapes it or is a .env file."""
-    p = Path(path)
-    if p.anchor:  # absolute ("C:\...", "/etc") or drive/root-relative ("C:x", "\x")
+    """Resolve a path inside WORKSPACE, refusing anything that escapes it or is a .env file.
+    Backslashes count as separators and drive letters as absolute on every OS, so the same
+    input is judged the same way on Windows and Linux."""
+    normalized = path.replace("\\", "/")
+    p = Path(normalized)
+    if p.anchor or re.match(r"^[A-Za-z]:", normalized):  # "/etc", "C:\...", "C:x", "\x"
         raise PermissionError("absolute paths are not allowed; use a path inside the workspace")
     root = WORKSPACE.resolve()
     target = (root / p).resolve()
@@ -443,8 +471,9 @@ def _diff_preview(target: Path, new_text: str) -> str:
         body = "\n".join(f"+{line}" for line in new_text.splitlines())
         return f"New file: {_rel(target)}\n{body}"
     old = _read_or_empty(target)
-    diff = difflib.unified_diff(old.splitlines(), new_text.splitlines(),
-                                f"{_rel(target)} (current)", f"{_rel(target)} (after)", lineterm="")
+    diff = difflib.unified_diff(
+        old.splitlines(), new_text.splitlines(), f"{_rel(target)} (current)", f"{_rel(target)} (after)", lineterm=""
+    )
     return "\n".join(diff) or f"{_rel(target)}: no changes"
 
 
@@ -534,8 +563,10 @@ def _check_message(to: str, subject: str, body: str) -> None:
 def _message_preview(args: dict) -> str:
     _check_message(args["to"], args["subject"], args["body"])
     rule = "-" * 60
-    return (f"To:      {args['to'].strip()}\nSubject: {args['subject']}\n{rule}\n{args['body'].rstrip()}\n{rule}\n"
-            "(Simulated: on approval this is saved to workspace/outbox/, not actually sent.)")
+    return (
+        f"To:      {args['to'].strip()}\nSubject: {args['subject']}\n{rule}\n{args['body'].rstrip()}\n{rule}\n"
+        "(Simulated: on approval this is saved to workspace/outbox/, not actually sent.)"
+    )
 
 
 @tool(risk="confirm", preview=_message_preview, allow_session=False)
@@ -551,8 +582,9 @@ def send_message(to: str, subject: str, body: str) -> str:
     stamp = datetime.now()
     target = _safe_path("outbox") / f"{stamp:%Y%m%d-%H%M%S}-{_slug(to, 'message')}.md"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(f"To: {to.strip()}\nSubject: {subject}\nDate: {stamp:%Y-%m-%d %H:%M:%S}\n\n{body.rstrip()}\n",
-                      encoding="utf-8")
+    target.write_text(
+        f"To: {to.strip()}\nSubject: {subject}\nDate: {stamp:%Y-%m-%d %H:%M:%S}\n\n{body.rstrip()}\n", encoding="utf-8"
+    )
     return f"Message to {to.strip()} sent (simulated: saved to {_rel(target)})"
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChartGantt, Search, ThumbsDown, ThumbsUp } from "lucide-react";
 import { api, rateTrace, type Span, type TraceDetail, type TraceRow } from "../api";
 import { fmtInt, fmtMs, fmtTime, fmtUsd } from "../format";
@@ -220,8 +220,16 @@ function Waterfall({ spans }: { spans: Span[] }) {
 function TraceView({ id, back }: { id: string; back: () => void }) {
   const [trace, setTrace] = useState<TraceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const load = () => api<TraceDetail>(`/api/traces/${id}`).then(setTrace).catch((e) => setError(String(e.message ?? e)));
-  useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = useCallback(
+    () =>
+      api<TraceDetail>(`/api/traces/${id}`)
+        .then(setTrace)
+        .catch((e) => setError(String(e.message ?? e))),
+    [id],
+  );
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const rate = async (rating: "good" | "bad") => {
     await rateTrace(id, rating, trace?.rating_note ?? "");

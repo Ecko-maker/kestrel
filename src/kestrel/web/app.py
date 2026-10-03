@@ -45,6 +45,9 @@ AgentFactory = Callable[[EventCallback, WebApprover], Agent]
 class WebConfig:
     token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     port: int = 8765
+    # 127.0.0.1 normally. In Docker it's 0.0.0.0 *inside the container*, and compose
+    # publishes the port on the host's 127.0.0.1 only (see docker-compose.yml).
+    host: str = "127.0.0.1"
     static_dir: Path | None = STATIC_DIR
     approval_timeout: float = APPROVAL_TIMEOUT
     session_info: dict = field(default_factory=dict)  # shown in the console header
@@ -56,7 +59,8 @@ class WebConfig:
 
     @property
     def allowed_origins(self) -> set[str]:
-        return {f"http://127.0.0.1:{self.port}", f"http://localhost:{self.port}", *DEV_ORIGINS}
+        extra = {f"http://{h}" for h in self.extra_hosts}
+        return {f"http://127.0.0.1:{self.port}", f"http://localhost:{self.port}", *DEV_ORIGINS, *extra}
 
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}/?{urlencode({'token': self.token})}"
@@ -79,19 +83,22 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
     app.state.config = config
 
     def token_ok(candidate: str | None) -> bool:
-        return bool(candidate) and secrets.compare_digest(candidate, config.token)
+        return candidate is not None and secrets.compare_digest(candidate, config.token)
 
     def authorized(headers, cookies, query) -> bool:
         bearer = headers.get("authorization", "")
-        return (token_ok(cookies.get(COOKIE)) or token_ok(query.get("token"))
-                or token_ok(bearer.removeprefix("Bearer ") if bearer.startswith("Bearer ") else None))
+        return (
+            token_ok(cookies.get(COOKIE))
+            or token_ok(query.get("token"))
+            or token_ok(bearer.removeprefix("Bearer ") if bearer.startswith("Bearer ") else None)
+        )
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
         if request.headers.get("host") not in config.allowed_hosts:
             return JSONResponse({"detail": "invalid host"}, status_code=400)
-        if request.method == "OPTIONS":  # CORS preflight carries no credentials
-            return await call_next(request)
+        if request.method == "OPTIONS" or request.url.path == "/healthz":
+            return await call_next(request)  # CORS preflight and health checks carry no credentials
         if not authorized(request.headers, request.cookies, request.query_params):
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "missing or invalid token"}, status_code=401)
@@ -105,10 +112,20 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
             response.set_cookie(COOKIE, config.token, httponly=True, samesite="strict", path="/")
         return response
 
-    app.add_middleware(CORSMiddleware, allow_origins=list(DEV_ORIGINS), allow_credentials=True,
-                       allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(DEV_ORIGINS),
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
     # --- REST -------------------------------------------------------------------
+
+    @app.get("/healthz")
+    def healthz() -> dict:
+        """For Docker and CI: is the server up? Reveals nothing else."""
+        return {"ok": True}
 
     @app.get("/api/session")
     def session() -> dict:
@@ -126,7 +143,10 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
         except LookupError as e:
             raise HTTPException(404, str(e)) from None
         with tracer.connect() as conn:
-            return trace_report.get_trace(conn, full_id)
+            found = trace_report.get_trace(conn, full_id)
+        if found is None:  # deleted between the lookup and the read
+            raise HTTPException(404, f"no trace {full_id}")
+        return found
 
     @app.get("/api/stats")
     def stats() -> dict:
@@ -148,9 +168,11 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
     @app.websocket("/ws")
     async def chat(ws: WebSocket):
         origin = ws.headers.get("origin")
-        if (ws.headers.get("host") not in config.allowed_hosts
-                or (origin is not None and origin not in config.allowed_origins)
-                or not authorized(ws.headers, ws.cookies, ws.query_params)):
+        if (
+            ws.headers.get("host") not in config.allowed_hosts
+            or (origin is not None and origin not in config.allowed_origins)
+            or not authorized(ws.headers, ws.cookies, ws.query_params)
+        ):
             await ws.close(code=1008)  # policy violation: refused before the handshake completes
             return
         await ws.accept()
@@ -191,7 +213,7 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
                     running = asyncio.create_task(asyncio.to_thread(agent.run, text))
                 elif kind == "approval_response":
                     approver.resolve(str(message.get("approval_id")), message)
-        except (WebSocketDisconnect, RuntimeError):
+        except WebSocketDisconnect, RuntimeError:
             pass
         finally:
             approver.close()  # anything waiting for an answer is rejected; the agent finishes on its own
@@ -201,6 +223,7 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
 
     static_dir = config.static_dir
     if static_dir and static_dir.is_dir():
+
         @app.get("/{path:path}")
         def frontend(path: str):
             file = (static_dir / path).resolve()
@@ -208,9 +231,12 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
                 return FileResponse(file)
             return FileResponse(static_dir / "index.html")  # client-side routes
     else:
+
         @app.get("/")
         def no_frontend():
-            return HTMLResponse("<p style='font:16px system-ui;margin:2rem'>The console isn't built yet. "
-                                "Run <code>uv run kestrel web --build</code>.</p>")
+            return HTMLResponse(
+                "<p style='font:16px system-ui;margin:2rem'>The console isn't built yet. "
+                "Run <code>uv run kestrel web --build</code>.</p>"
+            )
 
     return app

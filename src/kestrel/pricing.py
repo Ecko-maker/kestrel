@@ -19,7 +19,7 @@ def load_prices(path: str | Path | None = None) -> Prices:
 @dataclass
 class Cost:
     actual_usd: float | None  # None: no price known for this model
-    list_usd: float | None    # None: no fair paid reference (e.g. local models)
+    list_usd: float | None  # None: no fair paid reference (e.g. local models)
 
 
 def cost(prices: Prices, provider: str | None, model: str | None, input_tokens: int, output_tokens: int) -> Cost:

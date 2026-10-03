@@ -69,9 +69,14 @@ class ScriptedLLM:
 
 
 def calls(*items):
-    return {"role": "assistant", "content": None, "tool_calls": [
-        {"id": f"c{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
-        for i, (n, a) in enumerate(items)]}
+    return {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": f"c{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
+            for i, (n, a) in enumerate(items)
+        ],
+    }
 
 
 class RecordingApprover:
@@ -84,6 +89,7 @@ class RecordingApprover:
 
 
 # --- client ---------------------------------------------------------------------
+
 
 def test_tool_names_are_namespaced(registry):
     assert set(registry.tools) == {"test-srv__echo", "test-srv__add", "test-srv__fail"}
@@ -103,7 +109,7 @@ def test_external_tools_default_to_confirm_and_allowlist_makes_safe(registry):
 def test_annotations_never_lower_the_tier(registry):
     echo = registry.tools["test-srv__echo"]
     assert echo.annotations["readOnlyHint"] is True  # the server claims read-only...
-    assert echo.risk == "confirm"                   # ...but it still needs approval
+    assert echo.risk == "confirm"  # ...but it still needs approval
     assert "needs the user's approval" in registry.execute("test-srv__echo", {"text": "hi"})
     preview = echo.preview({"text": "hi"})
     assert "readOnlyHint=True" in preview and "unverified" in preview
@@ -128,8 +134,10 @@ def test_tool_errors_come_back_as_text_and_server_stays_up(manager, registry):
 
 
 def test_agent_uses_mcp_tools_with_approval_and_traces_them(registry, tmp_path):
-    llm = ScriptedLLM(calls(("test-srv__add", {"a": 2, "b": 2}), ("test-srv__echo", {"text": "x"})),
-                      {"role": "assistant", "content": "done"})
+    llm = ScriptedLLM(
+        calls(("test-srv__add", {"a": 2, "b": 2}), ("test-srv__echo", {"text": "x"})),
+        {"role": "assistant", "content": "done"},
+    )
     approver = RecordingApprover(Decision("rejected", reason="no echo"))
     tracer = Tracer(tmp_path / "t.db", record_content=True, prices={})
     agent = Agent(llm, tools=registry, tracer=tracer, gate=ApprovalGate(approver, log_path=tmp_path / "a.jsonl"))
@@ -138,17 +146,24 @@ def test_agent_uses_mcp_tools_with_approval_and_traces_them(registry, tmp_path):
     assert "4" in tool_msgs[0] and "REJECTED" in tool_msgs[1]
     assert "External MCP tool 'echo'" in approver.previews[0]
     with tracer.connect() as conn:
-        spans = [json.loads(r[0]) for r in conn.execute(
-            "SELECT attributes FROM spans WHERE trace_id = ? AND name = 'tool_call'", (result.trace_id,))]
+        spans = [
+            json.loads(r[0])
+            for r in conn.execute(
+                "SELECT attributes FROM spans WHERE trace_id = ? AND name = 'tool_call'", (result.trace_id,)
+            )
+        ]
     assert all(s["kestrel.tool.external"] is True and s["kestrel.tool.server"] == "test-srv" for s in spans)
 
 
 # --- failures -------------------------------------------------------------------
 
+
 def test_server_that_fails_to_start_is_reported_once_and_skipped():
     problems = []
-    m = MCPManager({"ghost": StdioServerParameters(command="definitely-not-a-real-command-xyz")},
-                   on_problem=lambda s, msg: problems.append(s))
+    m = MCPManager(
+        {"ghost": StdioServerParameters(command="definitely-not-a-real-command-xyz")},
+        on_problem=lambda s, msg: problems.append(s),
+    )
     try:
         m.start(timeout=30)
         reg = ToolRegistry()
@@ -159,16 +174,22 @@ def test_server_that_fails_to_start_is_reported_once_and_skipped():
 
 def test_crashed_server_disables_its_tools_and_agent_keeps_going(tmp_path):
     problems = []
-    m = MCPManager({"crashy": StdioServerParameters(command=sys.executable, args=[str(CRASHY)])},
-                   on_problem=lambda s, msg: problems.append((s, msg)), log_dir=tmp_path)
+    m = MCPManager(
+        {"crashy": StdioServerParameters(command=sys.executable, args=[str(CRASHY)])},
+        on_problem=lambda s, msg: problems.append((s, msg)),
+        log_dir=tmp_path,
+    )
     try:
         m.start(timeout=60)
         reg = ToolRegistry()
         m.register_tools(reg, safe_tools={"crashy__ok", "crashy__crash"})
         assert "fine" in reg.execute("crashy__ok", {})
 
-        llm = ScriptedLLM(calls(("crashy__crash", {})), calls(("crashy__ok", {})),
-                          {"role": "assistant", "content": "the server died, sorry"})
+        llm = ScriptedLLM(
+            calls(("crashy__crash", {})),
+            calls(("crashy__ok", {})),
+            {"role": "assistant", "content": "the server died, sorry"},
+        )
         result = Agent(llm, tools=reg).run("crash it")
 
         assert result.text == "the server died, sorry"
@@ -182,17 +203,23 @@ def test_crashed_server_disables_its_tools_and_agent_keeps_going(tmp_path):
 
 # --- config -------------------------------------------------------------------
 
+
 def test_load_config(tmp_path, monkeypatch):
     monkeypatch.setenv("MY_TOKEN", "abc123")
     path = tmp_path / "kestrel.mcp.json"
-    path.write_text(json.dumps({
-        "mcpServers": {
-            "fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
-            "gh": {"command": "gh-mcp", "env": {"TOKEN": "${MY_TOKEN}"}},
-            "off": {"command": "x", "disabled": True},
-        },
-        "safe_tools": ["fetch__fetch"],
-    }), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
+                    "gh": {"command": "gh-mcp", "env": {"TOKEN": "${MY_TOKEN}"}},
+                    "off": {"command": "x", "disabled": True},
+                },
+                "safe_tools": ["fetch__fetch"],
+            }
+        ),
+        encoding="utf-8",
+    )
     cfg = load_config(path)
     assert [s.name for s in cfg.servers] == ["fetch", "gh"]
     assert cfg.servers[1].env == {"TOKEN": "abc123"} and cfg.safe_tools == {"fetch__fetch"}
@@ -209,6 +236,7 @@ def test_project_config_allowlists_only_fetch():
 
 # --- Kestrel as a server --------------------------------------------------------
 
+
 @pytest.fixture
 def kestrel_server(tmp_path, monkeypatch):
     ws = tmp_path / "workspace"
@@ -224,7 +252,11 @@ def kestrel_server(tmp_path, monkeypatch):
 def test_kestrel_server_lists_only_intended_tools(kestrel_server):
     m, _, _ = kestrel_server
     names = {t.name for t in m.connections["kestrel"].tools}
-    assert names == set(EXPOSED) == {"get_current_time", "calculator", "list_files", "read_file", "web_search", "create_note"}
+    assert (
+        names
+        == set(EXPOSED)
+        == {"get_current_time", "calculator", "list_files", "read_file", "web_search", "create_note"}
+    )
     assert not names & {"write_file", "append_to_file", "send_message", "delete_file"}
 
 
@@ -242,6 +274,7 @@ def test_kestrel_server_tools_keep_kestrel_safeguards(kestrel_server):
 
 def test_kestrel_server_refuses_to_expose_risky_tools(monkeypatch):
     from kestrel import mcp_server
+
     monkeypatch.setitem(mcp_server.EXPOSED, "send_message", ToolAnnotations())
     with pytest.raises(RuntimeError, match="refusing to expose 'send_message'"):
         build_server()

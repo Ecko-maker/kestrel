@@ -19,6 +19,7 @@ preview but never lowers the tier, and every result is treated as untrusted data
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -36,7 +37,7 @@ from kestrel.tools import ExternalToolError, Tool, ToolRegistry
 
 CONFIG_FILE = Path("kestrel.mcp.json")
 STARTUP_TIMEOUT = 90.0  # the first start downloads servers with uvx
-CALL_TIMEOUT = 18.0     # just under the registry's 20s tool timeout, so we cancel cleanly first
+CALL_TIMEOUT = 18.0  # just under the registry's 20s tool timeout, so we cancel cleanly first
 NAME_SEPARATOR = "__"
 
 # Called once per server when it fails to start or stops working: (server, message)
@@ -81,19 +82,24 @@ def load_config(path: str | Path = CONFIG_FILE) -> MCPConfig | None:
             continue
         if not isinstance(spec.get("command"), str):
             raise ValueError(f"{path}: server '{name}' needs a \"command\"")
-        servers.append(ServerConfig(
-            name=name,
-            command=_expand(spec["command"]),
-            args=[_expand(str(a)) for a in spec.get("args") or []],
-            env={k: _expand(str(v)) for k, v in (spec.get("env") or {}).items()},
-            cwd=spec.get("cwd"),
-        ))
+        servers.append(
+            ServerConfig(
+                name=name,
+                command=_expand(spec["command"]),
+                args=[_expand(str(a)) for a in spec.get("args") or []],
+                env={k: _expand(str(v)) for k, v in (spec.get("env") or {}).items()},
+                cwd=spec.get("cwd"),
+            )
+        )
     return MCPConfig(servers, set(data.get("safe_tools") or []))
 
 
 def tool_name(server: str, tool: str) -> str:
     """'<server>__<tool>', limited to what model APIs accept: [A-Za-z0-9_-], max 64 chars."""
-    clean = lambda s: re.sub(r"[^A-Za-z0-9_-]", "_", s)
+
+    def clean(s: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_-]", "_", s)
+
     return f"{clean(server)}{NAME_SEPARATOR}{clean(tool)}"[:64]
 
 
@@ -151,10 +157,18 @@ class Connection:
     ready: threading.Event = field(default_factory=threading.Event)
     stop: asyncio.Event | None = None
 
+    def is_alive(self) -> bool:
+        return self.alive
+
 
 class MCPManager:
-    def __init__(self, targets: dict[str, Any], on_problem: ProblemCallback | None = None,
-                 call_timeout: float = CALL_TIMEOUT, log_dir: Path = Path("logs")):
+    def __init__(
+        self,
+        targets: dict[str, Any],
+        on_problem: ProblemCallback | None = None,
+        call_timeout: float = CALL_TIMEOUT,
+        log_dir: Path = Path("logs"),
+    ):
         """targets: server name -> StdioServerParameters (or an in-process server, for tests)."""
         self.connections = {name: Connection(name, target) for name, target in targets.items()}
         self.on_problem = on_problem
@@ -168,9 +182,11 @@ class MCPManager:
         self._thread.start()
 
     @classmethod
-    def from_config(cls, config: MCPConfig, **kwargs) -> "MCPManager":
-        targets = {s.name: StdioServerParameters(command=s.command, args=s.args, env=s.env or None, cwd=s.cwd)
-                   for s in config.servers}
+    def from_config(cls, config: MCPConfig, **kwargs) -> MCPManager:
+        targets = {
+            s.name: StdioServerParameters(command=s.command, args=s.args, env=s.env or None, cwd=s.cwd)
+            for s in config.servers
+        }
         return cls(targets, **kwargs)
 
     # Lifecycle ---------------------------------------------------------------
@@ -194,7 +210,8 @@ class MCPManager:
             target = conn.target
             if isinstance(target, StdioServerParameters):
                 self.log_dir.mkdir(parents=True, exist_ok=True)
-                log = open(self.log_dir / f"mcp-{conn.name}.log", "a", encoding="utf-8")
+                # Closed in `finally` below: it must stay open for the whole connection.
+                log = open(self.log_dir / f"mcp-{conn.name}.log", "a", encoding="utf-8")  # noqa: SIM115
                 target = stdio_client(target, errlog=log)  # server's stderr goes to a log, not the chat
             async with Client(target) as client:
                 conn.tools = (await client.list_tools()).tools
@@ -218,12 +235,12 @@ class MCPManager:
             if conn.stop is not None:
                 self._loop.call_soon_threadsafe(conn.stop.set)
         for task in self._tasks:
-            try:
+            with contextlib.suppress(Exception):
                 task.result(timeout)
-            except Exception:
-                pass
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout)
+        if not self._thread.is_alive():
+            self._loop.close()  # releases the loop's own sockets and pipes
 
     def _report(self, conn: Connection, message: str) -> None:
         if conn.name not in self._reported and self.on_problem:
@@ -250,7 +267,7 @@ class MCPManager:
             raise ConnectionError(f"MCP server '{server}' stopped working: {conn.error}") from None
         return format_result(result)
 
-    def register_tools(self, registry: ToolRegistry, safe_tools: set[str] = frozenset()) -> list[Tool]:
+    def register_tools(self, registry: ToolRegistry, safe_tools: frozenset[str] | set[str] = frozenset()) -> list[Tool]:
         """Add every connected server's tools to the registry as "<server>__<tool>"."""
         added = []
         for conn in self.connections.values():
@@ -265,13 +282,19 @@ class MCPManager:
                     return self.call(_server, _tool, kwargs)
 
                 try:
-                    added.append(registry.register_external(
-                        name, call, f"[MCP server '{conn.name}'] {description}".strip(), t.input_schema or {},
-                        risk="safe" if name in safe_tools else "confirm",  # annotations never decide this
-                        server=conn.name, annotations=annotations,
-                        preview=external_preview(conn.name, t.name, description, annotations),
-                        available=lambda _conn=conn: _conn.alive,
-                    ))
+                    added.append(
+                        registry.register_external(
+                            name,
+                            call,
+                            f"[MCP server '{conn.name}'] {description}".strip(),
+                            t.input_schema or {},
+                            risk="safe" if name in safe_tools else "confirm",  # annotations never decide this
+                            server=conn.name,
+                            annotations=annotations,
+                            preview=external_preview(conn.name, t.name, description, annotations),
+                            available=conn.is_alive,
+                        )
+                    )
                 except ValueError as e:
                     self._report(conn, f"tool '{t.name}' skipped: {e}")
         return added

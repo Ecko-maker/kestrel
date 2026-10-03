@@ -54,9 +54,17 @@ class WebApprover:
                 return Decision("rejected", reason="the browser disconnected")
             self._pending[approval_id] = answer
 
-        self.emit("approval_required", approval_id=approval_id, tool=tool_name, args=args, preview=preview,
-                  kind=preview_kind(tool_name, preview), editable_field=editable_field(args),
-                  allow_session=allow_session, timeout_s=self.timeout)
+        self.emit(
+            "approval_required",
+            approval_id=approval_id,
+            tool=tool_name,
+            args=args,
+            preview=preview,
+            kind=preview_kind(tool_name, preview),
+            editable_field=editable_field(args),
+            allow_session=allow_session,
+            timeout_s=self.timeout,
+        )
         try:
             response = answer.result(self.timeout)
         except FutureTimeout:
@@ -66,8 +74,14 @@ class WebApprover:
                 self._pending.pop(approval_id, None)
 
         decision = self._to_decision(response, allow_session)
-        self.emit("approval_resolved", approval_id=approval_id, tool=tool_name,
-                  decision=decision.status, reason=decision.reason, for_session=decision.for_session)
+        self.emit(
+            "approval_resolved",
+            approval_id=approval_id,
+            tool=tool_name,
+            decision=decision.status,
+            reason=decision.reason,
+            for_session=decision.for_session,
+        )
         return decision
 
     def resolve(self, approval_id: str, response: dict) -> bool:

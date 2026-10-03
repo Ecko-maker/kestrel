@@ -39,15 +39,19 @@ def make_registry(**kwargs) -> ToolRegistry:
 
 # --- bad model output ---------------------------------------------------------
 
-@pytest.mark.parametrize("arguments, expected", [
-    ('{"a": 1, "b": ', "not valid JSON"),
-    ("[1, 2]", "must be a JSON object"),
-    ('{"a": 1}', "missing required argument(s) ['b']"),
-    ('{"a": 1, "b": 2, "c": 3}', "unexpected argument(s) ['c']"),
-    ('{"a": "1", "b": 2}', "'a' must be a integer, got str"),
-    ('{"a": true, "b": 2}', "'a' must be a integer, got bool"),
-    ('{"a": 1.5, "b": 2}', "'a' must be a integer, got float"),
-])
+
+@pytest.mark.parametrize(
+    "arguments, expected",
+    [
+        ('{"a": 1, "b": ', "not valid JSON"),
+        ("[1, 2]", "must be a JSON object"),
+        ('{"a": 1}', "missing required argument(s) ['b']"),
+        ('{"a": 1, "b": 2, "c": 3}', "unexpected argument(s) ['c']"),
+        ('{"a": "1", "b": 2}', "'a' must be a integer, got str"),
+        ('{"a": true, "b": 2}', "'a' must be a integer, got bool"),
+        ('{"a": 1.5, "b": 2}', "'a' must be a integer, got float"),
+    ],
+)
 def test_bad_arguments_become_readable_errors(arguments, expected):
     result = make_registry().execute("add", arguments)
     assert result.startswith("Error:") and expected in result
@@ -61,6 +65,7 @@ def test_valid_argument_edge_cases():
 
 
 # --- tool limits --------------------------------------------------------------
+
 
 def test_slow_tool_times_out():
     reg = make_registry(timeout=0.2)
@@ -78,11 +83,16 @@ def test_long_results_are_truncated_with_a_note():
 
 # --- agent behaviour ----------------------------------------------------------
 
+
 def calls_reply(*calls) -> dict:
-    return {"role": "assistant", "content": None, "tool_calls": [
-        {"id": f"c{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
-        for i, (n, a) in enumerate(calls)
-    ]}
+    return {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {"id": f"c{i}", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
+            for i, (n, a) in enumerate(calls)
+        ],
+    }
 
 
 class ScriptedLLM:
@@ -100,11 +110,16 @@ class ScriptedLLM:
 
 
 def test_parallel_tool_calls_run_concurrently_and_keep_order():
-    llm = ScriptedLLM([
-        calls_reply(("nap", {"seconds": 0.4, "tag": "first"}), ("nap", {"seconds": 0.1, "tag": "second"}),
-                    ("nap", {"seconds": 0.4, "tag": "third"})),
-        {"role": "assistant", "content": "done"},
-    ])
+    llm = ScriptedLLM(
+        [
+            calls_reply(
+                ("nap", {"seconds": 0.4, "tag": "first"}),
+                ("nap", {"seconds": 0.1, "tag": "second"}),
+                ("nap", {"seconds": 0.4, "tag": "third"}),
+            ),
+            {"role": "assistant", "content": "done"},
+        ]
+    )
     seen = []
     agent = Agent(llm, tools=make_registry(), on_tool_step=lambda n, a, r: seen.append(r))
     start = time.perf_counter()
@@ -113,16 +128,22 @@ def test_parallel_tool_calls_run_concurrently_and_keep_order():
 
     assert elapsed < 0.8  # sequential would take 0.9s
     tool_msgs = [m for m in llm.requests[1] if m["role"] == "tool"]
-    assert [(m["tool_call_id"], m["content"]) for m in tool_msgs] == [("c0", "first"), ("c1", "second"), ("c2", "third")]
+    assert [(m["tool_call_id"], m["content"]) for m in tool_msgs] == [
+        ("c0", "first"),
+        ("c1", "second"),
+        ("c2", "third"),
+    ]
     assert seen == ["first", "second", "third"]
 
 
 def test_model_can_recover_from_a_bad_call():
-    llm = ScriptedLLM([
-        calls_reply(("add", {"a": "two", "b": 3})),
-        calls_reply(("add", {"a": 2, "b": 3})),
-        {"role": "assistant", "content": "5"},
-    ])
+    llm = ScriptedLLM(
+        [
+            calls_reply(("add", {"a": "two", "b": 3})),
+            calls_reply(("add", {"a": 2, "b": 3})),
+            {"role": "assistant", "content": "5"},
+        ]
+    )
     result = Agent(llm, tools=make_registry()).run("2+3")
     assert result.text == "5" and result.steps == 3
     assert llm.requests[1][-1]["content"].startswith("Error: invalid arguments for add")
@@ -149,6 +170,7 @@ def test_result_reports_providers_used():
 
 
 # --- context window -----------------------------------------------------------
+
 
 def test_trim_drops_oldest_whole_turns_and_keeps_system_prompt():
     agent = Agent(ScriptedLLM([]), tools=make_registry(), max_context_tokens=400, system_prompt="sys")

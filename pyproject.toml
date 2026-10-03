@@ -1,7 +1,8 @@
 [project]
 name = "kestrel"
 version = "0.1.0"
-description = "Add your description here"
+description = "A personal AI agent with an approval gate, tracing and MCP, built on free tools."
+license = "MIT"
 readme = "README.md"
 authors = [
     { name = "Noah Asgodom", email = "noahasgodom01@gmail.com" }
@@ -29,6 +30,49 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "mypy>=2.4.0",
     "playwright>=1.63.0",
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+extend-exclude = ["console"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, imports, pyupgrade, bugbear, simplify, ruff-specific
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E741",    # `l` as a loop variable in short comprehensions reads fine here
+    "RUF001",  # ambiguous unicode in strings: the box-drawing characters in trace trees are intended
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "SIM117"]
+
+[tool.mypy]
+python_version = "3.14"
+packages = ["kestrel"]
+mypy_path = "src"
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = ["ddgs.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["kestrel"]
+branch = true
+
+[tool.coverage.report]
+skip_empty = true
+show_missing = false

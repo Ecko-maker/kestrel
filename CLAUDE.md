@@ -25,7 +25,9 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - The user is learning: before writing code, give a short plan; after, explain what each new piece does and why, in plain language.
 - Windows + PowerShell. Use `uv` for everything (`uv add`, `uv run`). Run tests with `uv run pytest`.
 - Before using a library API, check the installed version's actual API (e.g. `mcp` 2.x renamed FastMCP to MCPServer).
-- Frontend: `cd console; npm run typecheck; npm run build`. The Bash tool mangles `
+- Before committing: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest`; frontend: `cd console; npm run typecheck; npm run lint; npm run build`. Pre-commit runs ruff + gitleaks.
+- Known limitations live in docs/known-issues.md; decisions in docs/design-decisions.md. Keep both current.
+- Frontend: The Bash tool mangles `
 ` inside heredocs: write multi-line edit scripts with the Write tool.
 - Never open, print, or edit `.env`. It holds the user's API keys. If a key is missing, say exactly what line to add.
 - Free tools only unless the user says otherwise.
@@ -41,7 +43,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 
 | Phase | Weeks | Contents | Gate to move on |
 |---|---|---|---|
-| 1 Foundation | 1–2 | Model layer, agent loop with tool calling, approval gate, 3 MCP tools, web console, tracing, Docker | Does one real task daily |
+| 1 Foundation ✅ | 1–2 | Model layer, agent loop with tool calling, approval gate, 3 MCP tools, web console, tracing, Docker | Does one real task daily |
 | 2 Evals | 3–4 | KestrelBench v1 (100 tasks), judge calibration, evals in CI | Baseline score in README |
 | 3 Memory and safety | 5–6 | Long-term memory + hybrid RAG, permission tiers, prompt-injection suite | 0% attack success on suite |
 | 4 Distillation | 7–9 | Trace dataset, QLoRA fine-tune on free GPUs, serving, router, cost curve | Routed beats frontier on cost at ≥95% quality |
@@ -66,9 +68,13 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - [x] Step 5: tracing. `tracing.py` (traces of nested spans agent_run > llm_call / tool_call > approval, OTel GenAI attribute names, SQLite `logs/traces.db`, redaction of key-like strings + secret env values, `KESTREL_TRACE_CONTENT=off`), `pricing.py` + `prices.toml` (actual vs list price per model), `/good` `/bad [note]` ratings, `kestrel traces | trace <id> | stats | export` (`trace_report.py`). Export is chat JSONL with `weight: 0` on earlier turns so only the rated turn is trained on. 115 tests. Live on Ollama qwen2.5:0.5b: 6 traces incl. web search and a rejected approval. List prices unverified and only shown for Gemini/Groq models.
 - [x] Step 6: MCP (official `mcp` SDK 2.x: FastMCP is now `MCPServer`, fields are snake_case). Client `mcp_client.py`: servers from `kestrel.mcp.json` (Claude-style `mcpServers` + Kestrel `safe_tools` allowlist), one asyncio loop on a background thread (Agent stays sync for now), tools registered as `<server>__<tool>`, external = confirm unless allowlisted, annotations shown but never lower the tier, results and error messages wrapped as untrusted, dead servers' tools hidden. Servers: `mcp-server-fetch` (fetch__fetch safe) and `mcp-server-time` (confirm), pinned to 2026.8.18; kept our own get_current_time/web_search. Server `mcp_server.py` (`uv run kestrel-mcp`): exposes only safe tools + create_note through the registry; `.mcp.json` lets Claude Code use it. 129 tests. Live: fetch of modelcontextprotocol.io on Ollama, and kestrel-mcp called over real stdio.
 - [x] Step 7: web console. Agent emits typed events (`on_event`: step_started, llm_call, text_delta, tool_call, tool_result, answer, error, done; WebApprover adds approval_required/approval_resolved) consumed by both the terminal (`TerminalEvents`) and the browser. `LLM.chat(on_text=)` streams tokens (falls back to non-streaming if rejected or if a streamed reply comes back empty, seen with Ollama). Backend `src/kestrel/web/` (FastAPI): WebSocket chat with one Agent per connection on a worker thread, `WebApprover` (5 min timeout, disconnect = reject), REST traces/stats/rating reusing `trace_report` query functions, 127.0.0.1 only + startup token -> HttpOnly SameSite=Strict cookie, Host check, WS Origin check, CORS only for Vite dev. Frontend `console/` (React 19, Vite 8, TS 7, Tailwind 4, react-markdown, lucide-react; hand-made SVG charts). `uv run kestrel web [--build]`. 146 tests. Browser demo via `scripts/demo_console.py --shots` (scripted model, real everything else; Playwright + installed Edge) -> `docs/screenshots/`. Traces now carry `session_id` (one conversation).
-- [ ] Step 8: Docker + first tests in CI
+- [x] Step 8: release v0.1.0. Demo provider (`demo.py`, `KESTREL_PROVIDERS=demo`, labelled in UI, never exported as training data). Docker: multi-stage `Dockerfile` (Node builds console, slim Python + uv, non-root UID 10001, `/healthz` healthcheck), `.dockerignore`, `docker-compose.yml` (127.0.0.1:8000 only, server on 0.0.0.0 inside, `host.docker.internal` for Ollama). Settings `KESTREL_HOST/PORT/TOKEN/ALLOWED_HOSTS/MCP`, `<PROVIDER>_BASE_URL`. CI `.github/workflows/ci.yml`: Python (ubuntu + windows: ruff, format, mypy, pytest+cov, ResourceWarning as error), console (typecheck, oxlint, build), Docker (compose up in demo mode, health, 401, non-root), gitleaks CLI on full history. Dependabot (uv, npm, actions, docker). pre-commit (ruff, gitleaks) installed. Fixed while doing this: sqlite connections never closed, MCP event loop never closed, audit log not redacted, sandbox treated `\` differently on Linux. README v1, LICENSE (MIT), docs/design-decisions.md, docs/known-issues.md (20 items). Docker not run locally (not installed); verified by CI only.
+
+**Phase 1 complete (v0.1.0).** Next: Phase 2, KestrelBench.
 
 ## Configuration (.env)
+
+Also: `KESTREL_HOST`, `KESTREL_PORT`, `KESTREL_TOKEN`, `KESTREL_ALLOWED_HOSTS` (web/Docker), `KESTREL_MCP=off`, `<PROVIDER>_BASE_URL` (e.g. `OLLAMA_BASE_URL`). Provider `demo` needs no key.
 
 | Variable | Purpose |
 |---|---|

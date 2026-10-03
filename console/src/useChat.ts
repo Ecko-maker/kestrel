@@ -180,7 +180,7 @@ export function reduce(turns: Turn[], action: Action): Turn[] {
         // Attach it to the newest call of that tool that hasn't finished yet.
         const steps = [...turn.steps];
         for (let i = steps.length - 1; i >= 0; i--) {
-          const idx = [...steps[i].tools].reverse().findIndex((t) => t.name === approval.tool && !t.result);
+          const idx = steps[i].tools.toReversed().findIndex((t) => t.name === approval.tool && !t.result);
           if (idx >= 0) {
             const toolIdx = steps[i].tools.length - 1 - idx;
             const tools = [...steps[i].tools];
@@ -226,31 +226,38 @@ export function useChat(onTurnDone?: () => void) {
   const [notice, setNotice] = useState<string | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const doneRef = useRef(onTurnDone);
-  doneRef.current = onTurnDone;
+  useEffect(() => {
+    doneRef.current = onTurnDone; // refs are updated after render, never during it
+  }, [onTurnDone]);
 
-  const connect = useCallback(() => {
+  // Opens a socket; state changes happen in its event handlers, not synchronously here.
+  const open = useCallback(() => {
     socket.current?.close();
-    setState("connecting");
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${window.location.host}/ws`);
     socket.current = ws;
-    ws.onopen = () => setState("open");
-    ws.onclose = () => {
+    ws.addEventListener("open", () => setState("open"));
+    ws.addEventListener("close", () => {
       if (socket.current === ws) setState("closed");
-    };
-    ws.onmessage = (msg) => {
+    });
+    ws.addEventListener("message", (msg) => {
       const event = JSON.parse(msg.data) as ServerEvent;
       if (event.type === "ready") return setNotice(null);
       if (event.type === "error" && !event.trace_id) return setNotice(event.message as string);
       dispatch({ kind: "event", event });
       if (event.type === "done") doneRef.current?.();
-    };
+    });
   }, []);
 
   useEffect(() => {
-    connect();
+    open();
     return () => socket.current?.close();
-  }, [connect]);
+  }, [open]);
+
+  const connect = useCallback(() => {
+    setState("connecting"); // a user-initiated reconnect: show it right away
+    open();
+  }, [open]);
 
   const send = useCallback((text: string) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return;

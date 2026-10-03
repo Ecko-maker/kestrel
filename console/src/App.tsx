@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChartColumn, ChartGantt, MessagesSquare, Monitor, Moon, Sun } from "lucide-react";
+import { ChartColumn, ChartGantt, FlaskConical, MessagesSquare, Monitor, Moon, Sun } from "lucide-react";
 import { api, AuthError, type SessionInfo, type Stats } from "./api";
 import { cx } from "./components/ui";
 import { ChatPage } from "./pages/ChatPage";
@@ -22,11 +22,12 @@ function useTheme(): [Theme, (t: Theme) => void] {
   return [theme, setTheme];
 }
 
+const readHash = () => (window.location.hash.replace(/^#\/?/, "") || "chat").split("/");
+
 function useHashRoute(): [string[], (hash: string) => void] {
-  const read = () => (window.location.hash.replace(/^#\/?/, "") || "chat").split("/");
-  const [route, setRoute] = useState(read);
+  const [route, setRoute] = useState(readHash);
   useEffect(() => {
-    const onChange = () => setRoute(read());
+    const onChange = () => setRoute(readHash());
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
@@ -124,6 +125,11 @@ export function App() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-3 md:mt-auto md:ml-0 md:flex-col md:items-stretch md:gap-3 md:px-2">
+          {session?.demo && (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-800 dark:bg-violet-950/60 dark:text-violet-200">
+              <FlaskConical className="size-3.5" /> Demo mode
+            </span>
+          )}
           {models.length > 0 && (
             <div className="hidden text-[11px] leading-5 text-stone-500 md:block">
               <div className="font-medium uppercase tracking-wider">Models</div>
