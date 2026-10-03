@@ -9,7 +9,7 @@ import os
 import random
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import openai
 from openai import OpenAI
@@ -33,6 +33,19 @@ PROVIDERS = {
     "groq": Provider("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY", "openai/gpt-oss-120b"),
     "ollama": Provider("ollama", "http://localhost:11434/v1", None, "qwen3:4b"),
 }
+
+
+@dataclass
+class CallInfo:
+    """What happened on the last chat() call, for tracing."""
+    provider: str | None
+    model: str | None
+    input_tokens: int | None = None   # None: the API didn't report usage
+    output_tokens: int | None = None
+    finish_reason: str | None = None
+    response_model: str | None = None
+    retries: int = 0
+    attempts: list[str] = field(default_factory=list)  # providers tried, in order
 
 
 class LLMError(Exception):
@@ -80,6 +93,7 @@ class LLM:
         self.on_retry = on_retry
         self.sleep = time.sleep  # swapped out in tests
         self.last_provider: str | None = None
+        self.last_call: CallInfo | None = None
 
     def _request(self, **kwargs):
         """One API call with retries for temporary failures and clear errors for permanent ones."""
@@ -106,6 +120,8 @@ class LLM:
                     wait = 2 ** (attempt - 1) + random.uniform(0, 0.5)  # 1s, 2s, plus jitter
                 if self.on_retry:
                     self.on_retry(name, reason, wait)
+                if self.last_call:
+                    self.last_call.retries += 1
                 self.sleep(wait)
             # Any other HTTP error (400 bad request, 413 too large, ...) won't fix itself either.
             except openai.APIStatusError as e:
@@ -138,9 +154,15 @@ class LLM:
         """Send the conversation plus tool schemas; return the assistant message as a dict
         with "content" (text or None) and, if the model wants tools, "tool_calls"."""
         kwargs = {"tools": tools} if tools else {}
+        self.last_call = info = CallInfo(self.provider.name, self.model, attempts=[self.provider.name])
         response = self._request(messages=self._prepare(messages), **kwargs)
         if not getattr(response, "choices", None):
             raise LLMError(self.provider.name, "returned no choices (empty or blocked response)")
+        usage = getattr(response, "usage", None)
+        info.input_tokens = getattr(usage, "prompt_tokens", None)
+        info.output_tokens = getattr(usage, "completion_tokens", None)
+        info.finish_reason = getattr(response.choices[0], "finish_reason", None)
+        info.response_model = getattr(response, "model", None)
         msg = response.choices[0].message
         out: dict = {"role": "assistant", "content": msg.content}
         if msg.tool_calls:
@@ -175,6 +197,7 @@ class FallbackLLM:
         self.clock = time.monotonic  # swapped out in tests
         self._down_until: dict[str, float] = {}
         self.last_provider: str | None = None
+        self.last_call: CallInfo | None = None
 
     @property
     def provider(self) -> Provider:
@@ -195,10 +218,13 @@ class FallbackLLM:
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
         errors = []
         chain = self._ordered()
+        self.last_call = summary = CallInfo(None, None)
         for i, llm in enumerate(chain):
             try:
                 reply = llm.chat(messages, tools)
             except LLMError as e:
+                summary.attempts.append(llm.provider.name)
+                summary.retries += getattr(getattr(llm, "last_call", None), "retries", 0)
                 errors.append(str(e))
                 self._down_until[llm.provider.name] = self.clock() + COOLDOWN
                 if self.on_fallback and i + 1 < len(chain):
@@ -206,6 +232,12 @@ class FallbackLLM:
                 continue
             self._down_until.pop(llm.provider.name, None)
             self.last_provider = llm.provider.name
+            info = getattr(llm, "last_call", None) or CallInfo(llm.provider.name, getattr(llm, "model", None))
+            summary.attempts.append(llm.provider.name)
+            summary.retries += info.retries
+            summary.provider, summary.model = llm.provider.name, info.model
+            summary.input_tokens, summary.output_tokens = info.input_tokens, info.output_tokens
+            summary.finish_reason, summary.response_model = info.finish_reason, info.response_model
             return reply
         raise LLMError("all providers", " | ".join(errors))
 

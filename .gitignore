@@ -21,3 +21,6 @@ workspace/*
 
 # Approval audit log (local record of your decisions)
 logs/
+
+# Exported training data (from your conversations)
+data/

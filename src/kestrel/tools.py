@@ -19,6 +19,7 @@ import inspect
 import json
 import math
 import operator
+import os
 import re
 import threading
 from collections.abc import Callable
@@ -48,6 +49,10 @@ class ToolCallError(Exception):
     """The model's tool call can't be run as given (unknown tool, bad arguments)."""
 
 
+class ExternalToolError(Exception):
+    """An external tool reported a failure. Its message comes from outside, so it is untrusted."""
+
+
 def _base_type(hint: Any) -> Any:
     return get_origin(hint) or hint  # list[str] -> list
 
@@ -60,6 +65,28 @@ def _type_ok(value: Any, expected: type) -> bool:
     return isinstance(value, expected)
 
 
+_PY_TYPES = {"string": str, "integer": int, "number": float, "boolean": bool, "array": list, "object": dict}
+
+
+def _check_against_schema(args: dict, schema: dict) -> str | None:
+    """Top-level JSON Schema check for external tools: required keys, unknown keys
+    (when the schema forbids them) and basic types. The server validates the rest."""
+    props = schema.get("properties") or {}
+    if missing := [k for k in schema.get("required") or [] if k not in args]:
+        return f"missing required argument(s) {missing}"
+    if schema.get("additionalProperties") is False and (unknown := [k for k in args if k not in props]):
+        return f"unexpected argument(s) {unknown}; allowed: {list(props)}"
+    for key, value in args.items():
+        types = props.get(key, {}).get("type")
+        allowed = [types] if isinstance(types, str) else (types or [])
+        if allowed and "null" in allowed and value is None:
+            continue
+        expected = [_PY_TYPES[t] for t in allowed if t in _PY_TYPES]
+        if expected and not any(_type_ok(value, t) for t in expected):
+            return f"'{key}' must be {' or '.join(allowed)}, got {type(value).__name__} {value!r}"
+    return None
+
+
 @dataclass(frozen=True)  # frozen: nothing can change a tool's tier after registration
 class Tool:
     name: str
@@ -69,9 +96,19 @@ class Tool:
     preview: Callable[[dict], str] | None = None  # shows the user what a risky call will do
     allow_session: bool = True                    # may the user approve it for the whole session?
     untrusted_output: bool = False                # result comes from files/web: label it as data
+    # External (MCP) tools: their schema comes from the server, not a Python signature.
+    external: bool = False
+    server: str | None = None
+    annotations: dict | None = None               # what the server *claims*; shown, never trusted
+    available: Callable[[], bool] | None = None   # False once its server has died
+
+    def is_available(self) -> bool:
+        return self.available is None or self.available()
 
     def check_args(self, args: dict) -> str | None:
         """Describe what's wrong with the arguments, or return None if they're fine."""
+        if self.external:
+            return _check_against_schema(args, self.schema["function"]["parameters"])
         params = inspect.signature(self.func).parameters
         hints = get_type_hints(self.func)
         if unknown := [k for k in args if k not in params]:
@@ -189,14 +226,45 @@ class ToolRegistry:
 
         return wrap(func) if func is not None else wrap
 
+    def register_external(
+        self,
+        name: str,
+        func: Callable[..., Any],
+        description: str,
+        input_schema: dict,
+        *,
+        risk: Risk,
+        server: str,
+        annotations: dict | None = None,
+        preview: Callable[[dict], str] | None = None,
+        available: Callable[[], bool] | None = None,
+    ) -> Tool:
+        """Register a tool from an MCP server. Its output is always treated as untrusted."""
+        if risk not in RISKS:
+            raise ValueError(f"risk must be one of {RISKS}, got {risk!r}")
+        if name in self.tools:
+            raise ValueError(f"a tool named '{name}' is already registered")
+        if risk == "confirm":
+            description += " Requires the user's approval; they may edit or reject it."
+        parameters = input_schema if input_schema.get("type") == "object" else {"type": "object", "properties": {}}
+        schema = {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
+        tool = Tool(name, func, schema, risk, preview, allow_session=True, untrusted_output=True,
+                    external=True, server=server, annotations=annotations, available=available)
+        self.tools[name] = tool
+        return tool
+
     def schemas(self) -> list[dict]:
-        return [t.schema for t in self.tools.values()]
+        """Schemas the model sees: tools whose server is down are hidden."""
+        return [t.schema for t in self.tools.values() if t.is_available()]
 
     def prepare(self, name: str, arguments: str | dict | None) -> tuple[Tool, dict]:
         """Look up the tool and validate the model's arguments, or raise ToolCallError."""
         if name not in self.tools:
-            raise ToolCallError(f"unknown tool '{name}'. Available tools: {', '.join(self.tools)}")
+            available = [n for n, t in self.tools.items() if t.is_available()]
+            raise ToolCallError(f"unknown tool '{name}'. Available tools: {', '.join(available)}")
         tool = self.tools[name]
+        if not tool.is_available():
+            raise ToolCallError(f"'{name}' is unavailable: its MCP server '{tool.server}' stopped working")
         args = parse_arguments(arguments)
         if problem := tool.check_args(args):
             expected = json.dumps(tool.schema["function"]["parameters"])
@@ -219,6 +287,9 @@ class ToolRegistry:
             return f"Error: '{name}' needs the user's approval and was not run."
         try:
             result = _run_with_timeout(tool.func, args, self.timeout)
+        except ExternalToolError as e:
+            return (f'Error: {name} reported a failure. Its message:\n<untrusted_data source="{name}">\n{e}\n'
+                    f"</untrusted_data>\n{UNTRUSTED_NOTE}")
         except Exception as e:
             return f"Error: {type(e).__name__}: {e}"
         text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
@@ -290,7 +361,7 @@ def calculator(expression: str) -> str:
     return str(round(result, 10) if isinstance(result, float) else result)
 
 
-WORKSPACE = Path("workspace").resolve()
+WORKSPACE = Path(os.getenv("KESTREL_WORKSPACE", "workspace")).resolve()
 
 
 def _safe_path(path: str) -> Path:

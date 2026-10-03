@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "ddgs>=9.16.0",
+    "mcp>=2.3.0",
     "openai>=3.24.0",
     "python-dotenv>=1.2.4",
     "tzdata>=2026.4",
@@ -16,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 kestrel = "kestrel:main"
+kestrel-mcp = "kestrel.mcp_server:main"
 
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]

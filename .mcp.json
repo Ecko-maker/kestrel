@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kestrel": {
+      "command": "uv",
+      "args": ["run", "kestrel-mcp"]
+    }
+  }
+}

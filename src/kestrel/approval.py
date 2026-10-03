@@ -48,6 +48,8 @@ class GateResult:
     args: dict | None  # the arguments to run with, or None if the call must not run
     message: str = ""  # tool result to send the model when it doesn't run
     note: str = ""     # prefix for the tool result when it does run (e.g. "the user edited this")
+    decision: str = "" # for tracing: approved / edited / rejected / forbidden / session-approved / refused
+    reason: str = ""
 
 
 def _summarize(args: dict, limit: int = 120) -> dict:
@@ -72,48 +74,51 @@ class ApprovalGate:
     def check(self, tool: Tool, args: dict) -> GateResult:
         """Decide whether a validated tool call may run, asking the user if its tier requires it."""
         if tool.risk == "safe":
-            return GateResult(args)
+            return GateResult(args, decision="safe")
         if tool.risk == "forbidden":
-            self._log(tool.name, args, "forbidden")
-            return GateResult(None, forbidden_message(tool, args))
+            self.record(tool.name, args, "forbidden")
+            return GateResult(None, forbidden_message(tool, args), decision="forbidden")
         if tool.name in self.session_approved and tool.allow_session:
-            self._log(tool.name, args, "session-approved")
-            return GateResult(args)
+            self.record(tool.name, args, "session-approved")
+            return GateResult(args, decision="session-approved")
 
         original, edited = dict(args), False
         for _ in range(self.max_edits + 1):
             try:
                 preview = tool.preview(args) if tool.preview else json.dumps(args, indent=2, ensure_ascii=False)
             except Exception as e:  # e.g. a path outside the workspace: refuse without bothering the user
-                return GateResult(None, f"Error: {type(e).__name__}: {e}")
+                return GateResult(None, f"Error: {type(e).__name__}: {e}", decision="refused", reason=str(e))
 
             decision = self.approver.review(tool.name, dict(args), preview, allow_session=tool.allow_session)
 
             if decision.status == "edited":
                 revised = decision.args if decision.args is not None else args
                 if problem := tool.check_args(revised):
-                    self._log(tool.name, revised, "rejected", f"invalid edit: {problem}")
-                    return GateResult(None, rejection_message(tool.name, f"their edit was invalid ({problem})"))
+                    self.record(tool.name, revised, "rejected", f"invalid edit: {problem}")
+                    return GateResult(None, rejection_message(tool.name, f"their edit was invalid ({problem})"),
+                                      decision="rejected", reason=f"invalid edit: {problem}")
                 args, edited = dict(revised), edited or revised != original
                 continue  # show the new preview and ask again
 
             if decision.status == "rejected":
-                self._log(tool.name, args, "rejected", decision.reason)
-                return GateResult(None, rejection_message(tool.name, decision.reason))
+                self.record(tool.name, args, "rejected", decision.reason)
+                return GateResult(None, rejection_message(tool.name, decision.reason),
+                                  decision="rejected", reason=decision.reason)
 
             status = "edited" if edited and args != original else "approved"
             if decision.for_session and tool.allow_session:  # never for e.g. send_message
                 self.session_approved.add(tool.name)
-            self._log(tool.name, args, status, session=decision.for_session and tool.allow_session)
+            self.record(tool.name, args, status, session=decision.for_session and tool.allow_session)
             note = ""
             if status == "edited":
                 note = f"Note: the user edited this call before approving it. It ran with: {json.dumps(_summarize(args))}\n"
-            return GateResult(args, note=note)
+            return GateResult(args, note=note, decision=status)
 
-        self._log(tool.name, args, "rejected", "too many edits")
-        return GateResult(None, rejection_message(tool.name, "too many edits without a decision"))
+        self.record(tool.name, args, "rejected", "too many edits")
+        return GateResult(None, rejection_message(tool.name, "too many edits without a decision"),
+                          decision="rejected", reason="too many edits")
 
-    def _log(self, tool_name: str, args: dict, decision: str, reason: str = "", session: bool = False) -> None:
+    def record(self, tool_name: str, args: dict, decision: str, reason: str = "", session: bool = False) -> None:
         entry = {
             "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "tool": tool_name,

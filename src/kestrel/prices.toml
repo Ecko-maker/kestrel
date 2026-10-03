@@ -1,0 +1,48 @@
+# Model prices in USD per 1 million tokens, by provider and model ID.
+#
+#   actual_input / actual_output   what you actually pay. Free tiers = 0.
+#   list_input   / list_output     the provider's public paid price for the same model, so
+#                                  traces can show what a request would cost on a paid plan.
+#                                  Leave them out when there's no fair reference (local models).
+#
+# Prices change often: check each provider's pricing page before quoting these numbers.
+# Override this whole file with KESTREL_PRICES=path/to/prices.toml.
+# A "default" entry applies to any model of that provider not listed by name.
+# Approximate list prices as of 2026-10 (verify).
+
+[gemini."gemini-3-flash"]
+actual_input = 0.0
+actual_output = 0.0
+list_input = 0.50
+list_output = 3.00
+
+[gemini."gemini-2.5-flash"]
+actual_input = 0.0
+actual_output = 0.0
+list_input = 0.30
+list_output = 2.50
+
+[gemini."gemini-2.5-flash-lite"]
+actual_input = 0.0
+actual_output = 0.0
+list_input = 0.10
+list_output = 0.40
+
+[gemini.default]
+actual_input = 0.0
+actual_output = 0.0
+
+[groq."openai/gpt-oss-120b"]
+actual_input = 0.0
+actual_output = 0.0
+list_input = 0.15
+list_output = 0.75
+
+[groq.default]
+actual_input = 0.0
+actual_output = 0.0
+
+# Local models run on your own hardware: no per-token price.
+[ollama.default]
+actual_input = 0.0
+actual_output = 0.0
