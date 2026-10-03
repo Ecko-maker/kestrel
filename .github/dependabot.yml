@@ -28,3 +28,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Base-image upgrades that change the runtime (node 24 -> 26, python 3.14 -> 3.15) are done
+    # by hand together with CI's node-version / python-version, never as surprise PRs.
+    # For python, 3.14 -> 3.15 counts as a *minor* semver bump, so minors are ignored too.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

@@ -27,6 +27,12 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - Before using a library API, check the installed version's actual API (e.g. `mcp` 2.x renamed FastMCP to MCPServer).
 - Before committing: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest`; frontend: `cd console; npm run typecheck; npm run lint; npm run build`. Pre-commit runs ruff + gitleaks.
 - Known limitations live in docs/known-issues.md; decisions in docs/design-decisions.md. Keep both current.
+
+## CI rules
+
+- Never merge with red CI, including Dependabot PRs. Changes go through a branch + PR; read failures with `gh run view <id> --log-failed`, fix the root cause.
+- Never skip, weaken or delete a test or a CI check to get green; ask the user first if a check seems wrong.
+- Pin actions and images to exact versions (`astral-sh/setup-uv@v10.2.0`, `node:24-slim`); check a tag exists with an exact match (GitHub's refs API matches prefixes). Dependabot keeps pins current; base-image runtime upgrades are done by hand with CI's versions.
 - Frontend: The Bash tool mangles `
 ` inside heredocs: write multi-line edit scripts with the Write tool.
 - Never open, print, or edit `.env`. It holds the user's API keys. If a key is missing, say exactly what line to add.
