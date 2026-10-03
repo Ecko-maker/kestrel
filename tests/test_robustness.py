@@ -151,7 +151,7 @@ def test_result_reports_providers_used():
 # --- context window -----------------------------------------------------------
 
 def test_trim_drops_oldest_whole_turns_and_keeps_system_prompt():
-    agent = Agent(ScriptedLLM([]), tools=make_registry(), max_context_tokens=400)
+    agent = Agent(ScriptedLLM([]), tools=make_registry(), max_context_tokens=400, system_prompt="sys")
     padding = "y" * 600  # ~150 tokens per message
     for turn in range(4):
         agent.messages += [

@@ -59,7 +59,8 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - [x] Step 1: model layer + chat loop (`src/kestrel/llm.py`, `src/kestrel/__init__.py`, `src/kestrel/__main__.py`, `.vscode/launch.json`). Chat loop verified with Ollama; live Gemini call waits on `GEMINI_API_KEY` in `.env`.
 - [x] Step 2: tool calling (`tools.py` registry + 5 tools, `agent.py` loop with max_steps, `LLM.chat()`, `--debug`, 34 pytest tests). Verified end-to-end on Ollama; live Gemini/Groq runs wait on `GEMINI_API_KEY` / `GROQ_API_KEY` in `.env`. Lesson: small local models (deepseek-r1:8b) may claim tool use without calling tools; the `[tool]` trace exposes it.
 - [x] Step 3: robust loop. Retries with backoff + Retry-After, fail-fast on 401/403/404/400, `FallbackLLM` chain (`KESTREL_PROVIDERS`) with 60s cooldown, argument validation, 20s tool timeout, 8,000-char result cap, parallel tool calls, history trimmed by whole turns, `AgentResult` (answered / max_steps / error). 71 tests. Verified live: real Groq 401 -> fallback to Ollama; unknown model -> clean error. Retries/outages covered by tests only.
-- [ ] Step 4: approval gate for risky tools
+- [x] Step 4: approval gate. Risk tiers fixed in code (`@tool(risk="safe"|"confirm"|"forbidden")`, frozen `Tool`), action tools (write_file, append_to_file, create_note, send_message simulated to workspace/outbox/, delete_file forbidden), `approval.py` (`Approver` interface + `TerminalApprover` with diff/message previews, approve/edit/reject/session; `ApprovalGate` owns the rules + audit log `logs/approvals.jsonl`). File/web results wrapped as `<untrusted_data>`; system prompt treats tool output as data. Injection demo: `workspace/suspicious_email.txt`. 99 tests. Demoed with a scripted model + real gate/approver (injected send_message shown and rejected); real-model run waits on cloud keys (qwen2.5:0.5b too weak to call tools).
+- [ ] Step 5: tracing (every step logged with tokens, latency, cost)
 
 ## Configuration (.env)
 
@@ -86,8 +87,10 @@ kestrel/
     ├── __init__.py      # CLI + chat loop
     ├── __main__.py      # lets `python -m kestrel` run it
     ├── llm.py           # LLM (retries, fail-fast), FallbackLLM, build_llm()
-    ├── tools.py         # @tool registry: schemas, arg validation, timeout, truncation + tools
+    ├── tools.py         # @tool registry: schemas, risk tiers, validation, timeout, truncation + tools
+    ├── approval.py      # Approver interface, TerminalApprover, ApprovalGate + audit log
     └── agent.py         # Agent loop: parallel tools, history trimming, AgentResult
 tests/                   # pytest, no network or keys: `uv run pytest`
-workspace/               # the only folder file tools can touch; only notes.txt is tracked
+workspace/               # the only folder file tools can touch; notes.txt + suspicious_email.txt tracked
+logs/                    # approvals.jsonl audit log (git-ignored)
 ```

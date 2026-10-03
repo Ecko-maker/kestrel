@@ -28,8 +28,12 @@ def test_schema_from_hints_and_docstring():
 
 
 def test_starter_tools_registered():
-    names = {s["function"]["name"] for s in tools.registry.schemas()}
-    assert names == {"get_current_time", "calculator", "list_files", "read_file", "web_search"}
+    risks = {name: t.risk for name, t in tools.registry.tools.items()}
+    assert risks == {
+        "get_current_time": "safe", "calculator": "safe", "list_files": "safe", "read_file": "safe",
+        "web_search": "safe", "write_file": "confirm", "append_to_file": "confirm",
+        "create_note": "confirm", "send_message": "confirm", "delete_file": "forbidden",
+    }
 
 
 @pytest.mark.parametrize(

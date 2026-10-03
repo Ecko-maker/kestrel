@@ -17,3 +17,7 @@ wheels/
 # Kestrel workspace: only the sample file is tracked
 workspace/*
 !workspace/notes.txt
+!workspace/suspicious_email.txt
+
+# Approval audit log (local record of your decisions)
+logs/

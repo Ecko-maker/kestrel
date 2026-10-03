@@ -1,4 +1,4 @@
-"""Kestrel: a personal AI agent. Step 3: a robust agent loop with retries and fallback."""
+"""Kestrel: a personal AI agent. Step 4: risky actions wait for the user's approval."""
 
 import argparse
 import json
@@ -8,6 +8,7 @@ import sys
 from dotenv import load_dotenv
 
 from kestrel.agent import MAX_CONTEXT_TOKENS, Agent
+from kestrel.approval import ApprovalGate, TerminalApprover
 from kestrel.llm import PROVIDERS, LLMError, build_llm
 
 DIM, YELLOW, RESET = "\033[2m", "\033[33m", "\033[0m"
@@ -53,6 +54,7 @@ def provider_chain(cli_provider: str | None) -> list[str]:
 
 def main() -> None:
     load_dotenv()  # reads your API keys from the .env file
+    sys.stdout.reconfigure(errors="replace")  # odd characters in files/web results can't crash printing
 
     parser = argparse.ArgumentParser(prog="kestrel")
     parser.add_argument("--provider", choices=list(PROVIDERS),
@@ -81,6 +83,7 @@ def main() -> None:
         llm,
         on_tool_step=make_printer(args.debug),
         max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)),
+        gate=ApprovalGate(TerminalApprover()),
     )
     chain = " -> ".join(f"{l.provider.name} / {l.model}" for l in llm.llms)
     print(f"Kestrel is listening ({chain}). Type 'exit' to quit.")
