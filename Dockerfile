@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Stage 1: build the web console (React + Vite) ---------------------------------
-FROM node:24-slim AS console
+FROM node:26-slim AS console
 WORKDIR /console
 COPY console/package.json console/package-lock.json ./
 RUN npm ci --no-audit --no-fund
