@@ -23,7 +23,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 ## Working rules
 
 - The user is learning: before writing code, give a short plan; after, explain what each new piece does and why, in plain language.
-- Windows + PowerShell. Use `uv` for everything (`uv add`, `uv run`).
+- Windows + PowerShell. Use `uv` for everything (`uv add`, `uv run`). Run tests with `uv run pytest`.
 - Never open, print, or edit `.env`. It holds the user's API keys. If a key is missing, say exactly what line to add.
 - Free tools only unless the user says otherwise.
 - After each step: run it, fix any errors, then give a suggested git commit message and one sentence on what the step shows an interviewer.
@@ -57,7 +57,19 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 ## Progress
 
 - [x] Step 1: model layer + chat loop (`src/kestrel/llm.py`, `src/kestrel/__init__.py`, `src/kestrel/__main__.py`, `.vscode/launch.json`). Chat loop verified with Ollama; live Gemini call waits on `GEMINI_API_KEY` in `.env`.
-- [ ] Step 2: tool calling
+- [x] Step 2: tool calling (`tools.py` registry + 5 tools, `agent.py` loop with max_steps, `LLM.chat()`, `--debug`, 34 pytest tests). Verified end-to-end on Ollama; live Gemini/Groq runs wait on `GEMINI_API_KEY` / `GROQ_API_KEY` in `.env`. Lesson: small local models (deepseek-r1:8b) may claim tool use without calling tools; the `[tool]` trace exposes it.
+- [x] Step 3: robust loop. Retries with backoff + Retry-After, fail-fast on 401/403/404/400, `FallbackLLM` chain (`KESTREL_PROVIDERS`) with 60s cooldown, argument validation, 20s tool timeout, 8,000-char result cap, parallel tool calls, history trimmed by whole turns, `AgentResult` (answered / max_steps / error). 71 tests. Verified live: real Groq 401 -> fallback to Ollama; unknown model -> clean error. Retries/outages covered by tests only.
+- [ ] Step 4: approval gate for risky tools
+
+## Configuration (.env)
+
+| Variable | Purpose |
+|---|---|
+| `GEMINI_API_KEY`, `GROQ_API_KEY` | provider keys |
+| `KESTREL_PROVIDERS` | fallback chain, e.g. `gemini,groq,ollama` (default `gemini`); `--provider` pins one |
+| `<PROVIDER>_MODEL` | override a provider's default model, e.g. `OLLAMA_MODEL=qwen2.5:0.5b` |
+| `KESTREL_MAX_CONTEXT_TOKENS` | history budget (default 16000) |
+| `KESTREL_REQUEST_TIMEOUT` | seconds per model request (default 60) |
 
 ## File layout
 
@@ -73,5 +85,9 @@ kestrel/
 └── src/kestrel/
     ├── __init__.py      # CLI + chat loop
     ├── __main__.py      # lets `python -m kestrel` run it
-    └── llm.py           # provider-agnostic LLM interface
+    ├── llm.py           # LLM (retries, fail-fast), FallbackLLM, build_llm()
+    ├── tools.py         # @tool registry: schemas, arg validation, timeout, truncation + tools
+    └── agent.py         # Agent loop: parallel tools, history trimming, AgentResult
+tests/                   # pytest, no network or keys: `uv run pytest`
+workspace/               # the only folder file tools can touch; only notes.txt is tracked
 ```

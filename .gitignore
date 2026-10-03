@@ -13,3 +13,7 @@ wheels/
 .env
 .env.*
 !.env.example
+
+# Kestrel workspace: only the sample file is tracked
+workspace/*
+!workspace/notes.txt
