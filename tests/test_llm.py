@@ -179,3 +179,41 @@ def test_build_llm_with_nothing_usable_fails_clearly(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     with pytest.raises(LLMError, match="no provider is usable"):
         build_llm(["gemini", "groq"])
+
+
+class FakeChunk(SimpleNamespace):
+    pass
+
+
+def stream_of(*texts, usage=(10, 5)):
+    chunks = [FakeChunk(choices=[SimpleNamespace(delta=SimpleNamespace(content=t, tool_calls=None), finish_reason=None)],
+                        usage=None, model="m") for t in texts]
+    chunks.append(FakeChunk(choices=[SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=None), finish_reason="stop")],
+                            usage=None, model="m"))
+    chunks.append(FakeChunk(choices=[], usage=SimpleNamespace(prompt_tokens=usage[0], completion_tokens=usage[1]), model="m"))
+    return iter(chunks)
+
+
+def test_streaming_passes_text_pieces_and_reads_usage():
+    llm, completions, _ = fake_llm([stream_of("Hel", "lo", "!")])
+    pieces = []
+    out = llm.chat([{"role": "user", "content": "hi"}], on_text=pieces.append)
+    assert pieces == ["Hel", "lo", "!"] and out["content"] == "Hello!"
+    assert completions.requests[0]["stream"] is True
+    assert (llm.last_call.input_tokens, llm.last_call.output_tokens, llm.last_call.finish_reason) == (10, 5, "stop")
+
+
+def test_empty_streamed_reply_is_retried_without_streaming():
+    llm, completions, _ = fake_llm([stream_of(), ok_response("from the plain request")])
+    pieces = []
+    out = llm.chat([{"role": "user", "content": "hi"}], on_text=pieces.append)
+    assert out["content"] == "from the plain request" and pieces == ["from the plain request"]
+    assert completions.requests[0].get("stream") is True and "stream" not in completions.requests[1]
+    assert llm.last_call.retries == 1
+
+
+def test_provider_that_rejects_streaming_falls_back_and_stops_trying():
+    llm, completions, _ = fake_llm([status_error(openai.BadRequestError, 400), ok_response("a"), ok_response("b")])
+    assert llm.chat([], on_text=lambda t: None)["content"] == "a"
+    assert llm.chat([], on_text=lambda t: None)["content"] == "b"
+    assert [r.get("stream") for r in completions.requests] == [True, None, None]

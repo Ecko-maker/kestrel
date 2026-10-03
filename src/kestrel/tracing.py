@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS traces (
     messages       TEXT,       -- JSON: the conversation as of this request (for export)
     rating         TEXT,       -- "good" / "bad" from /good, /bad
     rating_note    TEXT,
-    rated_at       REAL
+    rated_at       REAL,
+    session_id     TEXT        -- one conversation (an Agent instance)
 );
 CREATE TABLE IF NOT EXISTS spans (
     span_id      TEXT PRIMARY KEY,
@@ -241,6 +242,7 @@ class Tracer:
             "list_price_usd": total("kestrel.list_price_usd"),
             "providers": json.dumps(providers),
             "fallback": int(any(s.attributes.get("kestrel.fallback") for s in llm_spans)),
+            "session_id": a.get("kestrel.session_id"),
             "messages": json.dumps(redact_value(_clean_messages(messages)), ensure_ascii=False)
                         if messages is not None and self.record_content else None,
         }
@@ -276,6 +278,9 @@ class Tracer:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.executescript(SCHEMA)
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(traces)")}
+        if "session_id" not in columns:  # databases created before conversations were tracked
+            conn.execute("ALTER TABLE traces ADD COLUMN session_id TEXT")
         return conn
 
     def find_trace_id(self, prefix: str) -> str:

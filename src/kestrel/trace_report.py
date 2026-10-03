@@ -45,17 +45,56 @@ def percentile(values: list[float], p: float) -> float | None:
     return ordered[max(0, math.ceil(p / 100 * len(ordered)) - 1)]
 
 
+# --- Queries (shared by the CLI and the web API) ------------------------------
+
+def _trace_dict(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d.pop("messages", None)  # the full conversation is only needed for export
+    d["providers"] = json.loads(d.get("providers") or "[]")
+    d["tokens"] = (d["input_tokens"] or 0) + (d["output_tokens"] or 0)
+    d["latency_ms"] = (d["duration_ms"] or 0) - (d["wait_ms"] or 0)  # excludes waiting for approvals
+    return d
+
+
+def list_traces(conn: sqlite3.Connection, limit: int = 20, query: str | None = None) -> list[dict]:
+    """Newest first. `query` matches the request, the answer, or the start of the trace id."""
+    sql, params = "SELECT * FROM traces", []
+    if query:
+        like = f"%{query}%"
+        sql += " WHERE user_message LIKE ? OR final_answer LIKE ? OR trace_id LIKE ?"
+        params += [like, like, query.lower() + "%"]
+    sql += " ORDER BY start_time DESC LIMIT ?"
+    return [_trace_dict(r) for r in conn.execute(sql, [*params, limit])]
+
+
+def get_trace(conn: sqlite3.Connection, trace_id: str) -> dict | None:
+    """One trace with its spans (attributes parsed), spans in start order."""
+    row = conn.execute("SELECT * FROM traces WHERE trace_id = ?", (trace_id,)).fetchone()
+    if row is None:
+        return None
+    trace = _trace_dict(row)
+    trace["spans"] = [dict(s) | {"attributes": json.loads(s["attributes"] or "{}")}
+                      for s in conn.execute("SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time", (trace_id,))]
+    return trace
+
+
+def timeseries(conn: sqlite3.Connection, limit: int = 500) -> list[dict]:
+    """Per-request points for charts, oldest first."""
+    rows = conn.execute("SELECT * FROM traces ORDER BY start_time DESC LIMIT ?", (limit,)).fetchall()
+    return [{k: t[k] for k in ("trace_id", "start_time", "latency_ms", "tokens", "list_price_usd", "status", "rating")}
+            for t in map(_trace_dict, reversed(rows))]
+
+
 # --- kestrel traces -----------------------------------------------------------
 
 def print_traces(conn: sqlite3.Connection, limit: int = 20, out: Out = print) -> None:
-    rows = conn.execute("SELECT * FROM traces ORDER BY start_time DESC LIMIT ?", (limit,)).fetchall()
+    rows = list_traces(conn, limit)
     if not rows:
         out("No traces yet. Chat with Kestrel first: uv run kestrel")
         return
     out(f"{'TIME':<12} {'ID':<8}  {'REQUEST':<42} {'STEPS':>5} {'TOKENS':>7} {'LATENCY':>8}  RATING")
     for r in rows:
-        tokens = (r["input_tokens"] or 0) + (r["output_tokens"] or 0)
-        latency = (r["duration_ms"] or 0) - (r["wait_ms"] or 0)
+        tokens, latency = r["tokens"], r["latency_ms"]
         rating = r["rating"] or ""
         if r["status"] == "error":
             rating = f"{rating} (error)".strip()
@@ -66,7 +105,7 @@ def print_traces(conn: sqlite3.Connection, limit: int = 20, out: Out = print) ->
 
 # --- kestrel trace <id> -------------------------------------------------------
 
-def _label(span: sqlite3.Row, attrs: dict) -> str:
+def _label(span: dict, attrs: dict) -> str:
     name, dur = span["name"], fmt_ms(span["duration_ms"])
     if name == "agent_run":
         tokens = attrs.get("gen_ai.usage.input_tokens", 0) + attrs.get("gen_ai.usage.output_tokens", 0)
@@ -101,10 +140,9 @@ def _label(span: sqlite3.Row, attrs: dict) -> str:
 
 
 def print_trace(conn: sqlite3.Connection, trace_id: str, out: Out = print) -> None:
-    trace = conn.execute("SELECT * FROM traces WHERE trace_id = ?", (trace_id,)).fetchone()
-    spans = conn.execute("SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time", (trace_id,)).fetchall()
-    children: dict[str | None, list[sqlite3.Row]] = defaultdict(list)
-    for s in spans:
+    trace = get_trace(conn, trace_id)
+    children: dict[str | None, list[dict]] = defaultdict(list)
+    for s in trace["spans"]:
         children[s["parent_id"]].append(s)
 
     out(f"Trace {trace_id}  {datetime.fromtimestamp(trace['start_time']):%Y-%m-%d %H:%M:%S}"
@@ -113,8 +151,8 @@ def print_trace(conn: sqlite3.Connection, trace_id: str, out: Out = print) -> No
     out(f"  you > {short(trace['user_message'], 100)}")
     out(f"  kestrel > {short(trace['final_answer'], 100)}\n")
 
-    def render(span: sqlite3.Row, prefix: str, connector: str) -> None:
-        attrs = json.loads(span["attributes"] or "{}")
+    def render(span: dict, prefix: str, connector: str) -> None:
+        attrs = span["attributes"]
         line = connector + _label(span, attrs)
         if span["status"] == "error":
             line += f"  {RED}ERROR: {short(span['error'], 80)}{RESET}"
@@ -154,7 +192,17 @@ def compute_stats(conn: sqlite3.Connection) -> dict:
     tokens = [(t["input_tokens"] or 0) + (t["output_tokens"] or 0) for t in traces]
     list_prices = [t["list_price_usd"] for t in traces if t["list_price_usd"] is not None]
     rated = [t["rating"] for t in traces if t["rating"]]
+    midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    providers = Counter(p for t in traces for p in json.loads(t["providers"] or "[]"))
+    per_conversation: dict[str, float] = defaultdict(float)
+    for t in traces:
+        if t["session_id"] and t["list_price_usd"] is not None:
+            per_conversation[t["session_id"]] += t["list_price_usd"]
     return {
+        "requests_today": sum(t["start_time"] >= midnight for t in traces),
+        "providers": dict(providers.most_common()),
+        "list_price_usd_per_conversation":
+            sum(per_conversation.values()) / len(per_conversation) if per_conversation else None,
         "traces": n,
         "first": min(t["start_time"] for t in traces),
         "last": max(t["start_time"] for t in traces),

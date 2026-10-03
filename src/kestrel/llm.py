@@ -58,6 +58,12 @@ class LLMError(Exception):
 
 # Called before each retry wait: (provider, reason, seconds)
 RetryCallback = Callable[[str, str, float], None]
+# Called with each piece of streamed text
+TextCallback = Callable[[str], None]
+
+
+class _StreamingRejected(Exception):
+    """The provider refused a streaming request; fall back to a normal one."""
 
 
 def _retry_after(error: Exception) -> float | None:
@@ -94,6 +100,7 @@ class LLM:
         self.sleep = time.sleep  # swapped out in tests
         self.last_provider: str | None = None
         self.last_call: CallInfo | None = None
+        self._streaming_ok = True
 
     def _request(self, **kwargs):
         """One API call with retries for temporary failures and clear errors for permanent ones."""
@@ -150,12 +157,29 @@ class LLM:
     def complete(self, messages: list[dict]) -> str:
         return self.chat(messages)["content"] or ""
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+    supports_streaming = True
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None,
+             on_text: TextCallback | None = None) -> dict:
         """Send the conversation plus tool schemas; return the assistant message as a dict
-        with "content" (text or None) and, if the model wants tools, "tool_calls"."""
+        with "content" (text or None) and, if the model wants tools, "tool_calls".
+        With on_text, the reply is streamed and on_text gets each piece of text as it arrives."""
         kwargs = {"tools": tools} if tools else {}
         self.last_call = info = CallInfo(self.provider.name, self.model, attempts=[self.provider.name])
-        response = self._request(messages=self._prepare(messages), **kwargs)
+        prepared = self._prepare(messages)
+        if on_text is not None and self._streaming_ok:
+            try:
+                out = self._chat_streaming(prepared, kwargs, on_text, info)
+            except _StreamingRejected:
+                self._streaming_ok = False  # this provider/model won't stream: stop trying
+            else:
+                if out["content"] or out.get("tool_calls"):
+                    self.last_provider = self.provider.name
+                    return out
+                # An empty streamed reply: some servers (seen with Ollama) occasionally swallow a
+                # tool call while streaming. Ask again without streaming rather than return nothing.
+                info.retries += 1
+        response = self._request(messages=prepared, **kwargs)
         if not getattr(response, "choices", None):
             raise LLMError(self.provider.name, "returned no choices (empty or blocked response)")
         usage = getattr(response, "usage", None)
@@ -169,6 +193,57 @@ class LLM:
             # model_dump keeps provider extras (e.g. Gemini's thought signatures).
             out["tool_calls"] = [tc.model_dump(exclude_none=True) for tc in msg.tool_calls]
         self.last_provider = self.provider.name
+        if on_text is not None and out["content"]:
+            on_text(out["content"])  # couldn't stream: deliver the text in one piece
+        return out
+
+    def _chat_streaming(self, prepared: list[dict], kwargs: dict, on_text: TextCallback, info: CallInfo) -> dict:
+        """Stream a reply: pass text to on_text as it arrives, and rebuild tool calls, which
+        arrive in fragments (id and name first, then the JSON arguments piece by piece)."""
+        try:
+            stream = self._request(messages=prepared, stream=True, stream_options={"include_usage": True}, **kwargs)
+        except LLMError as e:
+            if isinstance(e.__cause__, openai.BadRequestError):  # e.g. streaming or usage not supported
+                raise _StreamingRejected() from e
+            raise
+        content: list[str] = []
+        calls: dict[int, dict] = {}
+        try:
+            for chunk in stream:
+                if usage := getattr(chunk, "usage", None):
+                    info.input_tokens = getattr(usage, "prompt_tokens", None)
+                    info.output_tokens = getattr(usage, "completion_tokens", None)
+                if getattr(chunk, "model", None):
+                    info.response_model = chunk.model
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.finish_reason:
+                    info.finish_reason = choice.finish_reason
+                delta = choice.delta
+                if delta is None:
+                    continue
+                if delta.content:
+                    content.append(delta.content)
+                    on_text(delta.content)
+                for fragment in delta.tool_calls or []:
+                    part = fragment.model_dump(exclude_none=True)
+                    slot = calls.setdefault(part.get("index", len(calls)),
+                                            {"id": None, "type": "function", "function": {"name": "", "arguments": ""}})
+                    slot["id"] = part.get("id") or slot["id"]
+                    fn = part.get("function") or {}
+                    if fn.get("name") and not slot["function"]["name"]:
+                        slot["function"]["name"] = fn["name"]
+                    slot["function"]["arguments"] += fn.get("arguments") or ""
+                    for key, value in part.items():  # provider extras, e.g. Gemini's thought signature
+                        if key not in ("index", "id", "type", "function"):
+                            slot[key] = value
+        except openai.APIError as e:
+            raise LLMError(self.provider.name, f"stream broke off: {_short(e)}") from e
+
+        out: dict = {"role": "assistant", "content": "".join(content) or None}
+        if calls:
+            out["tool_calls"] = [c | {"id": c["id"] or f"call_{i}"} for i, c in sorted(calls.items())]
         return out
 
     def list_models(self) -> list[str]:
@@ -215,13 +290,16 @@ class FallbackLLM:
     def complete(self, messages: list[dict]) -> str:
         return self.chat(messages)["content"] or ""
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+    supports_streaming = True
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None,
+             on_text: TextCallback | None = None) -> dict:
         errors = []
         chain = self._ordered()
         self.last_call = summary = CallInfo(None, None)
         for i, llm in enumerate(chain):
             try:
-                reply = llm.chat(messages, tools)
+                reply = llm.chat(messages, tools, on_text) if on_text else llm.chat(messages, tools)
             except LLMError as e:
                 summary.attempts.append(llm.provider.name)
                 summary.retries += getattr(getattr(llm, "last_call", None), "retries", 0)

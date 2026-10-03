@@ -25,6 +25,8 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - The user is learning: before writing code, give a short plan; after, explain what each new piece does and why, in plain language.
 - Windows + PowerShell. Use `uv` for everything (`uv add`, `uv run`). Run tests with `uv run pytest`.
 - Before using a library API, check the installed version's actual API (e.g. `mcp` 2.x renamed FastMCP to MCPServer).
+- Frontend: `cd console; npm run typecheck; npm run build`. The Bash tool mangles `
+` inside heredocs: write multi-line edit scripts with the Write tool.
 - Never open, print, or edit `.env`. It holds the user's API keys. If a key is missing, say exactly what line to add.
 - Free tools only unless the user says otherwise.
 - After each step: run it, fix any errors, then give a suggested git commit message and one sentence on what the step shows an interviewer.
@@ -63,7 +65,8 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - [x] Step 4: approval gate. Risk tiers fixed in code (`@tool(risk="safe"|"confirm"|"forbidden")`, frozen `Tool`), action tools (write_file, append_to_file, create_note, send_message simulated to workspace/outbox/, delete_file forbidden), `approval.py` (`Approver` interface + `TerminalApprover` with diff/message previews, approve/edit/reject/session; `ApprovalGate` owns the rules + audit log `logs/approvals.jsonl`). File/web results wrapped as `<untrusted_data>`; system prompt treats tool output as data. Injection demo: `workspace/suspicious_email.txt`. 99 tests. Demoed with a scripted model + real gate/approver (injected send_message shown and rejected); real-model run waits on cloud keys (qwen2.5:0.5b too weak to call tools).
 - [x] Step 5: tracing. `tracing.py` (traces of nested spans agent_run > llm_call / tool_call > approval, OTel GenAI attribute names, SQLite `logs/traces.db`, redaction of key-like strings + secret env values, `KESTREL_TRACE_CONTENT=off`), `pricing.py` + `prices.toml` (actual vs list price per model), `/good` `/bad [note]` ratings, `kestrel traces | trace <id> | stats | export` (`trace_report.py`). Export is chat JSONL with `weight: 0` on earlier turns so only the rated turn is trained on. 115 tests. Live on Ollama qwen2.5:0.5b: 6 traces incl. web search and a rejected approval. List prices unverified and only shown for Gemini/Groq models.
 - [x] Step 6: MCP (official `mcp` SDK 2.x: FastMCP is now `MCPServer`, fields are snake_case). Client `mcp_client.py`: servers from `kestrel.mcp.json` (Claude-style `mcpServers` + Kestrel `safe_tools` allowlist), one asyncio loop on a background thread (Agent stays sync for now), tools registered as `<server>__<tool>`, external = confirm unless allowlisted, annotations shown but never lower the tier, results and error messages wrapped as untrusted, dead servers' tools hidden. Servers: `mcp-server-fetch` (fetch__fetch safe) and `mcp-server-time` (confirm), pinned to 2026.8.18; kept our own get_current_time/web_search. Server `mcp_server.py` (`uv run kestrel-mcp`): exposes only safe tools + create_note through the registry; `.mcp.json` lets Claude Code use it. 129 tests. Live: fetch of modelcontextprotocol.io on Ollama, and kestrel-mcp called over real stdio.
-- [ ] Step 7: web console (first version)
+- [x] Step 7: web console. Agent emits typed events (`on_event`: step_started, llm_call, text_delta, tool_call, tool_result, answer, error, done; WebApprover adds approval_required/approval_resolved) consumed by both the terminal (`TerminalEvents`) and the browser. `LLM.chat(on_text=)` streams tokens (falls back to non-streaming if rejected or if a streamed reply comes back empty, seen with Ollama). Backend `src/kestrel/web/` (FastAPI): WebSocket chat with one Agent per connection on a worker thread, `WebApprover` (5 min timeout, disconnect = reject), REST traces/stats/rating reusing `trace_report` query functions, 127.0.0.1 only + startup token -> HttpOnly SameSite=Strict cookie, Host check, WS Origin check, CORS only for Vite dev. Frontend `console/` (React 19, Vite 8, TS 7, Tailwind 4, react-markdown, lucide-react; hand-made SVG charts). `uv run kestrel web [--build]`. 146 tests. Browser demo via `scripts/demo_console.py --shots` (scripted model, real everything else; Playwright + installed Edge) -> `docs/screenshots/`. Traces now carry `session_id` (one conversation).
+- [ ] Step 8: Docker + first tests in CI
 
 ## Configuration (.env)
 
@@ -89,6 +92,9 @@ kestrel/
 ├── .mcp.json           # lets Claude Code use kestrel-mcp
 ├── CLAUDE.md
 ├── kestrel.mcp.json    # MCP servers Kestrel uses + safe_tools allowlist
+├── console/            # web console frontend (npm run dev / build -> console/dist)
+├── docs/screenshots/
+├── scripts/demo_console.py  # console demo with a scripted model (no keys needed)
 ├── KESTREL_PROJECT.md
 ├── pyproject.toml
 └── src/kestrel/
@@ -102,6 +108,7 @@ kestrel/
     ├── pricing.py       # cost from prices.toml (actual vs list price)
     ├── mcp_client.py    # MCPManager: external MCP tools into the registry
     ├── mcp_server.py    # kestrel-mcp: Kestrel's safe tools over MCP
+    └── web/             # FastAPI app (app.py) + WebApprover (approver.py)
     └── agent.py         # Agent loop: parallel tools, history trimming, AgentResult
 tests/                   # pytest, no network or keys: `uv run pytest`
 workspace/               # the only folder file tools can touch; notes.txt + suspicious_email.txt tracked

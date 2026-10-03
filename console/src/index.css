@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Kestrel rust: the bird's back feathers */
+  --color-accent-50: #fff6ef;
+  --color-accent-100: #feead9;
+  --color-accent-200: #fbd0ad;
+  --color-accent-300: #f6ad77;
+  --color-accent-400: #ee8a4a;
+  --color-accent-500: #e06d2b;
+  --color-accent-600: #c4561c;
+  --color-accent-700: #a14419;
+  --color-accent-800: #81381a;
+  --color-accent-900: #693018;
+  --color-accent-950: #3a160a;
+}
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { @apply bg-stone-50 text-stone-900 dark:bg-stone-950 dark:text-stone-100; }
+  ::selection { @apply bg-accent-200 dark:bg-accent-800; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-accent-500; }
+}
+
+/* Markdown answers */
+.md { @apply text-[15px] leading-7 break-words; }
+.md > * + * { @apply mt-3; }
+.md h1, .md h2, .md h3 { @apply font-semibold tracking-tight mt-5; }
+.md h1 { @apply text-xl; } .md h2 { @apply text-lg; } .md h3 { @apply text-base; }
+.md a { @apply text-accent-700 underline decoration-accent-300 underline-offset-2 hover:decoration-accent-600 dark:text-accent-300 dark:decoration-accent-700; }
+.md ul { @apply list-disc pl-5 space-y-1; } .md ol { @apply list-decimal pl-5 space-y-1; }
+.md code { @apply font-mono text-[13px] rounded bg-stone-200/70 px-1 py-0.5 dark:bg-stone-800; }
+.md pre { @apply overflow-x-auto rounded-lg bg-stone-900 p-3 text-stone-100 dark:bg-black/40; }
+.md pre code { @apply bg-transparent p-0 text-stone-100; }
+.md blockquote { @apply border-l-2 border-stone-300 pl-3 text-stone-600 dark:border-stone-700 dark:text-stone-400; }
+.md table { @apply w-full text-sm; } .md th, .md td { @apply border-b border-stone-200 py-1 pr-3 text-left dark:border-stone-800; }
+
+.cursor-blink::after { content: "▍"; @apply ml-0.5 animate-pulse text-accent-500; }

@@ -1,4 +1,4 @@
-"""Kestrel: a personal AI agent. Step 6: tools from any MCP server."""
+"""Kestrel: a personal AI agent. Step 7: a web console."""
 
 import argparse
 import json
@@ -32,17 +32,46 @@ def format_call(name: str, args_json: str) -> str:
     return f"{name}({shown})"
 
 
-def make_printer(debug: bool):
-    def on_tool_step(name: str, args_json: str, result: str) -> None:
-        one_line = " ".join(result.split())
-        if len(one_line) > 100:
-            one_line = one_line[:97] + "..."
-        dim(f"[tool] {format_call(name, args_json)} -> {one_line}")
-        if debug:
-            dim(f"[debug] call: {json.dumps({'name': name, 'arguments': args_json})}")
-            dim(f"[debug] result: {json.dumps(result, ensure_ascii=False)}")
+class TerminalEvents:
+    """Shows agent events in the terminal: tool steps dimly, the answer streamed as it arrives."""
 
-    return on_tool_step
+    def __init__(self, debug: bool = False):
+        self.debug = debug
+        self.open_line = False              # mid-way through printing streamed text
+        self.streamed: dict[int, str] = {}  # step -> text streamed in that step
+        self.args: dict[str, str] = {}      # call_id -> arguments, for the [tool] line
+
+    def _end_line(self) -> None:
+        if self.open_line:
+            print()
+            self.open_line = False
+
+    def __call__(self, event: dict) -> None:
+        kind = event["type"]
+        if kind == "step_started" and event["step"] == 1:
+            self.streamed.clear()
+        elif kind == "text_delta":
+            if not self.open_line:
+                print("\nkestrel > ", end="")
+                self.open_line = True
+            print(event["text"], end="", flush=True)
+            self.streamed[event["step"]] = self.streamed.get(event["step"], "") + event["text"]
+        elif kind == "tool_call":
+            self._end_line()  # text before a tool call was the model thinking aloud
+            self.args[event["call_id"]] = event["arguments"]
+        elif kind == "tool_result":
+            args = self.args.get(event["call_id"], "{}")
+            one_line = " ".join(event["result"].split())
+            if len(one_line) > 100:
+                one_line = one_line[:97] + "..."
+            dim(f"[tool] {format_call(event['name'], args)} -> {one_line}")
+            if self.debug:
+                dim(f"[debug] call: {json.dumps({'name': event['name'], 'arguments': args})}")
+                dim(f"[debug] result: {json.dumps(event['result'], ensure_ascii=False)}")
+        elif kind == "answer":
+            self._end_line()
+            if event["text"] not in self.streamed.values():  # e.g. max_steps or error messages
+                print(f"\nkestrel > {event['text']}")
 
 
 def provider_chain(cli_provider: str | None) -> list[str]:
@@ -102,12 +131,18 @@ def main() -> None:
     p = sub.add_parser("trace", help="show one trace as a tree")
     p.add_argument("id", help="trace id or its first few characters")
     sub.add_parser("stats", help="latency, tokens, cost, tools, error and fallback rates, ratings")
+    p = sub.add_parser("web", help="open the web console (chat, approvals, traces, stats)")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--build", action="store_true", help="build the frontend first (needs Node.js)")
     p = sub.add_parser("export", help="export traces as chat-format JSONL")
     p.add_argument("--rated", choices=["good", "bad", "any"], default="good")
     p.add_argument("--out", default="data/traces.jsonl")
     args = parser.parse_args()
 
     tracer = Tracer()
+    if args.command == "web":
+        run_web(args, tracer)
+        return
     if args.command:
         run_report(args, tracer)
         return
@@ -130,6 +165,50 @@ def main() -> None:
     mcp = None if args.no_mcp else start_mcp()
     try:
         chat(llm, tracer, args)
+    finally:
+        if mcp:
+            mcp.close()
+
+
+def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
+    import uvicorn
+
+    from kestrel.web import WebConfig, build_frontend, create_app
+
+    if args.build:
+        build_frontend()
+    llm, problem = None, None
+    try:
+        llm, skipped = build_llm(
+            provider_chain(args.provider), args.model,
+            on_retry=lambda p, reason, wait: dim(f"[retry] {p} {reason}; waiting {wait:.1f}s"),
+            on_fallback=lambda msg: print(f"{YELLOW}[fallback] {msg}{RESET}"),
+        )
+        for warning in skipped:
+            dim(f"[skip] {warning}")
+    except LLMError as e:
+        problem = str(e)
+        print(f"{YELLOW}Chat is disabled: {problem}. Traces and stats still work.{RESET}")
+    mcp = None if args.no_mcp else start_mcp()
+
+    def make_agent(on_event, approver):
+        if llm is None:
+            raise RuntimeError(problem)
+        return Agent(llm, on_event=on_event, gate=ApprovalGate(approver), tracer=tracer,
+                     max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)))
+
+    info = {
+        "chat_available": llm is not None,
+        "problem": problem,
+        "models": [{"provider": l.provider.name, "model": l.model} for l in llm.llms] if llm else [],
+        "tools": [{"name": t.name, "risk": t.risk, "server": t.server} for t in registry.tools.values()],
+    }
+    config = WebConfig(port=args.port, session_info=info)
+    app = create_app(make_agent, tracer, config)
+    print(f"Kestrel console: {config.url()}", flush=True)
+    dim("Only this machine can connect; the token in the link is your key. Ctrl+C to stop.")
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
     finally:
         if mcp:
             mcp.close()
@@ -158,7 +237,7 @@ def start_mcp() -> MCPManager | None:
 def chat(llm, tracer: Tracer, args: argparse.Namespace) -> None:
     agent = Agent(
         llm,
-        on_tool_step=make_printer(args.debug),
+        on_event=TerminalEvents(args.debug),
         max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)),
         gate=ApprovalGate(TerminalApprover()),
         tracer=tracer,
@@ -197,7 +276,6 @@ def chat(llm, tracer: Tracer, args: argparse.Namespace) -> None:
             dim("\n[interrupted]")
             continue
         last_trace = result.trace_id
-        print(f"\nkestrel > {result.text}")
         details = [f"trace {result.trace_id[:8]}", f"{result.steps} step(s)", f"{result.tokens:,} tokens",
                    f"{(result.duration_ms or 0) / 1000:.1f}s"]
         primary = llm.provider.name
