@@ -30,7 +30,33 @@ Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`). Demo mod
 - **MCP, both directions**: uses tools from any MCP server (untrusted by default) and serves its own safe tools to clients like Claude Code.
 - **Tracing**: every request is a tree of spans (OpenTelemetry GenAI names) in SQLite, with tokens, latency, cost and list price, ratings, and training-data export.
 - **Web console**: live streaming chat, the agent's steps as they happen, approval cards, traces with a waterfall view, stats.
-- **Production basics**: Docker image (non-root, healthcheck), CI on Linux and Windows, secret scanning, 164 tests.
+- **Production basics**: Docker image (non-root, healthcheck), CI on Linux and Windows, secret scanning, 218 tests.
+
+## KestrelBench baseline
+
+[KestrelBench](docs/kestrelbench.md) is Kestrel's own 100-task eval: tool use, files, approvals, prompt injection, sandbox escapes, multi-step and multi-turn tasks, scored by deterministic checks plus an LLM judge on 43 open-ended tasks.
+
+**85% pass rate (95% CI 78–92%, n=100)**: `openai/gpt-oss-120b` on Groq, 2026-10-04, one run. The interval is a bootstrap over tasks (10,000 resamples): it says how much the score depends on which tasks happen to be in the suite.
+
+| Category | Tasks | Pass rate (95% CI) |
+|---|---:|---|
+| actions | 14 | 79% (57–100%) |
+| adapt | 8 | 100% (100–100%)\* |
+| arithmetic | 10 | 80% (50–100%) |
+| conversation | 6 | 83% (50–100%)\* |
+| files | 14 | 86% (64–100%) |
+| multistep | 12 | 83% (58–100%) |
+| no_tools | 8 | 88% (62–100%)\* |
+| safety | 16 | 75% (50–94%) |
+| time | 6 | 100% (100–100%)\* |
+| web | 6 | 100% (100–100%)\* |
+
+\* Fewer than 10 tasks: too few to compare. An all-pass category shows a zero-width interval, which understates the uncertainty.
+
+**Read with care:**
+- **Judge: `openai/gpt-oss-120b` on Groq, prompt v1. Judge not yet calibrated** against human labels ([known issue #21](docs/known-issues.md)), and it is the same model as the one tested.
+- 7 of the 15 failures in this run were bugs in the checks (Unicode spaces and quotes), since fixed, so the score is probably an underestimate. The clean re-run hit Groq's daily token limit after 16 tasks and will be finished with `--resume`; it will replace this number.
+- This is a single run, and outputs vary: across two runs, 3 arithmetic tasks flipped, because the model sometimes does the sum in its head instead of using the calculator. Run-to-run variance isn't measured yet ([#22](docs/known-issues.md)).
 
 ## Architecture
 
@@ -99,7 +125,7 @@ Known limitations are listed honestly in [docs/known-issues.md](docs/known-issue
 | Phase | Status | Contents |
 |---|---|---|
 | 1. Foundation | ✅ done (v0.1.0) | Model layer, tool calling, resilient agent loop, approval gate, tracing, MCP, web console, Docker, CI |
-| 2. Evals | planned | KestrelBench (100 tasks), LLM-judge calibration, evals in CI, baseline score |
+| 2. Evals | in progress | KestrelBench (100 tasks), LLM-judge calibration, evals in CI, baseline score |
 | 3. Memory and safety | planned | Long-term memory with hybrid RAG, permission tiers, prompt-injection test suite |
 | 4. Distillation | planned | Training set from rated traces, QLoRA fine-tune of a small open model, router, cost curve |
 | 5. Voice and launch | planned | Streaming voice with barge-in, demo video, more MCP servers, write-ups |

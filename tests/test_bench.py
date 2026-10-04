@@ -245,19 +245,31 @@ def test_parse_verdict():
 
 
 def test_cohens_kappa():
-    perfect = [(1.0, 1.0), (0.0, 0.0), (0.5, 0.5), (1.0, 1.0)]
+    perfect = [(True, True), (False, False), (True, True), (False, False)]
     assert cal.cohens_kappa(perfect) == 1.0
-    assert cal.cohens_kappa([(1.0, 1.0)] * 5) is None  # undefined: no variation
-    always_one = [(1.0, 1.0), (1.0, 1.0), (0.0, 1.0), (0.0, 1.0)]
-    assert cal.cohens_kappa(always_one) == 0.0  # 50% agreement, all of it chance
+    assert cal.cohens_kappa([(True, True)] * 5) is None  # undefined: no variation
+    always_pass = [(True, True), (True, True), (False, True), (False, True)]
+    assert cal.cohens_kappa(always_pass) == 0.0  # 50% agreement, all of it chance
+
+
+def pair(human, judge, category="c", task_id="t"):
+    return cal.Pair(task_id, category, human, judge, 1.0 if judge else 0.0, "because")
+
+
+def test_calibration_confusion_and_categories():
     c = cal.calibrate(
         [
-            {"human_score": 1, "judge_score": 1},
-            {"human_score": 0, "judge_score": 0.5},
-            {"human_score": 0.5, "judge_score": None},
+            pair(True, True, "a"),
+            pair(False, False, "a"),
+            pair(False, True, "a", "lenient-one"),  # judge passed what you failed
+            pair(True, False, "b", "strict-one"),
+            pair(True, True, "b"),
         ]
     )
-    assert c.n == 2 and c.agreement == 0.5 and c.within_half == 1.0 and len(c.disagreements) == 1
+    assert c.n == 5 and c.agreement is not None and c.agreement.value == 0.6
+    assert c.confusion == {"both_pass": 2, "both_fail": 1, "too_lenient": 1, "too_strict": 1}
+    assert c.by_category == {"a": (2, 3), "b": (1, 2)}
+    assert [p.task_id for p in c.disagreements] == ["lenient-one", "strict-one"]
 
 
 def test_summary_and_markdown():
@@ -279,7 +291,8 @@ def test_summary_and_markdown():
     md = markdown(
         {"summary": s, "meta": {"model": "m", "provider": "p", "judge": "j"}, "tasks": [r.to_dict() for r in rs]}
     )
-    assert "50% pass rate" in md and "**b** (fail): /42/ not found" in md and "**c** (error)" in md
+    assert md.startswith("# KestrelBench: 50% (95% CI ") and "n=2)" in md  # n counts graded tasks only
+    assert "**b** (fail): /42/ not found" in md and "**c** (error)" in md and "Partial run" in md
 
 
 # --- end to end through the CLI, offline with the demo provider ---------------------

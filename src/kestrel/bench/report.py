@@ -1,4 +1,8 @@
-"""Turn task results into a summary, a JSON file, and a Markdown report."""
+"""Turn task results into a summary, a JSON file, and a Markdown report.
+
+The summary is recomputed from the task list (not trusted from the file), so older results files
+get confidence intervals too, without being rewritten.
+"""
 
 import json
 import statistics
@@ -8,43 +12,59 @@ from pathlib import Path
 from typing import Any
 
 from kestrel.bench.runner import TaskResult
+from kestrel.bench.stats import Estimate, category_cis, pass_rate_ci, per_task_pass, repeat_spread
 
 
-def summarize(results: list[TaskResult]) -> dict[str, Any]:
-    graded = [r for r in results if r.status in ("pass", "fail")]
-    by_cat: dict[str, list[TaskResult]] = defaultdict(list)
-    for r in results:
-        by_cat[r.category].append(r)
+def _rate(rs: list[dict[str, Any]]) -> float | None:
+    """Pass rate: the mean over tasks of each task's pass fraction (= passed/graded without repeats)."""
+    p = per_task_pass(rs)
+    return round(sum(p.values()) / len(p), 3) if p else None
 
-    def rate(rs: list[TaskResult]) -> float | None:
-        ok = [r for r in rs if r.status in ("pass", "fail")]
-        return round(sum(r.status == "pass" for r in ok) / len(ok), 3) if ok else None
 
-    latencies = [r.latency_ms for r in graded]
+def _est(e: Estimate | None) -> dict[str, Any] | None:
+    return None if e is None else {"value": e.value, "low": e.low, "high": e.high, "n": e.n}
+
+
+def summarize(results: list[TaskResult] | list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [r.to_dict() if isinstance(r, TaskResult) else r for r in results]
+    graded = [r for r in rows if r["status"] in ("pass", "fail")]
+    by_cat: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        by_cat[r["category"]].append(r)
+    cis = category_cis(rows)
+
+    def mean_score(rs: list[dict[str, Any]]) -> float | None:
+        ok = [r["score"] for r in rs if r["status"] in ("pass", "fail")]
+        return round(statistics.mean(ok), 3) if ok else None
+
+    latencies = [r["latency_ms"] for r in graded]
     return {
-        "tasks": len(results),
+        "tasks": len({r["id"] for r in rows}),
+        "runs": len(rows),
         "graded": len(graded),
-        "errors": sum(r.status == "error" for r in results),
-        "excluded": sum(r.status == "excluded" for r in results),  # answered by another provider
-        "skipped": sum(r.status == "skipped" for r in results),  # token budget reached
-        "passed": sum(r.status == "pass" for r in results),
-        "pass_rate": rate(results),
-        "mean_score": round(statistics.mean(r.score for r in graded), 3) if graded else None,
+        "errors": sum(r["status"] == "error" for r in rows),
+        "excluded": sum(r["status"] == "excluded" for r in rows),  # answered by another provider
+        "skipped": sum(r["status"] == "skipped" for r in rows),  # token budget or repeated errors
+        "passed": sum(r["status"] == "pass" for r in rows),
+        "pass_rate": _rate(rows),
+        "pass_rate_ci": _est(pass_rate_ci(rows)),
+        "mean_score": mean_score(rows),
         "by_category": {
             c: {
-                "tasks": len(rs),
-                "pass_rate": rate(rs),
-                "mean_score": round(statistics.mean(r.score for r in rs if r.status in ("pass", "fail")), 3)
-                if any(r.status in ("pass", "fail") for r in rs)
-                else None,
+                "tasks": len({r["id"] for r in rs}),
+                "pass_rate": _rate(rs),
+                "pass_rate_ci": _est(cis[c]["ci"]),
+                "too_few": cis[c]["too_few"],
+                "mean_score": mean_score(rs),
             }
             for c, rs in sorted(by_cat.items())
         },
-        "tokens_total": sum(r.tokens for r in results),
-        "judge_tokens_total": sum(r.judge_tokens for r in results),
-        "cached_tokens_total": sum(r.cached_tokens for r in results),
-        "billable_tokens_total": sum(r.tokens + r.judge_tokens - r.cached_tokens for r in results),
-        "tokens_per_task": round(statistics.mean(r.tokens for r in graded)) if graded else None,
+        "repeats": repeat_spread(rows),
+        "tokens_total": sum(r["tokens"] for r in rows),
+        "judge_tokens_total": sum(r.get("judge_tokens", 0) for r in rows),
+        "cached_tokens_total": sum(r.get("cached_tokens", 0) for r in rows),
+        "billable_tokens_total": sum(r["tokens"] + r.get("judge_tokens", 0) - r.get("cached_tokens", 0) for r in rows),
+        "tokens_per_task": round(statistics.mean(r["tokens"] for r in graded)) if graded else None,
         "latency_p50_ms": round(statistics.median(latencies)) if latencies else None,
     }
 
@@ -64,23 +84,51 @@ def pct(x: float | None) -> str:
     return "n/a" if x is None else f"{x:.0%}"
 
 
+def fmt_ci(ci: dict[str, Any] | None) -> str:
+    """71% (95% CI 62-79%, n=100), with an en dash."""
+    return "n/a (nothing graded)" if ci is None else Estimate(**ci).fmt()
+
+
 def markdown(data: dict[str, Any]) -> str:
-    s, m = data["summary"], data["meta"]
+    s, m = summarize(data["tasks"]), data["meta"]
+    judge = f"`{m.get('judge')}` ({m.get('judge_version') or 'v1'})" if m.get("judge") else "none"
     lines = [
-        f"# KestrelBench: {pct(s['pass_rate'])} pass rate",
+        f"# KestrelBench: {fmt_ci(s['pass_rate_ci'])}",
         "",
-        f"Model `{m.get('model')}` on {m.get('provider')}, judge `{m.get('judge')}`, "
+        f"Model `{m.get('model')}` on {m.get('provider')}, judge {judge}, "
         f"{s['tasks']} tasks ({m.get('subset') or 'all'}), {m.get('finished')}.",
-        f"Mean score {s['mean_score']}, {s['errors']} errored, {s.get('excluded', 0)} excluded (other provider), "
-        f"{s.get('skipped', 0)} skipped (token budget), {s['tokens_per_task']} tokens/task "
-        f"(+{s.get('judge_tokens_total', 0):,} judge tokens in total), "
+        f"Mean score {s['mean_score']}, {s['errors']} errored, {s['excluded']} excluded (other provider), "
+        f"{s['skipped']} skipped (budget or repeated errors), {s['tokens_per_task']} tokens/task "
+        f"(+{s['judge_tokens_total']:,} judge tokens in total), "
         f"p50 latency {(s['latency_p50_ms'] or 0) / 1000:.1f} s.",
         "",
-        "| Category | Tasks | Pass rate | Mean score |",
-        "|---|---:|---:|---:|",
+        "The interval is a bootstrap over tasks: how far the score could move with a different draw of "
+        "similar tasks. Errors, exclusions and skips are not graded and not in n.",
     ]
+    if s["errors"] or s["skipped"]:
+        lines += ["", f"**Partial run:** {s['graded']} of {s['runs']} runs were graded; the score covers only those."]
+    if rep := s["repeats"]:
+        rates = ", ".join(f"run {k}: {pct(v)}" for k, v in rep["pass_rates"].items())
+        lines += [
+            "",
+            f"**Run to run** ({len(rep['repeats'])} repeats): {rates}. "
+            f"{len(rep['flaky'])} tasks changed outcome between repeats"
+            + (f": {', '.join(rep['flaky'])}." if rep["flaky"] else "."),
+        ]
+    lines += ["", "| Category | Tasks | Pass rate (95% CI) | Mean score |", "|---|---:|---|---:|"]
+    flat = False
     for cat, c in s["by_category"].items():
-        lines.append(f"| {cat} | {c['tasks']} | {pct(c['pass_rate'])} | {c['mean_score']} |")
+        note = " *too few tasks to compare*" if c["too_few"] else ""
+        if (ci := c["pass_rate_ci"]) and ci["low"] == ci["high"]:
+            note, flat = note + " †", True
+        lines.append(f"| {cat} | {c['tasks']} | {fmt_ci(c['pass_rate_ci'])}{note} | {c['mean_score']} |")
+    if flat:
+        lines += [
+            "",
+            "† Every task in this category had the same outcome, so resampling can't vary the score and the "
+            "interval has zero width. That understates the uncertainty: with 0 failures in n tasks, the true "
+            "failure rate could still be up to about 3/n (the 'rule of three').",
+        ]
     failures = [t for t in data["tasks"] if t["status"] != "pass"]
     if failures:
         lines += ["", "## Not passed", ""]
@@ -90,5 +138,6 @@ def markdown(data: dict[str, Any]) -> str:
                 reasons.append(f"judge {t['judge'].get('score')}: {t['judge'].get('reason')}")
             if t.get("error"):
                 reasons.append(f"error: {t['error']}")
-            lines.append(f"- **{t['id']}** ({t['status']}): " + "; ".join(r[:200] for r in reasons))
+            run = f" run {t['repeat']}" if s["repeats"] else ""
+            lines.append(f"- **{t['id']}**{run} ({t['status']}): " + "; ".join(r[:200] for r in reasons))
     return "\n".join(lines) + "\n"

@@ -14,7 +14,7 @@ from kestrel.agent import Agent
 from kestrel.approval import ApprovalGate, Decision
 from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
-from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task
+from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
 from kestrel.tracing import Tracer
 
 MAX_RESULT_CHARS_IN_LOG = 600
@@ -63,6 +63,9 @@ class TaskResult:
     providers: list[str] = field(default_factory=list)
     trace_ids: list[str] = field(default_factory=list)
     error: str | None = None
+    repeat: int = 1  # 1..N with --repeat; (id, repeat) identifies a run
+    tool_log: list[str] = field(default_factory=list)  # exactly what the judge saw, for labeling and re-judging
+    task_sha: str = ""  # version of the task definition + fixture workspace, so runs are only compared like for like
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -104,6 +107,7 @@ def run_task(
     tracer: Tracer | None = None,
     base_workspace: Path = WORKSPACE_DIR,
     expected_provider: str | None = None,
+    repeat: int = 1,
 ) -> TaskResult:
     """Run one task. With expected_provider, a task answered (even partly) by any other provider
     is marked "excluded" and left out of the score, so results never mix models."""
@@ -149,6 +153,9 @@ def run_task(
         latency_ms=round(latency, 1),
         providers=sorted({p for r in results for p in r.providers}),
         trace_ids=[r.trace_id for r in results if r.trace_id],
+        repeat=repeat,
+        tool_log=_tool_log(events),
+        task_sha=task_sha(task, base_workspace),
     )
     if any(r.stop_reason == "error" for r in results):  # the model couldn't be reached: not the agent's fault
         result.status, result.error = "error", next(r.text for r in results if r.stop_reason == "error")
@@ -169,8 +176,8 @@ def run_task(
 
     judge_score: float | None = None
     if task.rubric and judge is not None:
-        verdict = judge.grade(list(task.prompts), task.rubric, _tool_log(events), last.text)
-        result.judge = {"score": verdict.score, "reason": verdict.reason, "judge": judge.name}
+        verdict = judge.grade(list(task.prompts), task.rubric, result.tool_log, last.text)
+        result.judge = {"score": verdict.score, "reason": verdict.reason, "judge": judge.name, "version": judge.version}
         result.judge_tokens = verdict.tokens
         result.cached_tokens += verdict.cached_tokens
         judge_score = verdict.score
@@ -201,26 +208,35 @@ def run_suite(
     on_result: Callable[[TaskResult], None] | None = None,
     expected_provider: str | None = None,
     token_budget: int | None = None,
+    repeats: list[int] | None = None,
+    stop_after_errors: int | None = None,
 ) -> list[TaskResult]:
-    """Run tasks in order. With token_budget, no new task starts once the agent + judge tokens spent
-    (excluding cached input, which Groq doesn't rate-limit) reach it, since free tiers cap tokens
-    per day; the rest are marked "skipped", to resume later."""
+    """Run tasks in order (repeats[i] is task i's repeat number). The rest are marked "skipped", to
+    resume later, once either:
+    - token_budget: the agent + judge tokens spent (excluding cached input, which Groq doesn't
+      rate-limit) reach it, since free tiers cap tokens per day;
+    - stop_after_errors: that many tasks in a row errored, which almost always means the provider's
+      rate limit or an outage; carrying on would only turn the rest into errors too."""
     results: list[TaskResult] = []
     spent = 0
+    errors_in_a_row = 0
     for i, task in enumerate(tasks):
+        repeat = repeats[i] if repeats else 1
+        stop = None
         if token_budget is not None and spent >= token_budget:
+            stop = f"token budget reached ({spent:,} of {token_budget:,})"
+        elif stop_after_errors and errors_in_a_row >= stop_after_errors:
+            stop = f"stopped after {errors_in_a_row} errors in a row (likely a rate limit)"
+        if stop:
             result = TaskResult(
-                id=task.id,
-                category=task.category,
-                status="skipped",
-                score=0.0,
-                error=f"token budget reached ({spent:,} of {token_budget:,})",
+                id=task.id, category=task.category, status="skipped", score=0.0, error=stop, repeat=repeat
             )
         else:
             if i and pause:
                 time.sleep(pause)  # spreads requests out under free-tier per-minute limits
-            result = run_task(task, llm, judge, tracer, base_workspace, expected_provider)
+            result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat)
             spent += billable_tokens(result)
+            errors_in_a_row = errors_in_a_row + 1 if result.status == "error" else 0
         results.append(result)
         if on_result:
             on_result(result)

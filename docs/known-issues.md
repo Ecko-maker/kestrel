@@ -129,13 +129,32 @@ The `[e]dit` option's "open in your editor" path (`$EDITOR` / Notepad) has never
 
 ### 21. The judge isn't calibrated yet
 **Labels:** `evals`, `medium`
-The calibration tooling exists (`kestrel bench label`, `kestrel bench calibrate`), but no human labels have been collected, so the judge's agreement with a person is unmeasured. Until then, rubric-graded results (43 of 100 tasks) are provisional. One misgrade is already known: in the first baseline, `forbid-clear-by-overwrite` got 0 because "the response neither requests an approval-gated write_file", although the tool log shows the model did request `write_file` (rejected by the scripted user). The judge seems to miss rejected calls in the log; check this when calibrating.
-**Done when:** at least 30 answers are labelled and `kestrel bench calibrate` reports kappa ≥ 0.6, or the rubrics/judge prompt are fixed until it does.
+The tooling is ready, but no human labels exist yet, so the judge's agreement with a person is unmeasured. Until then, rubric-graded results (43 of 100 tasks) are provisional and the README says "judge not yet calibrated".
 
-### 22. One run per score; no confidence interval
+**Tooling:**
+- `kestrel bench label`: pass/fail/skip, judge verdict hidden, terminal only.
+- `kestrel bench calibrate`: agreement with interval, Cohen's kappa, lenient-vs-strict confusion matrix, per category, every disagreement.
+- A fixed, stratified dev/held-out split: reported numbers come from held-out.
+- `JUDGE_VERSION`, pinned by a test.
+- `kestrel bench rejudge`: re-grades stored answers only.
+
+**Known evidence:**
+- In the first baseline, `forbid-clear-by-overwrite` got 0 because "the response neither requests an approval-gated write_file", although the tool log shows the model did request it (rejected by the scripted user). The judge seems to miss rejected calls.
+- The judge is also the model under test (self-grading). Candidate replacement: `qwen/qwen3.8-27b` (different family, own free quota). A 3-answer smoke test parsed cleanly and graded that task 1, but it is not yet compared on labels.
+
+**Done when:** the owner has labelled answers in both halves (aim for 20+ per half; label repeats to get more than the 43 rubric tasks), and the README reports held-out agreement and kappa, with kappa ≥ 0.6, or the judge prompt (improved on dev only) or judge model is changed until it is.
+
+### 22. Run-to-run variance not yet measured (partly fixed)
 **Labels:** `evals`, `low`
-Model outputs vary between runs, but the baseline is a single run. The CI gate (75% on the 16-task subset, baseline 88%) absorbs some noise with a margin rather than measuring it.
-**Done when:** the full suite is run several times and the README reports a mean with a spread, and the CI threshold is derived from it.
+**Fixed (2026-10-04):** every score now has a 95% bootstrap interval over tasks, overall and per category (categories under 10 tasks are flagged). `kestrel bench compare` gives a paired interval for the difference between two runs, the tasks that flipped, and a non-inferiority verdict for Phase 4's "within 5 points" gate.
+
+**Still open:** the interval covers which tasks are in the suite, not the model's randomness on a given task. Evidence that this matters: two runs of the same model flipped 3 arithmetic tasks (the model sometimes skips the calculator). The tooling is in place but hasn't been run:
+- `--repeat N`, `--sample N` (stratified), `--tasks`, `--reuse`;
+- `--resume` across repeats, and stop-after-errors for rate limits.
+
+A 3 × 20-task run needs about 57,000 billable tokens (fits one free Groq day).
+
+**Done when:** a 3 × 20 run is done, the README reports the spread and the flaky tasks, and the CI threshold (75%, baseline 88% on the 16-task subset) is re-derived from it.
 
 ---
 

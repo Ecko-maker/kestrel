@@ -5,6 +5,7 @@ grades what can't, like whether a summary is faithful. It returns 0, 0.5 or 1 wi
 it is calibrated against human labels (see calibrate.py) before its scores are trusted.
 """
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -21,6 +22,15 @@ Judge only against the rubric and the evidence shown. The tool results are the g
 an answer that contradicts them is wrong. Ignore style unless the rubric mentions it.
 
 Reply with JSON only: {"score": 0 | 0.5 | 1, "reason": "<one sentence>"}"""
+
+# Bump on ANY change to JUDGE_PROMPT or build_request (a test pins the hash). Every verdict records
+# the version that produced it, so scores from different judge prompts are never mixed silently.
+# Results written before versioning (2026-10-04) were graded by v1, the only prompt so far.
+JUDGE_VERSION = "v1"
+
+
+def prompt_sha() -> str:
+    return hashlib.sha256(JUDGE_PROMPT.encode("utf-8")).hexdigest()[:12]
 
 
 class ChatLLM(Protocol):
@@ -66,6 +76,8 @@ def parse_verdict(text: str) -> Verdict:
 
 
 class Judge:
+    version = JUDGE_VERSION
+
     def __init__(self, llm: ChatLLM, name: str = "judge"):
         self.llm = llm
         self.name = name

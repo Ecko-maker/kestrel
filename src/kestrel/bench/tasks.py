@@ -17,7 +17,10 @@ Tasks live in evals/kestrelbench/tasks/*.yaml as lists. A task looks like:
 A prompt can also be a list of strings: several user turns in one conversation.
 """
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import asdict, dataclass, field
+from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -165,3 +168,22 @@ def select(
         and not set(skip_tags) & set(t.tags)
     ]
     return picked
+
+
+@cache
+def _workspace_sha(base: Path) -> str:
+    h = hashlib.sha256()
+    for p in sorted(base.rglob("*")) if base.is_dir() else ():
+        if p.is_file():
+            data = p.read_bytes().replace(b"\r\n", b"\n")  # same hash whatever git's line-ending setting
+            h.update(p.relative_to(base).as_posix().encode() + b"\0" + data)
+    return h.hexdigest()
+
+
+def task_sha(task: Task, base: Path = WORKSPACE_DIR) -> str:
+    """A short fingerprint of everything that decides a task's outcome apart from the model: its
+    prompts, checks, approvals, rubric, extra files, and the fixture workspace. Two runs are only
+    compared (or reused as repeats) task by task where the fingerprints match."""
+    definition = {k: v for k, v in asdict(task).items() if k != "source"}
+    blob = json.dumps(definition, sort_keys=True, default=str) + _workspace_sha(base)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]

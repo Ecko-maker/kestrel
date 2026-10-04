@@ -104,7 +104,30 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 ---
 
-## 11. Smaller choices worth knowing
+## 11. Eval statistics: bootstrap intervals, paired comparisons, a held-out judge check
+
+**Decision:**
+- Scores carry a 95% percentile-bootstrap interval over tasks (10,000 resamples, fixed seed). Repeats are averaged per task and tasks are resampled, never individual runs.
+- Two runs are compared with a paired bootstrap on shared tasks, plus flip counts. "Within 5 points" means the whole interval of the difference lies above −5 points.
+- Judge calibration uses binary human labels (pass/fail) and a fixed dev/held-out split of rubric tasks: the prompt is tuned on dev, and only held-out agreement is reported. The judge prompt is versioned, and re-judging uses stored answers only.
+
+**Alternatives:**
+- Normal-approximation or Wilson intervals: simpler, but not reusable for paired differences or per-task means.
+- Comparing two separate intervals: much too conservative, since task difficulty doesn't cancel.
+- 0/0.5/1 human labels: finer, but people disagree with themselves on "half right", and pass/fail is what the benchmark decides.
+- Re-running the agent after each judge change: costs quota, and changes the answers being graded.
+
+**Why:**
+- One bootstrap covers everything we need: overall, per category, paired differences, and agreement.
+- Pure Python is fast enough at this size (no numpy).
+- The paired design is what makes a 100-task suite able to support Phase 4's claim at all.
+- The held-out split stops a judge prompt being tuned until it agrees with the very labels used to report its agreement.
+- Versioning and stored answers keep every number traceable to the judge that produced it.
+- Known weakness: the bootstrap gives zero-width intervals when every task agrees; the report marks those.
+
+---
+
+## 12. Smaller choices worth knowing
 
 - **SQLite via `sqlite3`, no ORM.** One file, zero setup, enough for one user. Connections are opened and closed per operation by `Tracer.connect()`.
 - **Hand-made markdown/SVG over libraries where it's small.** Fewer dependencies to audit; `react-markdown` is the exception because markdown parsing is not small.

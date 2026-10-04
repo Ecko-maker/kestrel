@@ -51,16 +51,86 @@ uv run kestrel bench run --shard 1/2                                 # or split 
 
 Gemini's free tier (20 requests/day per model) can't run the suite, so it runs on Groq. A task answered by any provider other than the one under test is marked `excluded` and left out of the score; `--resume` refuses to continue a file from a different provider or model.
 
-## Calibrating the judge
+## How sure is a score?
 
-An LLM judge is only useful if it agrees with a careful human. To measure that:
+A score from 100 tasks is an estimate, so every report gives a **95% confidence interval**, e.g. `85% (95% CI 78–92%, n=100)`. It comes from a bootstrap over tasks: draw 100 tasks *with replacement* from the results, recompute the pass rate, repeat 10,000 times (fixed seed, so the same results always give the same interval), and keep the middle 95%. No model calls are needed, and `kestrel bench report <file>` adds intervals to older results files too.
+
+- **n** counts graded tasks; errors, exclusions and skips are left out.
+- Categories with fewer than 10 tasks are marked *too few tasks to compare*: their intervals are too wide to rank on.
+- A category where every task passed shows a zero-width interval (†). Resampling can't vary it, but that understates the uncertainty: with 0 failures in n tasks the failure rate could still be up to about 3/n.
+
+### Comparing two runs
 
 ```powershell
-uv run kestrel bench label        # score judged answers yourself (the judge's score is hidden)
-uv run kestrel bench calibrate    # agreement, within-0.5 agreement, Cohen's kappa, disagreements
+uv run kestrel bench compare evals/results/frontier.json evals/results/small-model.json
 ```
 
-Labels are saved to `evals/kestrelbench/labels.jsonl`. Aim for at least 30. Cohen's kappa corrects for agreement by chance: 0.6-0.8 is substantial, above 0.8 almost perfect. If the judge disagrees in a pattern, fix the rubric or the judge prompt, not the labels.
+This is the tool for Phase 4's "within 5% of frontier" claim. Both runs answered the same tasks, so it uses a **paired** bootstrap: resample tasks and average the per-task difference. Task difficulty cancels out, which makes the interval much tighter than comparing two separate intervals. It prints:
+
+- the difference B − A, with its interval;
+- the tasks that flipped each way;
+- whether B is within the margin (default 5 points) **with 95% confidence**, meaning the whole interval of B − A lies above −5 points. "Not shown" is a different statement from "worse": with too few tasks, it can't be shown either way.
+
+Tasks graded in only one file, or whose definition changed between the runs (each result records a fingerprint of its task and the fixture workspace), are left out. A different judge or judge version triggers a warning; re-judge one file first.
+
+### Run-to-run variance
+
+Model outputs vary. The same model on the same tasks flipped 3 arithmetic tasks between two runs (it sometimes skips the calculator). To measure it:
+
+```powershell
+uv run kestrel bench run --sample 20 --repeat 3 --pause 3 --dry-run   # plan and token estimate, no calls
+uv run kestrel bench run --sample 20 --repeat 3 --pause 3             # 60 runs
+```
+
+- `--sample 20` is a stratified sample: categories in proportion to their size (at least one each), chosen by a fixed seed (`--seed`).
+- `--tasks 'inject-*,arith-percent'` filters by id or pattern.
+- With repeats, each task's score is its mean over the repeats, and the bootstrap resamples *tasks*: repeats of one task aren't independent evidence. The report lists each repeat's pass rate and the **flaky** tasks, those whose outcome changed between repeats.
+- `--reuse <file>` counts an earlier run as repeat 1, if it used the same model, the same judge version and identical task fingerprints. Files from before fingerprints existed (2026-10-04) can't be reused.
+- **Resumable:** after 3 errors in a row (`--stop-after-errors`), which on Groq almost always means the daily limit, the rest is marked skipped instead of burning through as errors. `--resume <file>` finishes it the next day, repeat by repeat.
+
+**Budget for 3 × 20:** 60 runs, about 180,000 raw tokens, about 57,000 billable (uncached), about 165 requests. Measured per task from the 2026-10-04 runs, where Groq served 68% of tokens from its cache. That fits one day of Groq's free tier for gpt-oss-120b (200,000 tokens, 1,000 requests a day, cached tokens not counted). It would fit even with no caching at all, though only just. It does not fit alongside a full 100-task run on the same day.
+
+## Calibrating the judge
+
+An LLM judge is only useful if it agrees with a careful human. Only a person creates labels: `label` refuses to run without an interactive terminal, and no test may touch the real labels file.
+
+```powershell
+uv run kestrel bench label [results.json]     # pass / fail / skip, with an optional note
+uv run kestrel bench calibrate                # held-out agreement, kappa, confusion matrix
+```
+
+`label` shows one judged answer at a time: the conversation, the expected behavior (the rubric), Kestrel's tool steps and its answer. **The judge's verdict and the check results are hidden**, so they can't sway you. Answers come stratified across categories, so stopping at any point leaves a balanced set. Quit with `q`; the next run continues where you stopped. Labels go to `evals/labels/human.jsonl`, with the task id, the results file, a hash of the answer and a timestamp.
+
+`calibrate` compares your labels with the judge. The judge "passes" an answer at 0.5 or more, the same rule the benchmark uses. It reports:
+
+- agreement, with an interval;
+- **Cohen's kappa**: agreement beyond what chance would give. A judge that always says "pass" agrees a lot when most answers are good, but has kappa 0. Roughly, 0.6–0.8 is substantial and above 0.8 almost perfect;
+- a confusion matrix: **too lenient** (judge passes what you failed) vs **too strict**;
+- agreement per category, and every disagreement with your note and the judge's reason.
+
+### Not overfitting the judge
+
+The 43 rubric tasks are split once into a **dev** half and a **held-out** half, by a fixed seed and stratified by category. All labels of one task land in the same half.
+
+- **Improve the judge prompt using dev only** (`calibrate --split dev`).
+- **The reported agreement always comes from held-out** (the default).
+- When the judge prompt changes, bump `JUDGE_VERSION` in `judge.py`. A test pins the prompt's fingerprint, so CI fails if you forget. Then re-grade the **stored** answers; Kestrel is never re-run for calibration:
+
+```powershell
+uv run kestrel bench calibrate --split dev --judge groq --judge-model <model>   # a new judge on your dev labels
+uv run kestrel bench rejudge evals/results/<file>.json                          # a whole run, into a new file
+```
+
+Every verdict records the judge and judge-prompt version that produced it. Re-graded verdicts are cached, so a retry costs nothing. Answers from before tool logs were stored are shown and re-graded with tool steps rebuilt from the bench traces (`logs/bench.db`).
+
+### Judge independence
+
+Today the judge (`openai/gpt-oss-120b`) is **the same model as the one tested**, so it grades its own answers. LLM judges tend to prefer their own outputs, and `run` prints a note about it. The proposed replacement is **`qwen/qwen3.8-27b`** on Groq:
+
+- a different model family;
+- free, with its own 200,000 tokens/day, so grading would stop eating the tested model's quota.
+
+A smoke test on 3 stored answers parsed cleanly, and on the known misgrade (`forbid-clear-by-overwrite`) it gave 1 where gpt-oss gave 0. Three answers are an anecdote, not a calibration. The switch waits until both judges are compared on the dev labels with `calibrate --split dev --judge groq --judge-model qwen/qwen3.8-27b`.
 
 ## In CI
 
@@ -68,4 +138,4 @@ Every PR from this repository (and every push to `main`) runs the `ci` subset on
 
 ## Adding a task
 
-Add an entry to the right YAML file. Prefer checks on outcomes (tool called, file written, number in the answer) over wording, write regexes that tolerate formatting (`2,?282\.79`), and add a rubric only for what can't be checked exactly. `uv run pytest tests/test_bench.py` validates every task file.
+Add an entry to the right YAML file. Prefer checks on outcomes (tool called, file written, number in the answer) over wording, write regexes that tolerate formatting (`2[, ]?282\.79`), and add a rubric only for what can't be checked exactly. `uv run pytest tests/test_bench.py` validates every task file.
