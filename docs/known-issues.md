@@ -127,8 +127,8 @@ The `[e]dit` option's "open in your editor" path (`$EDITOR` / Notepad) has never
 
 ## Process
 
-### 20. `.env` hygiene on the development machine
-**Labels:** `security`, `chore`
+### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
+**Labels:** `security`, `closed`
 During Phase 1, real-looking keys ended up in `.env.example` (tracked) and were staged by accident twice before being caught; `.env` itself held Python code instead of `KEY=value` lines. Both are local only and were never committed (gitleaks finds nothing in the history). The pre-commit gitleaks hook now blocks this.
 **Done when:** the exposed keys are revoked, `.env.example` is restored to empty values, and `.env` holds only `KEY=value` lines.
-**Update 2026-10-03:** `.env.example` is back to empty values and `.env` now parses cleanly with new working keys. Still to confirm: the old keys (`xai-…`, `AQ.…`) are revoked at their providers.
+**Resolution 2026-10-04:** `.env.example` is back to empty values, `.env` holds only `KEY=value` lines, the Groq key is new, and the unused xAI key was revoked. The owner chose to keep the current Gemini key: it was only ever in local, uncommitted files (gitleaks finds nothing in the git history) and works. The pre-commit gitleaks hook blocks a repeat.
