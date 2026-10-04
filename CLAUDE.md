@@ -27,17 +27,17 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - Before using a library API, check the installed version's actual API (e.g. `mcp` 2.x renamed FastMCP to MCPServer).
 - Before committing: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest`; frontend: `cd console; npm run typecheck; npm run lint; npm run build`. Pre-commit runs ruff + gitleaks.
 - Known limitations live in docs/known-issues.md; decisions in docs/design-decisions.md. Keep both current.
+- The Bash tool turns `\n` escapes inside heredocs into real line breaks: write multi-line edit scripts with the Write tool.
+- Never open, print, or edit `.env`. It holds the user's API keys. If a key is missing, say exactly what line to add. To diagnose a key, print only yes/no facts (set, length, right prefix), never characters of it.
+- Free tools only unless the user says otherwise.
+- After each step: run it, fix any errors, then give a suggested git commit message and one sentence on what the step shows an interviewer.
+- Free-tier limits shape testing: Gemini `gemini-3.6-flash` allows 5 requests/min and **20/day**; Groq `gpt-oss-120b` 8,000 tokens/min (~1,000 requests/day). Heavy runs (evals) go to Groq.
 
 ## CI rules
 
 - Never merge with red CI, including Dependabot PRs. Changes go through a branch + PR; read failures with `gh run view <id> --log-failed`, fix the root cause.
 - Never skip, weaken or delete a test or a CI check to get green; ask the user first if a check seems wrong.
 - Pin actions and images to exact versions (`astral-sh/setup-uv@v10.2.0`, `node:24-slim`); check a tag exists with an exact match (GitHub's refs API matches prefixes). Dependabot keeps pins current; base-image runtime upgrades are done by hand with CI's versions.
-- Frontend: The Bash tool mangles `
-` inside heredocs: write multi-line edit scripts with the Write tool.
-- Never open, print, or edit `.env`. It holds the user's API keys. If a key is missing, say exactly what line to add.
-- Free tools only unless the user says otherwise.
-- After each step: run it, fix any errors, then give a suggested git commit message and one sentence on what the step shows an interviewer.
 
 ## Environment
 
@@ -77,6 +77,8 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - [x] Step 8: release v0.1.0. Demo provider (`demo.py`, `KESTREL_PROVIDERS=demo`, labelled in UI, never exported as training data). Docker: multi-stage `Dockerfile` (Node builds console, slim Python + uv, non-root UID 10001, `/healthz` healthcheck), `.dockerignore`, `docker-compose.yml` (127.0.0.1:8000 only, server on 0.0.0.0 inside, `host.docker.internal` for Ollama). Settings `KESTREL_HOST/PORT/TOKEN/ALLOWED_HOSTS/MCP`, `<PROVIDER>_BASE_URL`. CI `.github/workflows/ci.yml`: Python (ubuntu + windows: ruff, format, mypy, pytest+cov, ResourceWarning as error), console (typecheck, oxlint, build), Docker (compose up in demo mode, health, 401, non-root), gitleaks CLI on full history. Dependabot (uv, npm, actions, docker). pre-commit (ruff, gitleaks) installed. Fixed while doing this: sqlite connections never closed, MCP event loop never closed, audit log not redacted, sandbox treated `\` differently on Linux. README v1, LICENSE (MIT), docs/design-decisions.md, docs/known-issues.md (20 items). Docker not run locally (not installed); verified by CI only.
 
 **Phase 1 complete (v0.1.0).** Next: Phase 2, KestrelBench.
+
+- [~] Live provider verification (2026-10-03, known issues #1 and #3). Groq: six demo prompts pass. Gemini: prompts 1–3 + fallback pass; prompts 4–6, the mixed-provider conversation and the console on Gemini wait for the daily quota (20 requests/day per model). Default Gemini model is now `gemini-3.6-flash` (measured). Fixed: rate limits (Gemini RetryInfo body, guided-wait budget, longer wait for the last provider), Gemini 400 bad-key message, gpt-oss drafting instead of calling tools (system prompt + rejection message). Prices verified and sourced in `prices.toml` (#3 closed).
 
 ## Configuration (.env)
 

@@ -7,6 +7,7 @@ model), and FallbackLLM to move on to the next provider when one is down.
 
 import os
 import random
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -16,8 +17,11 @@ import openai
 from openai import OpenAI
 
 REQUEST_TIMEOUT = 60.0  # seconds per request; override with KESTREL_REQUEST_TIMEOUT
-MAX_TRIES = 3  # 1 try + 2 retries, waiting ~1s then ~2s
-MAX_RETRY_WAIT = 20.0  # a longer Retry-After means "come back later": hand over to the fallback
+MAX_TRIES = 3  # 1 try + 2 retries, waiting ~1s then ~2s, when we have to guess the wait
+MAX_GUIDED_TRIES = 8  # when the server says how long to wait (rate limits), follow it this many times...
+RATE_LIMIT_BUDGET = 3  # ...as long as the total wait stays under 3x max_retry_wait
+MAX_RETRY_WAIT = 20.0  # a longer requested wait means "come back later": hand over to the fallback
+LAST_RESORT_RETRY_WAIT = 65.0  # ...unless no fallback is left: then waiting beats failing
 COOLDOWN = 60.0  # after a provider fails, FallbackLLM tries the others first for this long
 
 
@@ -30,8 +34,10 @@ class Provider:
 
 
 PROVIDERS = {
+    # Defaults are measured, not guessed: on 2026-10-03, gemini-3.6-flash made 3/3 correct tool calls
+    # at ~1.9s median on the free tier, while 3.7/3.8-flash were slow and returned 503s.
     "gemini": Provider(
-        "gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", "GEMINI_API_KEY", "gemini-3-flash"
+        "gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", "GEMINI_API_KEY", "gemini-3.6-flash"
     ),
     "groq": Provider("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY", "openai/gpt-oss-120b"),
     "ollama": Provider("ollama", "http://localhost:11434/v1", None, "qwen3:4b"),
@@ -73,13 +79,31 @@ class _StreamingRejected(Exception):
 
 
 def _retry_after(error: Exception) -> float | None:
-    """Seconds the server asked us to wait, if it sent a numeric Retry-After header."""
+    """Seconds the server asked us to wait: a numeric Retry-After header, or Google's
+    RetryInfo in the error body ({"@type": ".../google.rpc.RetryInfo", "retryDelay": "37s"}),
+    which is how Gemini says it (no header)."""
     response = getattr(error, "response", None)
     value = response.headers.get("retry-after") if response is not None else None
-    try:
-        return max(0.0, float(value)) if value is not None else None
-    except ValueError:
-        return None  # an HTTP date; rare, so fall back to normal backoff
+    if value is not None:
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            pass  # an HTTP date; rare
+    return _retry_delay_in_body(getattr(error, "body", None))
+
+
+def _retry_delay_in_body(body: Any) -> float | None:
+    """Find a google.rpc.RetryInfo retryDelay ("37s", "1.5s") anywhere in a parsed error body."""
+    if isinstance(body, list):
+        found = (_retry_delay_in_body(item) for item in body)
+        return next((d for d in found if d is not None), None)
+    if not isinstance(body, dict):
+        return None
+    if str(body.get("@type", "")).endswith("google.rpc.RetryInfo"):
+        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)s\s*", str(body.get("retryDelay", "")))
+        return float(match.group(1)) if match else None
+    found = (_retry_delay_in_body(v) for v in body.values() if isinstance(v, (dict, list)))
+    return next((d for d in found if d is not None), None)
 
 
 def _short(error: Exception) -> str:
@@ -88,7 +112,14 @@ def _short(error: Exception) -> str:
 
 
 class LLM:
-    def __init__(self, provider: str, model: str | None = None, on_retry: RetryCallback | None = None):
+    def __init__(
+        self,
+        provider: str,
+        model: str | None = None,
+        on_retry: RetryCallback | None = None,
+        max_retry_wait: float = MAX_RETRY_WAIT,
+    ):
+        self.max_retry_wait = max_retry_wait  # longest server-requested wait worth sitting out
         if provider not in PROVIDERS:
             raise LLMError(provider, f"unknown provider. Choose from: {', '.join(PROVIDERS)}")
         self.provider = PROVIDERS[provider]
@@ -114,7 +145,8 @@ class LLM:
     def _request(self, **kwargs):
         """One API call with retries for temporary failures and clear errors for permanent ones."""
         name = self.provider.name
-        for attempt in range(1, MAX_TRIES + 1):
+        waited = 0.0
+        for attempt in range(1, MAX_GUIDED_TRIES + 1):
             try:
                 return self.client.chat.completions.create(model=self.model, **kwargs)
             # Permanent: retrying can't help, so fail fast with a message that says what to fix.
@@ -137,10 +169,18 @@ class LLM:
                     openai.APIConnectionError: "unreachable",
                 }.get(type(e), f"server error ({getattr(e, 'status_code', '5xx')})")
                 wait = _retry_after(e)
-                if attempt == MAX_TRIES or (wait is not None and wait > MAX_RETRY_WAIT):
-                    raise LLMError(name, f"{reason}, gave up after {attempt} tries") from e
-                if wait is None:
+                if wait is not None:
+                    # The server told us how long to wait (e.g. Groq's tokens-per-minute limit):
+                    # follow it, within a total budget; a long wait means hand over to the fallback.
+                    if wait > self.max_retry_wait or waited + wait > self.max_retry_wait * RATE_LIMIT_BUDGET:
+                        raise LLMError(name, f"{reason}, server asks to wait {wait:.0f}s") from e
+                    if attempt == MAX_GUIDED_TRIES:
+                        raise LLMError(name, f"{reason}, gave up after {attempt} tries") from e
+                else:
+                    if attempt >= MAX_TRIES:  # we'd only be guessing: give up after a few tries
+                        raise LLMError(name, f"{reason}, gave up after {attempt} tries") from e
                     wait = 2 ** (attempt - 1) + random.uniform(0, 0.5)  # 1s, 2s, plus jitter
+                waited += wait
                 if self.on_retry:
                     self.on_retry(name, reason, wait)
                 if self.last_call:
@@ -148,6 +188,10 @@ class LLM:
                 self.sleep(wait)
             # Any other HTTP error (400 bad request, 413 too large, ...) won't fix itself either.
             except openai.APIStatusError as e:
+                if e.status_code == 400 and "valid api key" in str(e).lower():  # Gemini says 400, not 401
+                    raise LLMError(
+                        name, f"API key rejected ({e.status_code}). Check {self.provider.key_env} in .env."
+                    ) from e
                 raise LLMError(name, f"request rejected ({e.status_code}): {_short(e)}") from e
 
     def _prepare(self, messages: list[dict]) -> list[dict]:
@@ -371,7 +415,9 @@ def build_llm(
             llms.append(DemoLLM())
             continue
         try:
-            llms.append(LLM(name, model if i == 0 else None, on_retry=on_retry))
+            last = i == len(names) - 1  # nothing to fall back to: sit out longer rate-limit waits
+            wait_limit = LAST_RESORT_RETRY_WAIT if last else MAX_RETRY_WAIT
+            llms.append(LLM(name, model if i == 0 else None, on_retry=on_retry, max_retry_wait=wait_limit))
         except LLMError as e:
             skipped.append(str(e))
     if not llms:

@@ -5,12 +5,23 @@
 #                                  traces can show what a request would cost on a paid plan.
 #                                  Leave them out when there's no fair reference (local models).
 #
-# Prices change often: check each provider's pricing page before quoting these numbers.
 # Override this whole file with KESTREL_PRICES=path/to/prices.toml.
 # A "default" entry applies to any model of that provider not listed by name.
-# Approximate list prices as of 2026-10 (verify).
+#
+# Verified 2026-10-03 against the providers' official pages (text input, standard tier):
+#   Gemini: https://ai.google.dev/gemini-api/docs/pricing  (page "last updated 2026-10-01 UTC")
+#   Groq:   https://console.groq.com/docs/model/openai/gpt-oss-120b
+# Re-check them before quoting cost numbers; prices change.
 
-[gemini."gemini-3-flash"]
+# Kestrel's default Gemini model. Promotional price through 2026-12-31; from 2027-01-01 it
+# becomes list_input = 1.50, list_output = 7.50. Update this entry then.
+[gemini."gemini-3.6-flash"]
+actual_input = 0.0
+actual_output = 0.0
+list_input = 0.75
+list_output = 3.75
+
+[gemini."gemini-3-flash-preview"]
 actual_input = 0.0
 actual_output = 0.0
 list_input = 0.50
@@ -32,11 +43,12 @@ list_output = 0.40
 actual_input = 0.0
 actual_output = 0.0
 
+# Kestrel's default Groq model (and the planned distillation teacher). Cached input is $0.075.
 [groq."openai/gpt-oss-120b"]
 actual_input = 0.0
 actual_output = 0.0
 list_input = 0.15
-list_output = 0.75
+list_output = 0.60
 
 [groq.default]
 actual_input = 0.0

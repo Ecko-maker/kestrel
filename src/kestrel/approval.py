@@ -65,7 +65,9 @@ def rejection_message(tool_name: str, reason: str) -> str:
     because = f" Their reason: {reason!r}." if reason else " They gave no reason; ask them what they'd prefer."
     return (
         f"The user REJECTED this {tool_name} call, so it did not run.{because} "
-        f"Do not repeat the same call. Adapt to their reason, or ask them how to proceed."
+        f"Do not repeat the same call. If their reason asks for changes, call {tool_name} again "
+        f"with those changes (they will see and approve the new version); don't just show a draft. "
+        f"If they don't want it done at all, stop and say so."
     )
 
 
