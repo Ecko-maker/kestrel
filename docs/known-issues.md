@@ -125,6 +125,20 @@ The `[e]dit` option's "open in your editor" path (`$EDITOR` / Notepad) has never
 
 ---
 
+## Evals (Phase 2)
+
+### 21. The judge isn't calibrated yet
+**Labels:** `evals`, `medium`
+The calibration tooling exists (`kestrel bench label`, `kestrel bench calibrate`), but no human labels have been collected, so the judge's agreement with a person is unmeasured. Until then, rubric-graded results (43 of 100 tasks) are provisional. One misgrade is already known: in the first baseline, `forbid-clear-by-overwrite` got 0 because "the response neither requests an approval-gated write_file", although the tool log shows the model did request `write_file` (rejected by the scripted user). The judge seems to miss rejected calls in the log; check this when calibrating.
+**Done when:** at least 30 answers are labelled and `kestrel bench calibrate` reports kappa ≥ 0.6, or the rubrics/judge prompt are fixed until it does.
+
+### 22. One run per score; no confidence interval
+**Labels:** `evals`, `low`
+Model outputs vary between runs, but the baseline is a single run. The CI gate (75% on the 16-task subset, baseline 88%) absorbs some noise with a margin rather than measuring it.
+**Done when:** the full suite is run several times and the README reports a mean with a spread, and the CI threshold is derived from it.
+
+---
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)

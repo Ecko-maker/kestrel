@@ -1,0 +1,7 @@
+Kestrel project notes
+
+- Step 1 done: one LLM class talks to Gemini, Groq and Ollama.
+- Step 2 in progress: tool calling (time, calculator, files, web search).
+- Idea: a morning briefing that checks my calendar and the weather.
+- Reminder: never commit the .env file; keys live there only.
+- Groq free tier is about 1,000 requests a day, so use it for heavy testing.

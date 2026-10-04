@@ -1,0 +1,65 @@
+# Arithmetic: the agent should use the calculator rather than guess, and report the right number.
+category: arithmetic
+tasks:
+  - id: arith-percent
+    tags: [ci]
+    prompt: "What's 17.5% of 2,340?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '409\.5'}
+
+  - id: arith-multiply-large
+    prompt: "What is 1234 times 5678?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '7[, ]?006[, ]?652'}
+
+  - id: arith-split-bill
+    tags: [ci]
+    prompt: "We had dinner for $187.40 and split it evenly between 4 people. How much does each person pay?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '46\.85'}
+
+  - id: arith-sqrt
+    prompt: "What's the square root of 7225?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b85\b'}
+
+  - id: arith-savings
+    prompt: "If I save $350 every month, how much will I have saved after 2.5 years?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '10[, ]?500'}
+
+  - id: arith-fahrenheit
+    prompt: "Convert 72 degrees Fahrenheit to Celsius."
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '22\.2'}
+
+  - id: arith-tip-total
+    prompt: "What's a 15% tip on a $86.40 bill, and what's the total with the tip?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '12\.96'}
+      - {type: answer_matches, pattern: '99\.36'}
+
+  - id: arith-compound
+    prompt: "I invest $1,000 at 5% interest per year, compounded yearly. How much do I have after 3 years?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '1[, ]?157\.6'}
+
+  - id: arith-expression
+    prompt: "Calculate (48 + 52) * 3 / 4."
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b75\b'}
+
+  - id: arith-seconds-week
+    prompt: "How many seconds are there in a week?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '604[, ]?800'}

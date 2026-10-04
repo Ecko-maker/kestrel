@@ -1,0 +1,109 @@
+# Actions: do what was asked through the right tool (approved by the scripted user), with the
+# right content. The approval preview is the confirmation, so drafting in text without calling
+# the tool fails these tasks.
+category: actions
+tasks:
+  - id: act-note-groceries
+    tags: [ci]
+    prompt: "Create a note called 'Groceries' with milk, eggs and bread."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: create_note}
+      - {type: file_contains, path: 'notes/*.md', pattern: '(?=.*milk)(?=.*eggs)(?=.*bread)'}
+
+  - id: act-append-todo
+    prompt: "Add 'Call the bank' to my todo.md."
+    approvals: [{tool: append_to_file, decision: approve}, {tool: write_file, decision: approve}]
+    checks:
+      - {type: file_contains, path: todo.md, pattern: 'call the bank'}
+      - {type: file_contains, path: todo.md, pattern: 'Book dentist appointment', why: "the existing items must survive"}
+
+  - id: act-write-plan
+    prompt: "Create a file plans/week.md that says: Monday: gym, Tuesday: study group."
+    approvals: [{tool: write_file, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: write_file, args: {path: 'plans[/\\]week\.md'}}
+      - {type: file_contains, path: plans/week.md, pattern: '(?=.*Monday.*gym)(?=.*Tuesday.*study group)'}
+
+  - id: act-email-sam
+    tags: [ci]
+    prompt: "Email Sam (sam@example.com) that the study group moved to Wednesday."
+    approvals: [{tool: send_message, decision: approve, args: {to: 'sam@example\.com'}}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'sam@example\.com'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'wednesday'}
+
+  - id: act-email-priya-actions
+    prompt: "Send Priya the action items from the September 30 meeting. Her email is in contacts.csv."
+    approvals: [{tool: send_message, decision: approve, args: {to: 'priya@example\.com'}}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'meeting'}}
+      - {type: outbox_count, count: 1, to: 'priya@example\.com'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '(?=.*slides)(?=.*room)(?=.*reading list)'}
+
+  - id: act-note-budget-total
+    prompt: "Save a note titled 'Budget summary' with my total monthly spending from budget.csv."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: create_note}
+      - {type: file_contains, path: 'notes/*.md', pattern: '2[, ]?282\.79'}
+
+  - id: act-append-notes
+    prompt: "Append the line 'Reviewed budget' to notes.txt."
+    approvals: [{tool: append_to_file, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: append_to_file, args: {path: 'notes\.txt'}}
+      - {type: file_contains, path: notes.txt, pattern: 'Reviewed budget'}
+      - {type: file_contains, path: notes.txt, pattern: 'Kestrel project notes', why: "append, don't overwrite"}
+
+  - id: act-haiku-file
+    prompt: "Write a haiku about kestrels into poems/kestrel.txt."
+    approvals: [{tool: write_file, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: write_file, args: {path: 'poems[/\\]kestrel\.txt'}}
+      - {type: file_contains, path: poems/kestrel.txt, pattern: '\S'}
+    rubric: "The haiku written to the file (see the write_file call) is three short lines about a kestrel."
+
+  - id: act-packing-list
+    prompt: "Create a note called 'Packing list' with 5 things to pack for my Tokyo trip."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: create_note}
+      - {type: file_contains, path: 'notes/packing*.md', pattern: '\S'}
+    rubric: "The note body in the create_note call lists exactly 5 sensible items to pack for a trip to Tokyo."
+
+  - id: act-email-jordan
+    prompt: "Email jordan.lee@example.org to confirm that Tuesday at 6pm works for me."
+    approvals: [{tool: send_message, decision: approve, args: {to: 'jordan\.lee@example\.org'}}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'jordan\.lee@example\.org'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '(?=.*tuesday)(?=.*(6 ?pm|6:00|18:00))'}
+
+  - id: act-overwrite-plan
+    prompt: "Replace the contents of plan.txt with just: Plan B"
+    files: {"plan.txt": "Plan A: go by train\n"}
+    approvals: [{tool: write_file, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: write_file, args: {path: 'plan\.txt'}}
+      - {type: file_contains, path: plan.txt, pattern: '\A\s*Plan B\.?\s*\Z'}
+
+  - id: act-note-top-todos
+    prompt: "Make a note called 'Focus' with my high-priority todo items."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'todo'}}
+      - {type: file_contains, path: 'notes/*.md', pattern: '(?=.*benchmark)(?=.*dentist)'}
+
+  - id: act-email-mei-timezone
+    prompt: "Email Mei to ask what time works for a call this week. Mention her timezone. Her details are in contacts.csv."
+    approvals: [{tool: send_message, decision: approve, args: {to: 'mei@example\.jp'}}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'mei@example\.jp'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'Tokyo|JST|Japan'}
+
+  - id: act-note-call-list
+    prompt: "Create a note called 'Call list' with the names of everyone in contacts.csv."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: create_note}
+      - {type: file_contains, path: 'notes/*.md', pattern: '(?=.*Priya)(?=.*Jordan)(?=.*Sam)(?=.*Mei)'}

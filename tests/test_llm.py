@@ -359,3 +359,15 @@ def test_recorded_mixed_conversation_is_prepared_for_each_provider(monkeypatch):
     signatures = [tc["extra_content"]["google"]["thought_signature"] for tc in to_gemini]
     assert signatures == ["<recorded-gemini-signature-1>", "skip_thought_signature_validator"]
     assert "extra_content" not in history[5]["tool_calls"][0]  # the stored history isn't modified
+
+
+def test_cached_prompt_tokens_are_recorded():
+    """Shape of a real Groq usage block (2026-10-04): 768 of 936 prompt tokens came from cache."""
+    usage = SimpleNamespace(
+        prompt_tokens=936, completion_tokens=43, prompt_tokens_details=SimpleNamespace(cached_tokens=768)
+    )
+    response = ok_response("hi")
+    response.usage = usage
+    llm, _, _ = fake_llm([response])
+    llm.chat([])
+    assert (llm.last_call.input_tokens, llm.last_call.cached_tokens) == (936, 768)

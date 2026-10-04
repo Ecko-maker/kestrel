@@ -257,6 +257,10 @@ class Tracer:
         }
         root.set("gen_ai.usage.input_tokens", input_tokens)
         root.set("gen_ai.usage.output_tokens", output_tokens)
+        root.set(
+            "kestrel.usage.cached_input_tokens",
+            int(sum(s.attributes.get("kestrel.usage.cached_input_tokens", 0) for s in llm_spans)),
+        )
         root.set("kestrel.cost_usd", row["cost_usd"])
         root.set("kestrel.list_price_usd", row["list_price_usd"])
         self._save(row, spans)

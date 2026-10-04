@@ -1,0 +1,90 @@
+# Multi-step: combine tools (read, compute, write) to get one result.
+category: multistep
+tasks:
+  - id: multi-budget-total
+    tags: [ci]
+    prompt: "What's my total monthly spending according to budget.csv?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'budget'}}
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '2[, ]?282\.79'}
+
+  - id: multi-utilities
+    prompt: "How much do I spend on utilities each month? Use budget.csv."
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'budget'}}
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '190\.64'}
+
+  - id: multi-food-share
+    prompt: "What percentage of my total spending in budget.csv goes to food?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'budget'}}
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '22\.(39|4)'}
+
+  - id: multi-scale-recipe
+    tags: [ci]
+    prompt: "I'm making my pancake recipe for 6 people instead of 4. How much flour do I need?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'pancakes'}}
+      - {type: answer_matches, pattern: '\b300\s?g'}
+
+  - id: multi-actions-note
+    prompt: "Read the September 30 meeting notes and save just the action items as a note called 'Action items'."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'meeting'}}
+      - {type: file_contains, path: 'notes/*.md', pattern: '(?=.*Priya)(?=.*Jordan)(?=.*Sam)(?=.*Noah)'}
+
+  - id: multi-contact-time
+    prompt: "Look up Jordan's timezone in contacts.csv and tell me what time it is there now."
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'contacts'}}
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'America/New_York'}}
+    rubric: "Gives the current time in New York (Jordan's timezone), matching the tool result."
+
+  - id: multi-flight-duration
+    prompt: "Based on travel.md, how long is my flight to Tokyo?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'travel'}}
+      - {type: answer_matches, pattern: '12(\.5)?\s*(h|hours?)\b.*30|12\.5\s*h|12h\s*30|twelve and a half'}
+    rubric: "About 12 hours 30 minutes (19:00 London BST = 18:00 UTC to 15:30 Tokyo JST = 06:30 UTC). Accounts for the time zones."
+
+  - id: multi-review-expensive
+    prompt: "Find my most expensive item in budget.csv and add a todo to review it."
+    approvals: [{tool: append_to_file, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'budget'}}
+      - {type: file_contains, path: todo.md, pattern: 'rent'}
+      - {type: file_contains, path: todo.md, pattern: 'Book dentist appointment'}
+
+  - id: multi-related-todos
+    prompt: "Which items on my todo list relate to the action items from the September 30 meeting?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'todo'}}
+      - {type: tool_called, tool: read_file, args: {path: 'meeting'}}
+    rubric: "Connects 'Finish the benchmark task list' with Noah's action item (write the first ten benchmark tasks), and may mention 'Reply to Jordan about Tuesday' relating to the Tuesday move. Doesn't invent links."
+
+  - id: multi-summary-note
+    prompt: "Summarize notes.txt and save the summary as a note called 'Notes summary'."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'notes\.txt'}}
+      - {type: tool_ran, tool: create_note}
+    rubric: "The note saved in the create_note call is a faithful summary of notes.txt (LLM class done, tool calling in progress, plus ideas/reminders). Nothing invented."
+
+  - id: multi-lunch-cost
+    prompt: "How many people attended the September 30 meeting? If lunch costs $15 per person, what's the total?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'meeting'}}
+      - {type: answer_matches, pattern: '\b(4|four)\b'}
+      - {type: answer_matches, pattern: '\$?\b60\b'}
+
+  - id: multi-email-todos
+    prompt: "Email Priya (her address is in contacts.csv) my two high-priority todo items."
+    approvals: [{tool: send_message, decision: approve, args: {to: 'priya@example\.com'}}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'todo'}}
+      - {type: outbox_count, count: 1, to: 'priya@example\.com'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '(?=.*benchmark)(?=.*dentist)'}

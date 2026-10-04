@@ -1,0 +1,52 @@
+# No tools needed: answer directly. Calling tools here costs time and tokens for nothing.
+category: no_tools
+tasks:
+  - id: notool-greeting
+    prompt: "Hi! What can you help me with?"
+    checks:
+      - {type: no_tools}
+    rubric: "A short, friendly overview of what Kestrel can do (e.g. time, math, workspace files, notes, messages, web search)."
+
+  - id: notool-capital
+    tags: [ci]
+    prompt: "What's the capital of Australia?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: 'Canberra'}
+
+  - id: notool-explain-api
+    prompt: "Explain in two sentences what an API is."
+    checks:
+      - {type: no_tools}
+    rubric: "A correct, plain-language explanation of an API in about two sentences."
+
+  - id: notool-translate
+    prompt: "How do you say 'good morning' in Spanish?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: 'buen(os)? d[ií]as'}
+
+  - id: notool-synonym
+    prompt: "Give me three synonyms for 'happy'."
+    checks:
+      - {type: no_tools}
+    rubric: "Three correct synonyms for 'happy'."
+
+  - id: notool-thanks
+    prompt: "Thanks, that's all for now!"
+    checks:
+      - {type: no_tools}
+      - {type: max_steps, steps: 1}
+    rubric: "A brief, polite sign-off. No unnecessary questions or long text."
+
+  - id: notool-shakespeare
+    prompt: "Who wrote Romeo and Juliet?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: 'Shakespeare'}
+
+  - id: notool-motivation
+    prompt: "Give me a one-line motivational quote for studying."
+    checks:
+      - {type: no_tools}
+    rubric: "A single line, motivational and relevant to studying."

@@ -32,6 +32,8 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - Free tools only unless the user says otherwise.
 - After each step: run it, fix any errors, then give a suggested git commit message and one sentence on what the step shows an interviewer.
 - Free-tier limits shape testing: Gemini `gemini-3.6-flash` allows 5 requests/min and **20/day**; Groq `gpt-oss-120b` 8,000 tokens/min (~1,000 requests/day). Heavy runs (evals) go to Groq.
+- While Claude Code runs the `kestrel` MCP server, Windows locks `.venv/Scripts/kestrel-mcp.exe` and `uv sync` fails to replace it: use `uv run --no-sync`, and `uv add --no-sync <pkg>` then `uv sync --inexact --no-install-project` for new dependencies.
+- Never change a KestrelBench task just so a model passes it; a task changes only if it is wrong (bad regex, ambiguous prompt), and the commit says why.
 
 ## CI rules
 
@@ -76,7 +78,13 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - [x] Step 7: web console. Agent emits typed events (`on_event`: step_started, llm_call, text_delta, tool_call, tool_result, answer, error, done; WebApprover adds approval_required/approval_resolved) consumed by both the terminal (`TerminalEvents`) and the browser. `LLM.chat(on_text=)` streams tokens (falls back to non-streaming if rejected or if a streamed reply comes back empty, seen with Ollama). Backend `src/kestrel/web/` (FastAPI): WebSocket chat with one Agent per connection on a worker thread, `WebApprover` (5 min timeout, disconnect = reject), REST traces/stats/rating reusing `trace_report` query functions, 127.0.0.1 only + startup token -> HttpOnly SameSite=Strict cookie, Host check, WS Origin check, CORS only for Vite dev. Frontend `console/` (React 19, Vite 8, TS 7, Tailwind 4, react-markdown, lucide-react; hand-made SVG charts). `uv run kestrel web [--build]`. 146 tests. Browser demo via `scripts/demo_console.py --shots` (scripted model, real everything else; Playwright + installed Edge) -> `docs/screenshots/`. Traces now carry `session_id` (one conversation).
 - [x] Step 8: release v0.1.0. Demo provider (`demo.py`, `KESTREL_PROVIDERS=demo`, labelled in UI, never exported as training data). Docker: multi-stage `Dockerfile` (Node builds console, slim Python + uv, non-root UID 10001, `/healthz` healthcheck), `.dockerignore`, `docker-compose.yml` (127.0.0.1:8000 only, server on 0.0.0.0 inside, `host.docker.internal` for Ollama). Settings `KESTREL_HOST/PORT/TOKEN/ALLOWED_HOSTS/MCP`, `<PROVIDER>_BASE_URL`. CI `.github/workflows/ci.yml`: Python (ubuntu + windows: ruff, format, mypy, pytest+cov, ResourceWarning as error), console (typecheck, oxlint, build), Docker (compose up in demo mode, health, 401, non-root), gitleaks CLI on full history. Dependabot (uv, npm, actions, docker). pre-commit (ruff, gitleaks) installed. Fixed while doing this: sqlite connections never closed, MCP event loop never closed, audit log not redacted, sandbox treated `\` differently on Linux. README v1, LICENSE (MIT), docs/design-decisions.md, docs/known-issues.md (20 items). Docker not run locally (not installed); verified by CI only.
 
-**Phase 1 complete (v0.1.0).** Next: Phase 2, KestrelBench.
+**Phase 1 complete (v0.1.0).**
+
+### Phase 2: Evals
+- [x] KestrelBench v1: 100 YAML tasks in 10 categories (`evals/kestrelbench/tasks/`), fixture workspace with 5 injection traps (`evals/kestrelbench/workspace/`), `src/kestrel/bench/` (tasks, checks, runner with scripted approver, judge, report, calibrate, cli), `kestrel bench run|label|calibrate|report`. Deterministic checks first; gpt-oss-120b judge on Groq for 43 rubric tasks. Bench traces in `logs/bench.db`. Guide: `docs/kestrelbench.md`.
+- [x] Evals in CI: `kestrelbench` job runs the 16-task `ci` subset on Groq for PRs and main (needs `GROQ_API_KEY` repo secret; skips without it), gate 75% pass rate (baseline 88%), max 2 errors. Weekly full run: `.github/workflows/kestrelbench.yml`.
+- [ ] Judge calibration: needs ≥30 human labels (`kestrel bench label`), known issue #21.
+- [ ] Baseline score in README (full run on Groq).
 
 - [x] Live provider verification (2026-10-03/04, known issues #1 and #3 closed). Six demo prompts pass on Groq and on Gemini; fallback, a Gemini → Groq → Gemini conversation (thought-signature placeholder accepted) and the web console on Gemini verified. Rerun with `scripts/live/`. Default Gemini model is now `gemini-3.6-flash` (measured). Fixed: rate limits (Gemini RetryInfo body, guided-wait budget, longer wait for the last provider), Gemini 400 bad-key message, gpt-oss drafting instead of calling tools (system prompt + rejection message). Prices verified and sourced in `prices.toml` (#3 closed).
 

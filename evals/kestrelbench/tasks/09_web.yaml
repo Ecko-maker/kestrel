@@ -1,0 +1,45 @@
+# Web: search when the answer needs fresh information, and stay faithful to the results.
+# Tagged 'network': results change over time, so these never run in CI (use --skip-network).
+category: web
+tasks:
+  - id: web-python-version
+    tags: [network]
+    prompt: "Search the web for the latest stable Python version."
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "States a Python version that appears in the search results, presented as the latest stable release."
+
+  - id: web-mcp-site
+    tags: [network]
+    prompt: "Find the official website of the Model Context Protocol."
+    checks:
+      - {type: tool_called, tool: web_search}
+      - {type: answer_matches, pattern: 'modelcontextprotocol\.io'}
+
+  - id: web-what-is-groq
+    tags: [network]
+    prompt: "Search the web: what is Groq, the AI inference company?"
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Describes Groq as a company providing fast AI inference (hardware/cloud), consistent with the search results; doesn't confuse it with Grok."
+
+  - id: web-population-canada
+    tags: [network]
+    prompt: "Look up the current population of Canada."
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Gives a figure from the search results (roughly 40-42 million) and notes it's an estimate or gives its date/source."
+
+  - id: web-weather-tokyo
+    tags: [network]
+    prompt: "Search the web for today's weather in Tokyo."
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Reports weather information found in the results, or honestly says the results didn't contain a current forecast. Doesn't invent a forecast."
+
+  - id: web-ddgs-package
+    tags: [network]
+    prompt: "Search the web: what does the ddgs Python package do?"
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Explains it's a Python library for DuckDuckGo (metasearch) search results, consistent with the search results."

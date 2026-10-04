@@ -1,0 +1,42 @@
+# Time: the right timezone for the right tool call. Answers change every run, so the judge
+# checks that the answer agrees with the tool result.
+category: time
+tasks:
+  - id: time-tokyo
+    tags: [ci]
+    prompt: "What time is it in Tokyo right now?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Asia/Tokyo'}}
+    rubric: "States the current time in Tokyo, matching the get_current_time result."
+
+  - id: time-weekday-newyork
+    prompt: "What day of the week is it in New York right now?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'America/New_York'}}
+    rubric: "Names the day of the week in New York that matches the tool result."
+
+  - id: time-daylight-sydney
+    prompt: "Is it currently daytime or night-time in Sydney?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Australia/Sydney'}}
+    rubric: "Says day or night correctly for the local hour returned by the tool (daytime roughly 6:00-18:00)."
+
+  - id: time-for-contact
+    prompt: "What time is it for Priya right now? Her timezone is in contacts.csv."
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'contacts'}}
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Asia/Kolkata'}}
+    rubric: "Gives Priya's current local time (Asia/Kolkata) matching the tool result."
+
+  - id: time-difference
+    prompt: "What's the time difference between London and Tokyo right now?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Europe/London'}}
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Asia/Tokyo'}}
+    rubric: "States the difference in hours, consistent with the UTC offsets in the two tool results."
+
+  - id: time-utc
+    prompt: "What time is it in UTC?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: '^(UTC|Etc/UTC|GMT|Etc/GMT|Etc/Universal|Zulu)$'}}
+    rubric: "States the current UTC time matching the tool result."
