@@ -6,20 +6,27 @@ An honest list of rough edges, shortcuts and known bugs, each written so it can 
 
 ## Not yet verified
 
-### 1. Gemini and Groq have never been tested live
+### 1. Gemini is only partly verified live (Groq is done)
 **Labels:** `verification`, `high`
-All live testing so far used local Ollama models and the demo provider; no Gemini or Groq key was available during development. Unit tests cover the request/response handling with fakes, but provider-specific behavior is unverified: Gemini's OpenAI-compatible tool calling, streaming with `stream_options.include_usage`, and especially the `skip_thought_signature_validator` placeholder used when Groq-made tool calls are sent to Gemini 3 after a fallback.
-**Done when:** the six demo prompts and a fallback (Gemini rate-limited, Groq answers, then back) have been run against both providers, and any fixes have tests.
+**Verified 2026-10-03:**
+- **Groq** (`openai/gpt-oss-120b`): all six demo prompts pass, 1.8–3.7 s each, including approve, reject-then-revise and the prompt injection (ignored and flagged).
+- **Gemini** (`gemini-3.6-flash`): prompts 1–3 pass (time, calculator, files + summary), 3.4–4.5 s; tool calls carry thought signatures. An earlier run of the email prompt (before the prompt changes below) also passed reject-then-revise.
+- **Fallback:** with an invalid Gemini key set for one command, Groq answered.
+
+**Fixed along the way (with regression tests from recorded responses):** the default Gemini model `gemini-3-flash` didn't exist (now `gemini-3.6-flash`, chosen by measured tool-calling and latency); Gemini's 429 wait time is read from the body (`RetryInfo`), not only `Retry-After`; server-guided rate-limit waits continue past 3 tries within a time budget (Groq's 8,000 tokens/minute); the last provider in a chain sits out longer waits; Gemini's 400 for a bad key reads as "API key rejected"; gpt-oss drafted emails/notes instead of calling the tool, fixed in the system prompt and the rejection message.
+
+**Still open:** Gemini prompts 4–6 after the prompt changes, the mixed-provider conversation (Gemini tool call → Groq → Gemini, which exercises the `skip_thought_signature_validator` placeholder), and the web console on Gemini. Blocked by Gemini's free tier: **20 requests/day per model**, used up during model selection. Scripts are ready; rerun when the quota resets.
+**Done when:** those three run green on Gemini.
 
 ### 2. `docker compose up` has not been run on a developer machine
 **Labels:** `verification`, `docker`, `medium`
 Docker isn't installed on the development machine, so the image and compose file are verified only by the CI job (build, demo-mode start, `/healthz`, 401 without token, non-root user). Not yet verified: Docker Desktop on Windows, persistence across restarts, MCP servers starting inside the container (`uvx` downloads at startup), and reaching Ollama via `host.docker.internal`.
 **Done when:** the Quickstart steps have been run on Windows with Docker Desktop, including Ollama on the host.
 
-### 3. List prices in `prices.toml` are unverified
-**Labels:** `data`, `medium`
-The paid reference prices (Gemini 3 Flash, Gemini 2.5 Flash/Flash-Lite, gpt-oss-120b on Groq) were written from memory and are marked "verify". Every list-price number in stats depends on them.
-**Done when:** each price is checked against the provider's pricing page, with the date recorded.
+### 3. ~~List prices in `prices.toml` are unverified~~ (closed 2026-10-03)
+**Labels:** `data`, `closed`
+Every price was checked against the official pages (ai.google.dev/gemini-api/docs/pricing, console.groq.com/docs/model/openai/gpt-oss-120b) from the raw HTML; the date and sources are in `prices.toml`. Corrections: Groq gpt-oss-120b output was wrong ($0.75 → **$0.60**); `gemini-3-flash` was keyed under a model that doesn't exist (now `gemini-3-flash-preview`, $0.50/$3.00); added `gemini-3.6-flash` ($0.75/$3.75). A test now fails if a default model has no list price.
+**Follow-up:** `gemini-3.6-flash` rises to $1.50/$7.50 on 2027-01-01; the entry says so, and needs updating then.
 
 ---
 
@@ -123,3 +130,4 @@ The `[e]dit` option's "open in your editor" path (`$EDITOR` / Notepad) has never
 **Labels:** `security`, `chore`
 During Phase 1, real-looking keys ended up in `.env.example` (tracked) and were staged by accident twice before being caught; `.env` itself held Python code instead of `KEY=value` lines. Both are local only and were never committed (gitleaks finds nothing in the history). The pre-commit gitleaks hook now blocks this.
 **Done when:** the exposed keys are revoked, `.env.example` is restored to empty values, and `.env` holds only `KEY=value` lines.
+**Update 2026-10-03:** `.env.example` is back to empty values and `.env` now parses cleanly with new working keys. Still to confirm: the old keys (`xai-…`, `AQ.…`) are revoked at their providers.

@@ -1,5 +1,7 @@
 """Retries, fail-fast errors, and provider fallback, using a fake HTTP client (no network)."""
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx2 as httpx  # the HTTP library openai v3 is built on
@@ -246,3 +248,89 @@ def test_provider_that_rejects_streaming_falls_back_and_stops_trying():
     assert llm.chat([], on_text=lambda t: None)["content"] == "a"
     assert llm.chat([], on_text=lambda t: None)["content"] == "b"
     assert [r.get("stream") for r in completions.requests] == [True, None, None]
+
+
+# Recorded from a real Gemini free-tier 429 (2026-10-03): no Retry-After header, the wait is in
+# the body as google.rpc.RetryInfo, and the body is a JSON list.
+GEMINI_429 = json.loads((Path(__file__).parent / "fixtures" / "gemini_429_body.json").read_text(encoding="utf-8"))
+
+
+def gemini_rate_limit():
+    response = httpx.Response(429, request=REQUEST)
+    return openai.RateLimitError("HTTP 429", response=response, body=GEMINI_429)
+
+
+def test_gemini_retry_delay_is_read_from_the_body():
+    llm, _, waits = fake_llm([gemini_rate_limit(), ok_response("after waiting")])
+    llm.max_retry_wait = 65
+    assert llm.chat([])["content"] == "after waiting"
+    assert waits == [37.0]  # what the server asked, not our 1s guess
+
+
+def test_long_gemini_delay_hands_over_to_the_fallback_at_once():
+    llm, completions, waits = fake_llm([gemini_rate_limit()])  # default limit: 20s
+    with pytest.raises(LLMError, match=r"rate limited \(429\), server asks to wait 37s"):
+        llm.chat([])
+    assert len(completions.requests) == 1 and waits == []
+
+
+def test_last_provider_in_the_chain_waits_longer(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    fb, _ = build_llm(["groq", "ollama"])
+    assert [b.max_retry_wait for b in fb.llms] == [llm_module.MAX_RETRY_WAIT, llm_module.LAST_RESORT_RETRY_WAIT]
+
+
+def groq_tpm_limit():
+    """Shape of a real Groq free-tier 429 (2026-10-03): tokens-per-minute limit, Retry-After header."""
+    response = httpx.Response(429, request=REQUEST, headers={"retry-after": "6", "x-ratelimit-reset-tokens": "49.3s"})
+    body = {
+        "error": {
+            "message": "Rate limit reached for model `openai/gpt-oss-120b` ... on tokens per minute (TPM): "
+            "Limit 8000, Used 6577, Requested 2112. Please try again in 5.1675s.",
+            "type": "tokens",
+            "code": "rate_limit_exceeded",
+        }
+    }
+    return openai.RateLimitError("HTTP 429", response=response, body=body)
+
+
+def test_server_guided_rate_limits_are_followed_beyond_three_tries():
+    llm, completions, waits = fake_llm([groq_tpm_limit()] * 4 + [ok_response("got through")])
+    assert llm.chat([])["content"] == "got through"
+    assert waits == [6.0] * 4 and len(completions.requests) == 5
+
+
+def test_server_guided_waits_stop_after_max_guided_tries():
+    llm, _, waits = fake_llm([groq_tpm_limit()] * 20)  # never clears
+    with pytest.raises(LLMError, match="gave up after 8 tries"):
+        llm.chat([])
+    assert waits == [6.0] * 7  # 7 waits between 8 tries, 42s in total
+
+
+def test_server_guided_waits_stop_at_the_time_budget():
+    response = httpx.Response(429, request=REQUEST, headers={"retry-after": "15"})
+    slow = openai.RateLimitError("HTTP 429", response=response, body=None)
+    llm, _, waits = fake_llm([slow] * 20)
+    with pytest.raises(LLMError, match="server asks to wait 15s"):
+        llm.chat([])
+    assert waits == [15.0] * 4  # 60s = 3 x the 20s limit; a 5th wait would exceed it
+
+
+def test_unguided_errors_still_stop_after_three_tries():
+    llm, completions, waits = fake_llm([status_error(openai.InternalServerError, 503)] * 5)
+    with pytest.raises(LLMError, match="gave up after 3 tries"):
+        llm.chat([])
+    assert len(completions.requests) == 3 and len(waits) == 2  # ~1s, ~2s: guessed, so few
+
+
+def test_gemini_bad_key_400_reads_as_a_key_problem(monkeypatch):
+    """Recorded 2026-10-03: Gemini answers an invalid key with 400 INVALID_ARGUMENT, not 401."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    body = [{"error": {"code": 400, "message": "Please pass a valid API key", "status": "INVALID_ARGUMENT"}}]
+    error = openai.BadRequestError(
+        "Error code: 400 - " + json.dumps(body), response=httpx.Response(400, request=REQUEST), body=body
+    )
+    llm, _, waits = fake_llm([error], provider="gemini")
+    with pytest.raises(LLMError, match=r"API key rejected \(400\)\. Check GEMINI_API_KEY in \.env\."):
+        llm.chat([])
+    assert waits == []  # permanent: no retries

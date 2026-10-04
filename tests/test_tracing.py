@@ -312,3 +312,14 @@ def test_export_only_trains_on_the_rated_turn(tmp_path, registry, tracer):
     messages = json.loads(out.read_text(encoding="utf-8"))["messages"]
     weights = {m["content"]: m.get("weight") for m in messages if m["role"] == "assistant"}
     assert weights == {"bad old answer": 0, "good answer": 1}
+
+
+def test_shipped_price_table_covers_the_default_models():
+    """The defaults must have a verified list price, or every cost number in stats is n/a."""
+    from kestrel.llm import PROVIDERS
+    from kestrel.pricing import cost, load_prices
+
+    prices = load_prices()
+    for name in ("gemini", "groq"):
+        c = cost(prices, name, PROVIDERS[name].default_model, 1_000_000, 1_000_000)
+        assert c.actual_usd == 0 and c.list_usd is not None and c.list_usd > 0, name
