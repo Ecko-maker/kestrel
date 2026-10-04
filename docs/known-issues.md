@@ -6,17 +6,18 @@ An honest list of rough edges, shortcuts and known bugs, each written so it can 
 
 ## Not yet verified
 
-### 1. Gemini is only partly verified live (Groq is done)
-**Labels:** `verification`, `high`
-**Verified 2026-10-03:**
-- **Groq** (`openai/gpt-oss-120b`): all six demo prompts pass, 1.8–3.7 s each, including approve, reject-then-revise and the prompt injection (ignored and flagged).
-- **Gemini** (`gemini-3.6-flash`): prompts 1–3 pass (time, calculator, files + summary), 3.4–4.5 s; tool calls carry thought signatures. An earlier run of the email prompt (before the prompt changes below) also passed reject-then-revise.
+### 1. ~~Gemini and Groq have never been tested live~~ (closed 2026-10-04)
+**Labels:** `verification`, `closed`
+**Verified live:**
+- **Groq** (`openai/gpt-oss-120b`, 2026-10-03): all six demo prompts pass, 1.8–3.7 s each, including approve, reject-then-revise and the prompt injection (ignored and flagged).
+- **Gemini** (`gemini-3.6-flash`): all six demo prompts pass, 3.5–7.2 s each (1–3 on 2026-10-03, 4–6 on 2026-10-04 after the prompt changes), including the injection (ignored and flagged).
 - **Fallback:** with an invalid Gemini key set for one command, Groq answered.
+- **Mixed providers** (2026-10-04): Gemini made a tool call (with a thought signature) → Groq answered from that history (signature stripped) → Gemini accepted Groq's tool call carrying the `skip_thought_signature_validator` placeholder and still recalled the first turn. Replayed in `test_recorded_mixed_conversation_is_prepared_for_each_provider`.
+- **Web console on Gemini** (2026-10-04, driven in Edge): a tool call, an approval clicked in the browser, and answers streamed as `text_delta` events.
 
 **Fixed along the way (with regression tests from recorded responses):** the default Gemini model `gemini-3-flash` didn't exist (now `gemini-3.6-flash`, chosen by measured tool-calling and latency); Gemini's 429 wait time is read from the body (`RetryInfo`), not only `Retry-After`; server-guided rate-limit waits continue past 3 tries within a time budget (Groq's 8,000 tokens/minute); the last provider in a chain sits out longer waits; Gemini's 400 for a bad key reads as "API key rejected"; gpt-oss drafted emails/notes instead of calling the tool, fixed in the system prompt and the rejection message.
 
-**Still open:** Gemini prompts 4–6 after the prompt changes, the mixed-provider conversation (Gemini tool call → Groq → Gemini, which exercises the `skip_thought_signature_validator` placeholder), and the web console on Gemini. Blocked by Gemini's free tier: **20 requests/day per model**, used up during model selection. Scripts are ready; rerun when the quota resets.
-**Done when:** those three run green on Gemini.
+**Lasting constraint:** Gemini's free tier allows **5 requests/minute and 20/day per model**, so large runs (evals) belong on Groq. `scripts/live/` reruns all of these checks.
 
 ### 2. `docker compose up` has not been run on a developer machine
 **Labels:** `verification`, `docker`, `medium`
