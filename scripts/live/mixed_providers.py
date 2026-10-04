@@ -6,7 +6,6 @@ test can replay them without network access.
 
 import json
 import sys
-from pathlib import Path
 
 sys.argv = [sys.argv[0], "gemini,groq"]
 import live_demo_lib as lib  # noqa: E402
@@ -57,7 +56,7 @@ for backend, prompt in turns:
         print("!!! turn failed:", result.text)
         break
 
-out = Path(sys.path[0]) / "mixed_shapes.json"
+out = lib.tmp / "mixed_shapes.json"  # outside the repo
 out.write_text(json.dumps(recorded, indent=1), encoding="utf-8")
 print("\nrecorded", len(recorded), "requests ->", out.name)
 for r in recorded:

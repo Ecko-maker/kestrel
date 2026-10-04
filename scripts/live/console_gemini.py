@@ -4,7 +4,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -12,10 +11,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = Path(sys.path[0])
 PORT = 8768
 
 tmp = Path(tempfile.mkdtemp(prefix="kestrel-console-gemini-"))
+OUT = tmp  # screenshots stay outside the repo
 shutil.copytree(ROOT / "workspace", tmp / "workspace", ignore=shutil.ignore_patterns("notes", "outbox"))
 env = {
     **os.environ,

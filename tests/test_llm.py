@@ -334,3 +334,28 @@ def test_gemini_bad_key_400_reads_as_a_key_problem(monkeypatch):
     with pytest.raises(LLMError, match=r"API key rejected \(400\)\. Check GEMINI_API_KEY in \.env\."):
         llm.chat([])
     assert waits == []  # permanent: no retries
+
+
+MIXED = json.loads((Path(__file__).parent / "fixtures" / "mixed_provider_history.json").read_text(encoding="utf-8"))
+
+
+def _tool_calls(messages):
+    return [tc for m in messages if m.get("tool_calls") for tc in m["tool_calls"]]
+
+
+def test_recorded_mixed_conversation_is_prepared_for_each_provider(monkeypatch):
+    """Replays a live Gemini -> Groq -> Gemini conversation (2026-10-04) that Gemini accepted:
+    Groq must not see Gemini's signatures; Gemini must get its own signature back unchanged and
+    the documented placeholder on the call Groq made."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    history = MIXED["history"]
+
+    to_groq = _tool_calls(LLM("groq")._prepare(history))
+    assert [sorted(tc) for tc in to_groq] == MIXED["sent_to_groq_keys"]
+
+    to_gemini = _tool_calls(LLM("gemini")._prepare(history))
+    assert [sorted(tc) for tc in to_gemini] == MIXED["sent_to_gemini_keys"]
+    signatures = [tc["extra_content"]["google"]["thought_signature"] for tc in to_gemini]
+    assert signatures == ["<recorded-gemini-signature-1>", "skip_thought_signature_validator"]
+    assert "extra_content" not in history[5]["tool_calls"][0]  # the stored history isn't modified

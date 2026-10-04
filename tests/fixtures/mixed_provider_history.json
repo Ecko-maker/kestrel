@@ -1,0 +1,21 @@
+{
+  "_note": "Assistant tool-call messages from a live Gemini -> Groq -> Gemini conversation (2026-10-04). Real thought signatures replaced with placeholders; IDs as returned by each provider.",
+  "history": [
+    {"role": "user", "content": "Read notes.txt and tell me in one sentence what step 2 is about."},
+    {"role": "assistant", "content": null, "tool_calls": [
+      {"id": "call_716279", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\":\"notes.txt\"}"},
+       "extra_content": {"google": {"thought_signature": "<recorded-gemini-signature-1>"}}}
+    ]},
+    {"role": "tool", "tool_call_id": "call_716279", "content": "<untrusted_data source=\"read_file\">...</untrusted_data>"},
+    {"role": "assistant", "content": "Step 2 is about implementing tool calling."},
+    {"role": "user", "content": "Using what you read earlier, what was step 1? Also compute 17.5% of 2,340 with the calculator."},
+    {"role": "assistant", "content": null, "tool_calls": [
+      {"id": "fc_f9e66cbf-fc55-48e7-a5ba-61940b0585f9", "type": "function", "function": {"name": "calculator", "arguments": "{\"expression\":\"0.175 * 2340\"}"}}
+    ]},
+    {"role": "tool", "tool_call_id": "fc_f9e66cbf-fc55-48e7-a5ba-61940b0585f9", "content": "409.5"},
+    {"role": "assistant", "content": "Step 1 was a single LLM class. 17.5% of 2,340 is 409.5."},
+    {"role": "user", "content": "Now what time is it in Tokyo? And which file did you read at the start of our chat?"}
+  ],
+  "sent_to_groq_keys": [["function", "id", "type"], ["function", "id", "type"]],
+  "sent_to_gemini_keys": [["extra_content", "function", "id", "type"], ["extra_content", "function", "id", "type"]]
+}

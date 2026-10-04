@@ -78,7 +78,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 
 **Phase 1 complete (v0.1.0).** Next: Phase 2, KestrelBench.
 
-- [~] Live provider verification (2026-10-03, known issues #1 and #3). Groq: six demo prompts pass. Gemini: prompts 1–3 + fallback pass; prompts 4–6, the mixed-provider conversation and the console on Gemini wait for the daily quota (20 requests/day per model). Default Gemini model is now `gemini-3.6-flash` (measured). Fixed: rate limits (Gemini RetryInfo body, guided-wait budget, longer wait for the last provider), Gemini 400 bad-key message, gpt-oss drafting instead of calling tools (system prompt + rejection message). Prices verified and sourced in `prices.toml` (#3 closed).
+- [x] Live provider verification (2026-10-03/04, known issues #1 and #3 closed). Six demo prompts pass on Groq and on Gemini; fallback, a Gemini → Groq → Gemini conversation (thought-signature placeholder accepted) and the web console on Gemini verified. Rerun with `scripts/live/`. Default Gemini model is now `gemini-3.6-flash` (measured). Fixed: rate limits (Gemini RetryInfo body, guided-wait budget, longer wait for the last provider), Gemini 400 bad-key message, gpt-oss drafting instead of calling tools (system prompt + rejection message). Prices verified and sourced in `prices.toml` (#3 closed).
 
 ## Configuration (.env)
 
