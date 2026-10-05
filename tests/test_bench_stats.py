@@ -197,13 +197,16 @@ def test_dev_heldout_split_is_stable_and_stratified():
 # --- versions: judge prompt, task definitions, tool log -----------------------------------
 
 
-def test_judge_prompt_changes_need_a_new_version():
+def test_judge_changes_need_a_new_version():
+    """What the judge sees: its prompt, the request layout, and how much of each tool result."""
+    from kestrel.bench.runner import MAX_RESULT_CHARS_IN_LOG
+
     request = build_request(["q"], "rubric", ["- tool() [ran] -> x"], "answer")
-    fingerprint = hashlib.sha256(json.dumps(request).encode()).hexdigest()[:12]
+    fingerprint = hashlib.sha256((json.dumps(request) + str(MAX_RESULT_CHARS_IN_LOG)).encode()).hexdigest()[:12]
     assert JUDGE_PROMPT in request[0]["content"]
-    assert (JUDGE_VERSION, fingerprint) == ("v1", "527eeb838bf2"), (
-        "The judge prompt or request changed: bump JUDGE_VERSION in judge.py, then update this test. "
-        f"New fingerprint: {fingerprint}"
+    assert (JUDGE_VERSION, fingerprint) == ("v2", "53dfa9418d6f"), (
+        "What the judge sees changed: bump JUDGE_VERSION in judge.py, log it in evals/CHANGELOG.md, then "
+        f"update this test. New fingerprint: {fingerprint}"
     )
 
 
@@ -425,3 +428,24 @@ def test_compare_warns_across_suite_versions():
     old["meta"]["suite_version"], new["meta"]["suite_version"] = "1.0", "1.1"
     assert any("different suite versions (1.0 vs 1.1)" in w for w in stats.compare(old, new).warnings)
     assert "suite version not recorded" in markdown(results_file(rows))  # files from before versioning
+
+
+def test_resume_refuses_to_mix_judge_versions(demo, monkeypatch):
+    out = demo / "r.json"
+    data = results_file([row("arith-percent", "pass", "arithmetic")], judge="groq/openai/gpt-oss-120b", version="v1")
+    data["meta"].update(provider="demo", model="demo")
+    out.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    args = ["run", "--provider", "demo", "--model", "demo", "--judge", "groq", "--resume", str(out)]
+    message = str(run_kestrel(monkeypatch, *args, "--tasks", "arith-percent"))
+    assert "mix two judges" in message and "rejudge" in message
+
+
+def test_rejudge_dry_run_estimates_without_calling_the_judge(cli_env, monkeypatch, capsys):
+    t = next(t for t in load_tasks() if t.rubric)
+    path = cli_env / "r.json"
+    path.write_text(json.dumps(results_file([row(t.id, "pass", t.category, tool_log=["- x() [ran] -> y"])])), "utf-8")
+    monkeypatch.setattr(bench_cli, "_judge", None)  # would fail if called
+    assert run_kestrel(monkeypatch, "rejudge", str(path), "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "Re-grade 1 stored answers with judge v2" in out and "1 stored" in out and "Expected ~" in out

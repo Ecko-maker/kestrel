@@ -17,7 +17,9 @@ from kestrel.bench.judge import Judge
 from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
 from kestrel.tracing import Tracer
 
-MAX_RESULT_CHARS_IN_LOG = 600
+# Tool results in the judge's log are cut to this length: judge v2 (2026-10-05) raised it from 600 so the
+# judge can check faithfulness against what the traces and events keep (2,000 characters).
+MAX_RESULT_CHARS_IN_LOG = 2_000
 
 
 class ScriptedApprover:

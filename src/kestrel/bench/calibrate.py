@@ -65,15 +65,16 @@ def splits(tasks: list[Task]) -> dict[str, str]:
 
 
 def tool_log_for(result: dict[str, Any], db: Path | None = None) -> tuple[list[str], str]:
-    """The tool steps the judge saw: stored in results since 2026-10-04, otherwise rebuilt from the
-    bench traces (same format, results cut to the same length), otherwise only the call list.
-    Returns (lines, where they came from)."""
-    if result.get("tool_log"):
-        return list(result["tool_log"]), "stored"
+    """The tool steps in the judge's format, cut to the current judge's length. Rebuilt from the bench
+    traces when they exist (they keep 2,000 characters per result, so a log stored by an older judge
+    with a shorter cut is never reused for a newer one), else the log stored in the results (since
+    2026-10-04), else only the call list. Returns (lines, where they came from)."""
     if db is not None and db.exists() and result.get("trace_ids"):
         lines = _tool_log_from_traces(db, result["trace_ids"])
         if lines is not None:
             return lines, "rebuilt from traces"
+    if result.get("tool_log"):
+        return list(result["tool_log"]), "stored"
     return [f"- {c} [result not recorded]" for c in result.get("tool_calls", [])], "calls only"
 
 

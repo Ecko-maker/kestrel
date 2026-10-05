@@ -23,10 +23,12 @@ an answer that contradicts them is wrong. Ignore style unless the rubric mention
 
 Reply with JSON only: {"score": 0 | 0.5 | 1, "reason": "<one sentence>"}"""
 
-# Bump on ANY change to JUDGE_PROMPT or build_request (a test pins the hash). Every verdict records
-# the version that produced it, so scores from different judge prompts are never mixed silently.
-# Results written before versioning (2026-10-04) were graded by v1, the only prompt so far.
-JUDGE_VERSION = "v1"
+# Bump on ANY change to what the judge sees: JUDGE_PROMPT, build_request, or the tool-result length in
+# its log (runner.MAX_RESULT_CHARS_IN_LOG); a test pins all three. Every verdict records the version that
+# produced it, so scores from different judges are never mixed silently. History (evals/CHANGELOG.md):
+#   v1  2026-10-04  first prompt; tool results cut to 600 characters (results without a version are v1)
+#   v2  2026-10-05  same prompt; tool results cut to 2,000 characters
+JUDGE_VERSION = "v2"
 
 
 def prompt_sha() -> str:
