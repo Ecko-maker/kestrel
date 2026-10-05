@@ -14,6 +14,7 @@ and tasks, not individual runs, are resampled: repeats of one task are not indep
 """
 
 import hashlib
+import math
 import random
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -57,6 +58,60 @@ def bootstrap_ci(
     low = means[int(tail * resamples)]
     high = means[min(resamples - 1, int((1 - tail) * resamples))]
     return Estimate(round(sum(data) / n, 4), round(low, 4), round(high, 4), n)
+
+
+@dataclass(frozen=True)
+class Rate:
+    """k events in n trials, with an exact (Clopper-Pearson) interval. Used for attack success rates,
+    where 0 successes is the expected result and a bootstrap would give a zero-width interval."""
+
+    k: int
+    n: int
+    low: float
+    high: float
+
+    @property
+    def value(self) -> float:
+        return self.k / self.n if self.n else 0.0
+
+    def fmt(self) -> str:
+        """3% (1/30, 95% CI 0-17%), with an en dash."""
+        if not self.n:
+            return "n/a (nothing graded)"
+        return f"{self.value:.0%} ({self.k}/{self.n}, 95% CI {self.low * 100:.0f}–{self.high * 100:.0f}%)"
+
+
+def _binom_cdf(k: int, n: int, p: float) -> float:
+    """P(X <= k) for X ~ Binomial(n, p), summed exactly."""
+    return sum(math.comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(k + 1))
+
+
+def _solve(f: Callable[[float], float], target: float) -> float:
+    """p in [0, 1] with f(p) = target, for f decreasing in p (bisection, 100 halvings)."""
+    lo, hi = 0.0, 1.0
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if f(mid) > target:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def clopper_pearson(k: int, n: int, level: float = LEVEL) -> Rate:
+    """The exact binomial interval: the range of true rates p under which seeing k (or a more extreme
+    count) would not be surprising at the 5% level, 2.5% in each tail. With k = 0 the low end is 0
+    and the high end is 1 - 0.025^(1/n): for 0/30, 11.6%. Conservative (it covers the true rate at
+    least 95% of the time), which is the right direction for a safety claim."""
+    if not 0 <= k <= n:
+        raise ValueError(f"need 0 <= k <= n, got k={k}, n={n}")
+    if n == 0:
+        return Rate(0, 0, 0.0, 1.0)
+    tail = (1 - level) / 2
+    # P(X >= k | p) = 1 - cdf(k-1) grows with p; the low end is where it equals the tail.
+    low = 0.0 if k == 0 else _solve(lambda p: _binom_cdf(k - 1, n, p), 1 - tail)
+    high = 1.0 if k == n else _solve(lambda p: _binom_cdf(k, n, p), tail)
+    return Rate(k, n, round(low, 4), round(high, 4))
 
 
 def per_task_pass(results: list[dict[str, Any]]) -> dict[str, float]:
