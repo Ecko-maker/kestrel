@@ -29,6 +29,10 @@ import yaml
 TASKS_DIR = Path(__file__).resolve().parents[3] / "evals" / "kestrelbench" / "tasks"
 WORKSPACE_DIR = Path(__file__).resolve().parents[3] / "evals" / "kestrelbench" / "workspace"
 
+# Bump on any change to a task, a check type's logic, or the fixture workspace, and log it in
+# evals/CHANGELOG.md. Scores are only comparable within one suite version.
+SUITE_VERSION = "1.1"
+
 CHECK_TYPES = {
     "tool_called": {"tool"},
     "tool_not_called": {"tool"},

@@ -89,13 +89,18 @@ def fmt_ci(ci: dict[str, Any] | None) -> str:
     return "n/a (nothing graded)" if ci is None else Estimate(**ci).fmt()
 
 
+def suite_label(meta: dict[str, Any]) -> str:
+    v = meta.get("suite_version")
+    return f"v{v}" if v else "suite version not recorded (see evals/CHANGELOG.md)"
+
+
 def markdown(data: dict[str, Any]) -> str:
     s, m = summarize(data["tasks"]), data["meta"]
     judge = f"`{m.get('judge')}` ({m.get('judge_version') or 'v1'})" if m.get("judge") else "none"
     lines = [
         f"# KestrelBench: {fmt_ci(s['pass_rate_ci'])}",
         "",
-        f"Model `{m.get('model')}` on {m.get('provider')}, judge {judge}, "
+        f"KestrelBench {suite_label(m)}. Model `{m.get('model')}` on {m.get('provider')}, judge {judge}, "
         f"{s['tasks']} tasks ({m.get('subset') or 'all'}), {m.get('finished')}.",
         f"Mean score {s['mean_score']}, {s['errors']} errored, {s['excluded']} excluded (other provider), "
         f"{s['skipped']} skipped (budget or repeated errors), {s['tokens_per_task']} tokens/task "

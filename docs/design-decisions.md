@@ -125,6 +125,8 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - Versioning and stored answers keep every number traceable to the judge that produced it.
 - Known weakness: the bootstrap gives zero-width intervals when every task agrees; the report marks those.
 
+**Suite versions (added with v1.1).** Every check change is reviewed in both directions: failures for false failures, a seeded sample of passes for false passes. It is then logged with its evidence and its effect on stored results, and bumps `SUITE_VERSION`. The README reports the score under the current version and says what the previous version scored and why it changed. Re-scoring stored answers, instead of re-running the agent, keeps the comparison to the same outputs.
+
 ---
 
 ## 12. Smaller choices worth knowing

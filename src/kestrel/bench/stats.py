@@ -120,6 +120,13 @@ def compare(a: dict[str, Any], b: dict[str, Any], **kw: Any) -> Comparison:
     """Compare two results files (as loaded JSON) on the tasks graded in both."""
     warnings = []
     ma, mb = a.get("meta", {}), b.get("meta", {})
+    va, vb = ma.get("suite_version"), mb.get("suite_version")
+    if va != vb:
+        warnings.append(
+            f"different suite versions ({va or 'not recorded'} vs {vb or 'not recorded'}): checks may have "
+            "changed between the runs (evals/CHANGELOG.md); tasks with changed definitions are left out "
+            "when both files have task fingerprints"
+        )
     if judge_label(ma) != judge_label(mb):
         warnings.append(
             f"different judges ({judge_label(ma)} vs {judge_label(mb)}): part of the difference may come from "

@@ -51,6 +51,19 @@ uv run kestrel bench run --shard 1/2                                 # or split 
 
 Gemini's free tier (20 requests/day per model) can't run the suite, so it runs on Groq. A task answered by any provider other than the one under test is marked `excluded` and left out of the score; `--resume` refuses to continue a file from a different provider or model.
 
+## Suite versions
+
+Scores are only comparable within one suite version. `SUITE_VERSION` in `src/kestrel/bench/tasks.py` is recorded in every results file and shown in every report. Each change to a task, a check or the fixture workspace bumps it, and is logged with its evidence in [`evals/CHANGELOG.md`](../evals/CHANGELOG.md).
+
+- **v1.0** scored 85%. **v1.1** fixed 7 check bugs and scores 92% on the same answers.
+- `scripts/rescore.py` re-checks a stored run against the current suite without calling any model. It only re-runs checks it can reproduce from stored data, so it's valid only when the other checks' logic didn't change.
+- `compare` warns when two files come from different suite versions, and leaves out tasks whose fingerprint changed.
+
+Reviews of the baseline are in [`evals/reports/`](../evals/reports/):
+- the failure analysis;
+- a false-pass review of 15 sampled passes;
+- a proposal for a separate "hard" split. The main 100 tasks stay unchanged; the split is not yet approved.
+
 ## How sure is a score?
 
 A score from 100 tasks is an estimate, so every report gives a **95% confidence interval**, e.g. `85% (95% CI 78–92%, n=100)`. It comes from a bootstrap over tasks: draw 100 tasks *with replacement* from the results, recompute the pass rate, repeat 10,000 times (fixed seed, so the same results always give the same interval), and keep the middle 95%. No model calls are needed, and `kestrel bench report <file>` adds intervals to older results files too.

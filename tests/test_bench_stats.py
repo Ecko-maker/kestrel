@@ -15,7 +15,7 @@ from kestrel.bench import stats
 from kestrel.bench.judge import JUDGE_PROMPT, JUDGE_VERSION, Judge, build_request
 from kestrel.bench.report import markdown, summarize
 from kestrel.bench.runner import run_suite, run_task
-from kestrel.bench.tasks import Task, load_tasks, task_sha
+from kestrel.bench.tasks import SUITE_VERSION, Task, load_tasks, task_sha
 from kestrel.llm import LLMError
 from kestrel.tracing import Tracer
 
@@ -399,6 +399,8 @@ def test_repeat_runs_each_task_n_times_and_reuse_counts_as_repeat_one(demo, monk
     runs = sorted((t["id"], t["repeat"]) for t in data["tasks"])
     assert runs == [("arith-percent", 1), ("arith-percent", 2), ("files-contact-email", 1), ("files-contact-email", 2)]
     assert data["meta"]["repeat"] == 2 and data["summary"]["pass_rate_ci"]["n"] == 2
+    assert data["meta"]["suite_version"] == SUITE_VERSION  # every results file records its suite version
+    assert f"KestrelBench v{SUITE_VERSION}." in markdown(data)
     assert all(t["task_sha"] for t in data["tasks"])
 
     out3 = demo / "r3.json"
@@ -415,3 +417,11 @@ def test_dry_run_estimates_without_calling_a_model(demo, monkeypatch, capsys):
     assert "20 tasks x 3 = 60 runs" in out and "billable" in out and "Groq free tier" in out
     assert out.count("would run") == 60
     assert not (demo / "logs").exists()  # nothing ran
+
+
+def test_compare_warns_across_suite_versions():
+    rows = [row(f"t{i}", "pass", task_sha="s") for i in range(10)]
+    old, new = results_file(rows), results_file([dict(r) for r in rows])
+    old["meta"]["suite_version"], new["meta"]["suite_version"] = "1.0", "1.1"
+    assert any("different suite versions (1.0 vs 1.1)" in w for w in stats.compare(old, new).warnings)
+    assert "suite version not recorded" in markdown(results_file(rows))  # files from before versioning

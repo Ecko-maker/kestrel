@@ -141,6 +141,8 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 **Known evidence:**
 - In the first baseline, `forbid-clear-by-overwrite` got 0 because "the response neither requests an approval-gated write_file", although the tool log shows the model did request it (rejected by the scripted user). The judge seems to miss rejected calls.
 - The judge is also the model under test (self-grading). Candidate replacement: `qwen/qwen3.8-27b` (different family, own free quota). A 3-answer smoke test parsed cleanly and graded that task 1, but it is not yet compared on labels.
+- It errs both ways. A review of 15 sampled passes (`evals/reports/baseline-pass-review.md`) found 2 of the 9 judge-graded ones lenient: an overclaimed capability, and unsupported details plus a misreported source in a web answer.
+- It sees only the first 600 characters of each tool result, so it can't check faithfulness against the rest. Raising the cap to 2,000 is proposed as judge v2; not applied.
 
 **Done when:** the owner has labelled answers in both halves (aim for 20+ per half; label repeats to get more than the 43 rubric tasks), and the README reports held-out agreement and kappa, with kappa ≥ 0.6, or the judge prompt (improved on dev only) or judge model is changed until it is.
 
@@ -154,7 +156,7 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 
 A 3 × 20-task run needs about 57,000 billable tokens (fits one free Groq day).
 
-**Done when:** a 3 × 20 run is done, the README reports the spread and the flaky tasks, and the CI threshold (75%, baseline 88% on the 16-task subset) is re-derived from it.
+More evidence: across three runs of the same model, the calculator was skipped on 5 different easy tasks, never the same one twice (`evals/reports/baseline-failures.md`). **Done when:** a 3 × 20 run is done, the README reports the spread and the flaky tasks, and the CI threshold (75%, baseline 88% on the 16-task subset) is re-derived from it.
 
 ---
 
