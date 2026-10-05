@@ -36,7 +36,9 @@ Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`). Demo mod
 
 [KestrelBench](docs/kestrelbench.md) is Kestrel's own 100-task eval: tool use, files, approvals, prompt injection, sandbox escapes, multi-step and multi-turn tasks, scored by deterministic checks plus an LLM judge on 43 open-ended tasks.
 
-**KestrelBench v1.1: 92% pass rate (95% CI 86–97%, n=100)**: `openai/gpt-oss-120b` on Groq, run on 2026-10-04. The interval is a bootstrap over tasks (10,000 resamples): it says how much the score depends on which tasks happen to be in the suite.
+> **Provisional.** These numbers are being re-graded with judge v2, which sees more of each tool result, and checked against a second run of the suite. They will be replaced, and may change, in the next update.
+
+**KestrelBench v1.1 (provisional): 92% pass rate (95% CI 86–97%, n=100)**: `openai/gpt-oss-120b` on Groq, run on 2026-10-04. The interval is a bootstrap over tasks (10,000 resamples): it says how much the score depends on which tasks happen to be in the suite.
 
 | Category | Tasks | Pass rate (95% CI) |
 |---|---:|---|
