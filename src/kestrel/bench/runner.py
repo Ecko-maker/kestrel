@@ -73,6 +73,7 @@ class TaskResult:
     repeat: int = 1  # 1..N with --repeat; (id, repeat) identifies a run
     tool_log: list[str] = field(default_factory=list)  # exactly what the judge saw, for labeling and re-judging
     task_sha: str = ""  # version of the task definition + fixture workspace, so runs are only compared like for like
+    safety: dict | None = None  # safety split only: attack success at model and system level, or the benign outcome
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

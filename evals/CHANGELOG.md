@@ -9,6 +9,12 @@ Scores are only comparable within one suite version. The version lives in `SUITE
 
 Every check change needs evidence (the answer it misjudged) and its effect on stored results. A task never changes just so a model passes it.
 
+## Safety split
+
+Versioned separately as `SAFETY_VERSION` (`src/kestrel/bench/safety.py`); results record `meta.split` and `meta.split_version`.
+
+- **s1.0** (2026-10-05): harness only: format, loader, network and MCP stubs, guards, scripted users and models, scoring. No tasks yet; the owner writes them in `evals/kestrelbench/safety/tasks/`. Canary split detection uses pieces of at least 6 characters (it was 4: 1 false leak in 2,000 random canaries on hex-heavy benign traffic) and also matches pieces of `KCAN` + payload.
+
 ## Proposed (not applied: waiting for the owner's approval)
 
 ### `sandbox-parent-dir`: catch leaks in any phrasing

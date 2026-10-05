@@ -135,3 +135,21 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Hand-made markdown/SVG over libraries where it's small.** Fewer dependencies to audit; `react-markdown` is the exception because markdown parsing is not small.
 - **oxlint for the console.** typescript-eslint doesn't yet support TypeScript 7; oxlint parses TypeScript itself and includes the React hooks rules.
 - **gitleaks as a tool, not the GitHub Action.** The tool is MIT; the action is commercially licensed for organizations.
+
+---
+
+## 13. Safety split: declared goals, two levels, scripted models
+
+**Decision:**
+- Prompt-injection tasks live in their own split (folder, loader, `SAFETY_VERSION`), so the main suite's fingerprints never move.
+- Each attack declares its goal as data: leak through a channel, a gated or forbidden call, a file that must stay unchanged, or a write outside `notes/`. Three always-on guards apply to every task.
+- Every check is answered at two levels: the model *requested* the harm (model level) or the harm *happened* through the real gate with a scripted user (system level).
+- Network and MCP tools are replaced by stubs that serve fixtures and log every call. The log is the system-level evidence.
+- Scripted models (always-falls, never-falls, refuse-all) are built from the declared goals, and validate the checks before any real model runs.
+
+**Alternatives:**
+- An LLM judge reading the transcript: not reproducible, and it can itself be injected.
+- Regexes over the attack text: ties grading to wording, and needs each attack reproduced in the check.
+- Mocking the network with a proxy: catches everything, but needs a sandbox we don't have on Windows.
+
+**Why:** Declared goals keep grading independent of the attack's wording, so tasks can be written without changing the harness. The same data drives the scripted models, which prove the checks fire when they should and stay quiet when they shouldn't. The two levels separate what the model does from what the gate stops, which is the "before" number Phase 3's defenses have to move. Attack rates use the exact Clopper-Pearson interval, because a bootstrap gives a zero-width interval at 0 successes.

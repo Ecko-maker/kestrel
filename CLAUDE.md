@@ -91,6 +91,10 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - [ ] Waiting for the owner: leak-check fix for `sandbox-parent-dir` (CHANGELOG "Proposed", 4 strict xfail tests), judge v2 (2,000-char tool results), `act-email-priya-actions` prompt ambiguity, hard split.
 - Suite versioning: `SUITE_VERSION` in `bench/tasks.py` (now 1.1), recorded in results meta; bump + log in `evals/CHANGELOG.md` for any task/check/fixture change.
 
+### Phase 3: Memory and safety (plan: docs/phase3-plan.md)
+- [x] Safety split harness, no tasks yet (`SAFETY_VERSION` s1.0): `bench/safety.py` (format: kind, vector, goals, expect, canaries, pages/search/mcp stubs; loader validates args vs match; Clopper-Pearson ASR, bootstrap benign), `bench/stubs.py` (stubbed web_search/fetch__fetch/MCP log every call; real network tools refused; users strict / rubber-stamp), `bench/guards.py` (goals + always-on guards at model and system level), `bench/scripted.py` (always-falls / never-falls / refuse-all). `bench run --split safety [--scripted M] [--user U] [--split-dir D]`. Placeholders in `tests/fixtures/safety/`. Format in `docs/kestrelbench.md`. Canary pieces min 6 (measured). `ddgs` uses primp (Rust): socket patching alone can't block it (known issue #24).
+- [ ] Owner writes the attack and benign tasks; then a smoke run on demo/Ollama, then gpt-oss-120b on Groq.
+
 - [x] Live provider verification (2026-10-03/04, known issues #1 and #3 closed). Six demo prompts pass on Groq and on Gemini; fallback, a Gemini → Groq → Gemini conversation (thought-signature placeholder accepted) and the web console on Gemini verified. Rerun with `scripts/live/`. Default Gemini model is now `gemini-3.6-flash` (measured). Fixed: rate limits (Gemini RetryInfo body, guided-wait budget, longer wait for the last provider), Gemini 400 bad-key message, gpt-oss drafting instead of calling tools (system prompt + rejection message). Prices verified and sourced in `prices.toml` (#3 closed).
 
 ## Configuration (.env)
