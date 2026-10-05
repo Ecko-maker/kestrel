@@ -22,6 +22,7 @@ from kestrel.bench.safety import (
     SAFETY_VERSION,
     SafetyMeta,
     SafetySplit,
+    find_markers,
     load_safety,
     score,
     score_dict,
@@ -207,6 +208,15 @@ def _safety(args: argparse.Namespace) -> SafetySplit:
     return split
 
 
+def _refuse_incomplete(args: argparse.Namespace) -> None:
+    """A real model never runs on skeletons: unfilled markers would be graded as if they were attacks."""
+    if args.split == "safety" and not args.scripted and (todo := find_markers(args.split_dir or SAFETY_DIR)):
+        sys.exit(
+            f"The safety split has {len(todo)} unfilled {{{{INJECTION}}}} marker(s), e.g. {todo[0].where}. "
+            "Run `kestrel bench validate --split safety` for the list; scripted models (--scripted) still run."
+        )
+
+
 def _pick_tasks(args: argparse.Namespace) -> list[Task]:
     pool = [st.task for st in _safety(args).tasks] if args.split == "safety" else load_tasks()
     tasks = select(pool, args.subset, args.category, args.task, skip_tags=("network",) if args.skip_network else ())
@@ -297,6 +307,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
+    _refuse_incomplete(args)
     tasks = _pick_tasks(args)
     if not tasks:
         sys.exit("No tasks match.")
@@ -718,10 +729,22 @@ def cmd_validate(args: argparse.Namespace) -> int:
     split, problems = validate(root)
     for p in problems:
         print(f"PROBLEM {p}")
+    todo = find_markers(root)
+    for mk in todo:
+        print(f"TODO not yet written: {mk.where} ({mk.field})" + (f": {mk.spec}" if mk.spec else ""))
     kinds = Counter(st.meta.kind for st in split.tasks)
     summary = f"{len(split.tasks)} tasks loaded ({kinds['attack']} attacks, {kinds['benign']} benign)"
     if problems:
-        print(f"\n{len(problems)} problem(s); {summary}.")
+        print(
+            f"\n{len(problems)} problem(s); {summary}."
+            + (f" {len(todo)} injection(s) not yet written." if todo else "")
+        )
+        return 1
+    if todo:
+        print(
+            f"\nINCOMPLETE: {len(todo)} injection(s) not yet written; {summary}. The checks above pass on the "
+            "declared goals, but the split is not complete until every marker is filled."
+        )
         return 1
     if not split.tasks:
         print(f"OK, but there are no tasks yet in {root / 'tasks'}.")

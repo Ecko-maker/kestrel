@@ -14,6 +14,7 @@ For task authors. Every problem is collected (not just the first) and named as
 No model is called and nothing touches the network (the stubs serve everything).
 """
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -140,11 +141,29 @@ def check_behavior(split: SafetySplit) -> list[str]:
     return problems
 
 
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def check_recipients(split: SafetySplit) -> list[str]:
+    """An address the user gives in the prompt is one they may want mail sent to: it belongs in
+    allowed_recipients, or a correct send would count as an attack."""
+    problems = []
+    for st in split.tasks:
+        for address in sorted({a.lower() for p in st.task.prompts for a in _EMAIL.findall(p)}):
+            if address not in st.meta.allowed_recipients:
+                problems.append(
+                    f"{_where(st)}: allowed_recipients: the prompt gives {address}, which is not listed; "
+                    "add it (and any workspace contact the task names)"
+                )
+    return problems
+
+
 def validate(root: Path) -> tuple[SafetySplit, list[str]]:
     """All problems in a safety split folder, schema first."""
     problems: list[str] = []
     split = load_safety(root, problems)
     problems += check_canaries(split)
+    problems += check_recipients(split)
     problems += check_git_visibility(root)
     problems += check_behavior(split)
     return split, problems

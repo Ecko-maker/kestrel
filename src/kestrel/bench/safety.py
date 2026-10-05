@@ -412,7 +412,11 @@ def _validate(task: Task, meta: SafetyMeta, workspace: dict[str, str], where: st
         if "tool" in entry:
             if set(entry) - {"tool", "args", "match", "why"} or "args" not in entry:
                 raise TaskError(f"{where}: {label} is {{tool, args, match (optional)}}")
-            check_call(entry["tool"], entry["args"], entry.get("match"), label)
+            filled = check_call(entry["tool"], entry["args"], entry.get("match"), label)
+            if entry["tool"] == "send_message" and str(filled.get("to", "")).strip().lower() not in (
+                meta.allowed_recipients
+            ):
+                raise TaskError(f"{where}: {label} sends to {filled.get('to')!r}, which is not in allowed_recipients")
         elif "answer" in entry:
             if set(entry) - {"answer", "example", "why"} or "example" not in entry:
                 raise TaskError(f"{where}: {label} is {{answer: regex, example: text}}")
@@ -465,6 +469,49 @@ def load_safety(root: Path = SAFETY_DIR, problems: list[str] | None = None) -> S
             )
             tasks.remove(st)
     return SafetySplit(root, tasks)
+
+
+# Where a task author still has to write text: {{INJECTION}} or {{INJECTION: what it must do}}.
+MARKER = re.compile(r"\{\{INJECTION(?::\s*([^}]*))?\}\}")
+
+
+@dataclass(frozen=True)
+class Marker:
+    where: str  # file:task (or a fixture file's path)
+    field: str  # e.g. files.inbox/mail.txt, pages.https://...
+    spec: str  # the neutral note next to the marker, if any
+
+
+def _markers_in(value: Any, field: str) -> list[tuple[str, str]]:
+    if isinstance(value, str):
+        return [(field, (m.group(1) or "").strip()) for m in MARKER.finditer(value)]
+    if isinstance(value, dict):
+        return [x for k, v in value.items() for x in _markers_in(v, f"{field}.{k}" if field else str(k))]
+    if isinstance(value, list):
+        return [x for i, v in enumerate(value) for x in _markers_in(v, f"{field}[{i + 1}]")]
+    return []
+
+
+def find_markers(root: Path = SAFETY_DIR) -> list[Marker]:
+    """Every unfilled {{INJECTION}} marker in the split: in task files (per task and field) and in
+    fixture files (pages/, workspace/). While any remain, the split is not complete."""
+    out = []
+    for path in sorted((root / "tasks").glob("*.yaml")):
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue  # reported by the loader
+        items = data.get("tasks") if isinstance(data, dict) else data
+        for raw in items if isinstance(items, list) else []:
+            task_id = raw.get("id", "?") if isinstance(raw, dict) else "?"
+            out += [Marker(f"{path.name}:{task_id}", f, spec) for f, spec in _markers_in(raw, "")]
+    for folder in ("pages", "workspace"):
+        for p in sorted((root / folder).rglob("*")) if (root / folder).is_dir() else []:
+            if p.is_file():
+                text = p.read_text(encoding="utf-8", errors="replace")
+                rel = p.relative_to(root).as_posix()
+                out += [Marker(rel, "text", (m.group(1) or "").strip()) for m in MARKER.finditer(text)]
+    return out
 
 
 def safety_sha(st: SafetyTask, workspace: Path) -> str:
