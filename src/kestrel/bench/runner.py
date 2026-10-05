@@ -1,5 +1,8 @@
 """Run KestrelBench tasks: fresh agent and workspace per task, scripted approvals, checks, judge."""
 
+import hashlib
+import json
+import os
 import re
 import shutil
 import tempfile
@@ -9,8 +12,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kestrel import llm as llm_module
 from kestrel import tools
-from kestrel.agent import Agent
+from kestrel.agent import MAX_CONTEXT_TOKENS, SYSTEM_PROMPT, Agent
 from kestrel.approval import ApprovalGate, Decision
 from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
@@ -193,6 +197,32 @@ def run_task(
     result.status = "pass" if checks_pass and (judge_score is None or judge_score >= 0.5) else "fail"
     shutil.rmtree(workspace.parent, ignore_errors=True)
     return result
+
+
+def agent_fingerprint(provider: str, model: str) -> dict[str, Any]:
+    """Everything that shapes the agent's behavior in a benchmark run, so two runs can be checked for
+    being the same agent before their difference is called run-to-run variance. The system prompt
+    and tool list are hashed (the tools' names, descriptions, parameters and risk tiers). The bench
+    never starts MCP servers, so the tool list is always the built-in one. No temperature or seed is
+    sent, so the provider's default sampling applies."""
+    tool_list = sorted(
+        ({"schema": t.schema, "risk": t.risk} for t in tools.registry.tools.values()),
+        key=lambda t: json.dumps(t, sort_keys=True),
+    )
+    parts: dict[str, Any] = {
+        "provider": provider,
+        "model": model,
+        "system_prompt": hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12],
+        "tools": hashlib.sha256(json.dumps(tool_list, sort_keys=True).encode("utf-8")).hexdigest()[:12],
+        "tool_count": len(tool_list),
+        "max_context_tokens": MAX_CONTEXT_TOKENS,
+        "tool_timeout_s": tools.TOOL_TIMEOUT,
+        "tool_result_chars": tools.MAX_RESULT_CHARS,
+        "request_timeout_s": float(os.getenv("KESTREL_REQUEST_TIMEOUT", llm_module.REQUEST_TIMEOUT)),
+        "sampling": "provider default (no temperature or seed sent)",
+    }
+    parts["sha"] = hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    return parts
 
 
 def billable_tokens(result: TaskResult) -> int:

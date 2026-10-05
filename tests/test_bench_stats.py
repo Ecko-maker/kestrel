@@ -128,8 +128,12 @@ def test_repeats_count_tasks_not_runs_and_find_flaky_tasks():
 
 
 def test_identical_runs_differ_by_zero(tmp_path, monkeypatch, capsys):
+    from kestrel.bench.runner import agent_fingerprint
+
     rows = [row(f"t{i}", "pass" if i % 3 else "fail", task_sha="s") for i in range(30)]
-    c = stats.compare(results_file(rows), results_file([dict(r) for r in rows]))
+    a, b = results_file(rows), results_file([dict(r) for r in rows])
+    a["meta"]["agent"] = b["meta"]["agent"] = agent_fingerprint("groq", "m")  # the same agent both times
+    c = stats.compare(a, b)
     assert c.diff == stats.Estimate(0.0, 0.0, 0.0, 30)
     assert c.better_in_b == c.worse_in_b == c.only_in_one == c.warnings == []
     assert c.within(0.05) is True
@@ -449,3 +453,31 @@ def test_rejudge_dry_run_estimates_without_calling_the_judge(cli_env, monkeypatc
     assert run_kestrel(monkeypatch, "rejudge", str(path), "--dry-run") == 0
     out = capsys.readouterr().out
     assert "Re-grade 1 stored answers with judge v2" in out and "1 stored" in out and "Expected ~" in out
+
+
+def test_agent_fingerprint_is_stable_and_sees_prompt_changes(monkeypatch):
+    from kestrel.bench import runner
+
+    first = runner.agent_fingerprint("groq", "m")
+    assert first == runner.agent_fingerprint("groq", "m") and first["tool_count"] >= 5
+    monkeypatch.setattr(runner, "SYSTEM_PROMPT", runner.SYSTEM_PROMPT + " Be brief.")
+    changed = runner.agent_fingerprint("groq", "m")
+    assert changed["system_prompt"] != first["system_prompt"] and changed["sha"] != first["sha"]
+
+
+def test_compare_refuses_to_call_a_changed_agent_variance():
+    from kestrel.bench.runner import agent_fingerprint
+
+    rows = [row(f"t{i}", "pass", task_sha="s") for i in range(10)]
+    a, b = results_file(rows), results_file([dict(r) for r in rows])
+    a["meta"]["agent"] = agent_fingerprint("groq", "m")
+    b["meta"]["agent"] = {**agent_fingerprint("groq", "m"), "system_prompt": "other", "sha": "x"}
+    assert any("NOT run-to-run variance" in w and "system_prompt" in w for w in stats.compare(a, b).warnings)
+    b["meta"]["agent"] = dict(a["meta"]["agent"])
+    assert not any("agent" in w for w in stats.compare(a, b).warnings)
+    del b["meta"]["agent"]
+    assert any("no agent fingerprint" in w for w in stats.compare(a, b).warnings)
+
+
+def test_report_states_the_pass_rule():
+    assert "partial credit >= 0.5 counts as a pass" in markdown(results_file([row("a", "pass")]))

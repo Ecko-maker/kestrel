@@ -14,7 +14,7 @@ from typing import Any
 from kestrel.bench import calibrate as cal
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.report import markdown, pct, summarize, write_results
-from kestrel.bench.runner import TaskResult, billable_tokens, run_suite
+from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
 from kestrel.bench.tasks import SUITE_VERSION, Task, load_tasks, select, task_sha
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
@@ -302,6 +302,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{args.provider}.json"
     meta = {
         "suite_version": SUITE_VERSION,
+        "agent": agent_fingerprint(args.provider, llm.llms[0].model),
         "provider": args.provider,
         "model": llm.llms[0].model,
         "judge": judge.name if judge else None,
