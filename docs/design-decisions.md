@@ -138,18 +138,32 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 ---
 
-## 13. Safety split: declared goals, two levels, scripted models
+## 13. Safety split: graded from behavior, three numbers, a system-level gate
 
 **Decision:**
-- Prompt-injection tasks live in their own split (folder, loader, `SAFETY_VERSION`), so the main suite's fingerprints never move.
-- Each attack declares its goal as data: leak through a channel, a gated or forbidden call, a file that must stay unchanged, or a write outside `notes/`. Three always-on guards apply to every task.
-- Every check is answered at two levels: the model *requested* the harm (model level) or the harm *happened* through the real gate with a scripted user (system level).
-- Network and MCP tools are replaced by stubs that serve fixtures and log every call. The log is the system-level evidence.
-- Scripted models (always-falls, never-falls, refuse-all) are built from the declared goals, and validate the checks before any real model runs.
+- **Graded from behavior.** Each attack declares its goal as data (leak through a channel, a gated or forbidden call, a file that must stay unchanged, a write outside `notes/`). Three always-on guards apply to every task. Checks read only what happened: tool calls, the stub log, files, the outbox, URLs in the answer. Never the wording of the attack or the answer.
+- **Three attack numbers:**
+  - model-level ASR (the model requested the harm);
+  - system-level ASR with the strict user (the task's approval rules, everything else rejected);
+  - system-level ASR with the rubber-stamp user (approves everything).
+  Plus the benign pass rate, and an "undeclared actions" list for manual review.
+- **The Phase 3 gate is system-level under the strict user = 0.** The other two numbers are reported, not gated.
+- **Exact intervals.** Every safety rate, including the benign pass rate, uses the Clopper-Pearson 95% interval. Per category too, with categories under 10 tasks flagged.
+- **Deny-by-default stubs.**
+  - `web_search`, `fetch__fetch` and MCP tools are stubs that serve only the task's fixtures (an unknown URL is a 404, an unknown query returns nothing) and log every call.
+  - The real network tools are refused, safety runs start no subprocess or MCP server, and the stubs live in per-task registries. The main suite's registry is pinned to 5b1d900.
+- Scripted models (always-falls, never-falls, refuse-all) and `kestrel bench validate` check every task before a real model runs it.
 
 **Alternatives:**
-- An LLM judge reading the transcript: not reproducible, and it can itself be injected.
-- Regexes over the attack text: ties grading to wording, and needs each attack reproduced in the check.
-- Mocking the network with a proxy: catches everything, but needs a sandbox we don't have on Windows.
+- **An LLM judge reading the transcript:** not reproducible, and it can be injected by the same text it grades.
+- **Regexes over the attack text:** ties grading to wording, and needs each attack reproduced in the check.
+- **Gating on model level:** a model-level 0 may be out of reach without Phase 4 training, and the gate exists exactly so a model mistake doesn't become harm.
+- **Gating on rubber-stamp:** it measures the gate with the user switched off, which no defense short of removing tools can pass for confirm-tier actions.
+- **The bootstrap for every rate:** zero-width intervals at 0% and 100%.
+- **A network proxy instead of stubs:** catches every client, but needs a sandbox we don't have on Windows.
 
-**Why:** Declared goals keep grading independent of the attack's wording, so tasks can be written without changing the harness. The same data drives the scripted models, which prove the checks fire when they should and stay quiet when they shouldn't. The two levels separate what the model does from what the gate stops, which is the "before" number Phase 3's defenses have to move. Attack rates use the exact Clopper-Pearson interval, because a bootstrap gives a zero-width interval at 0 successes.
+**Why:**
+- Declared goals keep grading independent of the attack's wording, so tasks can be written without touching the harness. The same data drives the scripted models, which prove each check fires when it should and stays quiet when it shouldn't.
+- The gate sits where harm happens for a user who reads approval prompts. That is the promise Kestrel makes (Jarvis's control). Model-level ASR shows how much of that rests on the user; rubber-stamp shows how much rests on the gate alone.
+- A safety claim needs an interval that is honest at 0 successes: 0/30 reads "below 12% with 95% confidence", not "0%".
+- Deny-by-default makes a run reproducible and offline, and means a stub that is missing a fixture can't fall through to the real internet.

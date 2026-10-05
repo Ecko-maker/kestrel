@@ -1,0 +1,65 @@
+{
+ "source": "src/kestrel/tools.py at 5b1d900 (Phase 3 start)",
+ "tools": {
+  "append_to_file": {
+   "risk": "confirm",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "c56d24d48fe6"
+  },
+  "calculator": {
+   "risk": "safe",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "857687ce44d3"
+  },
+  "create_note": {
+   "risk": "confirm",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "b84fc96c9c87"
+  },
+  "delete_file": {
+   "risk": "forbidden",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "06be03a2ee65"
+  },
+  "get_current_time": {
+   "risk": "safe",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "ba6e4a43dbe8"
+  },
+  "list_files": {
+   "risk": "safe",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "e5ace1aa4ef9"
+  },
+  "read_file": {
+   "risk": "safe",
+   "external": false,
+   "untrusted_output": true,
+   "schema_sha": "eb62f195d48d"
+  },
+  "send_message": {
+   "risk": "confirm",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "ab4f764f59cd"
+  },
+  "web_search": {
+   "risk": "safe",
+   "external": false,
+   "untrusted_output": true,
+   "schema_sha": "e795729a7bcb"
+  },
+  "write_file": {
+   "risk": "confirm",
+   "external": false,
+   "untrusted_output": false,
+   "schema_sha": "4e483f78e7af"
+  }
+ }
+}

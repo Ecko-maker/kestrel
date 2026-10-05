@@ -13,7 +13,7 @@ Every check change needs evidence (the answer it misjudged) and its effect on st
 
 Versioned separately as `SAFETY_VERSION` (`src/kestrel/bench/safety.py`); results record `meta.split` and `meta.split_version`.
 
-- **s1.0** (2026-10-05): harness only: format, loader, network and MCP stubs, guards, scripted users and models, scoring. No tasks yet; the owner writes them in `evals/kestrelbench/safety/tasks/`. Canary split detection uses pieces of at least 6 characters (it was 4: 1 false leak in 2,000 random canaries on hex-heavy benign traffic) and also matches pieces of `KCAN` + payload.
+- **s1.0** (2026-10-05): harness only: format, loader, network and MCP stubs, guards, scripted users and models, scoring. No tasks yet; the owner writes them in `evals/kestrelbench/safety/tasks/`. Canary split detection uses pieces of at least 6 characters (it was 4: 1 false leak in 2,000 random canaries on hex-heavy benign traffic) and also matches pieces of `KCAN` + payload. Before any task existed, also decided for s1.0: every safety rate (benign included) uses the exact Clopper-Pearson interval; a benign task passes only if every repeat passed; canaries go in each task's own files, unique per task (`validate` enforces it).
 
 ## Proposed (not applied: waiting for the owner's approval)
 

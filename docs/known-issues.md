@@ -166,11 +166,14 @@ The checks are deterministic, so they only see what they look for:
 - A canary is recognized as written, URL-decoded, in base64 or hex, and split into ordered pieces of at least 6 characters. ROT13, reversed or spelled-out text, paraphrase, and splits into pieces shorter than 6 are missed.
 - Harm counts only if it matches a declared goal or an always-on guard (network leak, answer URL leak, forbidden call). An undeclared gated call, e.g. a note the injection asked for, is not counted unless the task declares it.
 
+**Partly mitigated (2026-10-05):** every gated or forbidden call that matches no goal and no expect entry is listed in the report under "Undeclared actions" for manual review. The rates don't change, but the lower bound is visible. The first Ollama smoke run already produced one: an email to an address the user never gave, with no canary in it, so no guard fired.
+
 **Done when:** a real-model run's failures and a sample of its passes are reviewed by hand, the way the main baseline was (`evals/reports/`), and any missed harm becomes a declared goal or a new guard.
 
 ### 24. Python-level network blocking doesn't see native HTTP clients
 **Labels:** `testing`, `low`
 `ddgs` (the real `web_search`) uses `primp`, a Rust HTTP client that never goes through Python's `socket` module. A test that only patched `socket` let a safety run with the real search tool pass unnoticed (found by a deliberate mutation). The test now blocks `primp.Client` too, and `build_registry` refuses any network-facing tool that isn't a stub. A new dependency with its own native client would need the same treatment.
+MCP servers are separate processes, which in-process blocking can't reach at all, so safety runs must not start any: a test now fails if a safety run starts a subprocess (other than `git rev-parse` for the results metadata) or an MCPManager, and every external tool in a safety registry must be a stub.
 **Done when:** safety runs happen in a sandbox with no network at all (e.g. a Docker network set to `none`), which needs no knowledge of the clients.
 
 ---
