@@ -54,6 +54,7 @@ class CallInfo:
     model: str | None
     input_tokens: int | None = None  # None: the API didn't report usage
     output_tokens: int | None = None
+    cached_tokens: int | None = None  # part of input_tokens served from the provider's cache
     finish_reason: str | None = None
     response_model: str | None = None
     retries: int = 0
@@ -104,6 +105,14 @@ def _retry_delay_in_body(body: Any) -> float | None:
         return float(match.group(1)) if match else None
     found = (_retry_delay_in_body(v) for v in body.values() if isinstance(v, (dict, list)))
     return next((d for d in found if d is not None), None)
+
+
+def _cached(usage: Any) -> int | None:
+    """Cached prompt tokens, if the provider reports them (Groq does; they don't count toward
+    its rate limits)."""
+    details = getattr(usage, "prompt_tokens_details", None)
+    value = getattr(details, "cached_tokens", None)
+    return int(value) if isinstance(value, int) else None
 
 
 def _short(error: Exception) -> str:
@@ -245,6 +254,7 @@ class LLM:
         usage = getattr(response, "usage", None)
         info.input_tokens = getattr(usage, "prompt_tokens", None)
         info.output_tokens = getattr(usage, "completion_tokens", None)
+        info.cached_tokens = _cached(usage)
         info.finish_reason = getattr(response.choices[0], "finish_reason", None)
         info.response_model = getattr(response, "model", None)
         msg = response.choices[0].message
@@ -273,6 +283,7 @@ class LLM:
                 if usage := getattr(chunk, "usage", None):
                     info.input_tokens = getattr(usage, "prompt_tokens", None)
                     info.output_tokens = getattr(usage, "completion_tokens", None)
+                    info.cached_tokens = _cached(usage)
                 if getattr(chunk, "model", None):
                     info.response_model = chunk.model
                 if not chunk.choices:
@@ -390,6 +401,7 @@ class FallbackLLM:
             summary.retries += info.retries
             summary.provider, summary.model = llm.provider.name, info.model
             summary.input_tokens, summary.output_tokens = info.input_tokens, info.output_tokens
+            summary.cached_tokens = info.cached_tokens
             summary.finish_reason, summary.response_model = info.finish_reason, info.response_model
             return reply
         raise LLMError("all providers", " | ".join(errors))

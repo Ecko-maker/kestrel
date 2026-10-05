@@ -103,3 +103,49 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
             git /repo --redact --verbose --exit-code 1
+
+  kestrelbench:
+    name: KestrelBench (CI subset on Groq)
+    needs: python # no point spending model quota on code that fails its tests
+    runs-on: ubuntu-latest
+    # Secrets aren't available to forks or Dependabot, so the job only runs for PRs from this
+    # repository and for pushes to main (once per change, not twice per PR).
+    if: >-
+      github.actor != 'dependabot[bot]' && (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      KESTREL_MCP: "off"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - run: uv sync --locked
+      - name: Check for the API key
+        id: key
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::notice::GROQ_API_KEY secret not set; skipping KestrelBench. Add it with: gh secret set GROQ_API_KEY"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run the CI subset
+        if: steps.key.outputs.present == 'true'
+        # Gate: pass rate must not drop below the baseline minus a margin for model randomness
+        # (see docs/kestrelbench.md), and model outages must stay rare.
+        run: >-
+          uv run kestrel bench run --subset ci --provider groq --judge groq --pause 2
+          --min-pass-rate 0.75 --max-errors 2 --out evals/results/ci.json
+      - name: Report
+        if: always() && steps.key.outputs.present == 'true'
+        run: |
+          if [ -f evals/results/ci.md ]; then cat evals/results/ci.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: kestrelbench-ci
+          path: evals/results/

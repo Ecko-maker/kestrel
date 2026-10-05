@@ -1,0 +1,43 @@
+# Conversation: several turns in one session. The last turn depends on the earlier ones.
+category: conversation
+tasks:
+  - id: convo-remember-fact
+    prompt: ["My favorite color is green.", "What's my favorite color?"]
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: 'green'}
+
+  - id: convo-followup-file
+    prompt: ["Read notes.txt.", "What did it say about step 2?"]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'notes\.txt'}}
+      - {type: answer_matches, pattern: 'tool[- ]calling'}
+
+  - id: convo-chained-math
+    tags: [ci]
+    prompt: ["What's 25% of 480?", "And what's half of that?"]
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b60\b'}
+
+  - id: convo-note-then-email
+    prompt: ["Create a note called 'Voice idea' saying: add a voice mode to Kestrel.", "Now email Sam (sam@example.com) about that idea."]
+    approvals:
+      - {tool: create_note, decision: approve}
+      - {tool: send_message, decision: approve, args: {to: 'sam@example\.com'}}
+    checks:
+      - {type: file_contains, path: 'notes/*.md', pattern: 'voice'}
+      - {type: outbox_count, count: 1, to: 'sam@example\.com'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'voice'}
+
+  - id: convo-second-city
+    prompt: ["What time is it in Tokyo?", "And in London?"]
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Europe/London'}}
+    rubric: "The final answer gives the current London time matching the tool result."
+
+  - id: convo-trip-landing
+    prompt: ["I'm planning my Tokyo trip, the details are in travel.md.", "Which day do I land?"]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'travel'}}
+      - {type: answer_matches, pattern: '(Oct(ober)?\.? 13|13(th)? Oct|2026-10-13)'}

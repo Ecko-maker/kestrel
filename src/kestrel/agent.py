@@ -64,6 +64,7 @@ class AgentResult:
     providers: list[str] = field(default_factory=list)  # who answered, in order of first use
     trace_id: str | None = None  # where this run was recorded (for /good, /bad and `kestrel trace`)
     tokens: int = 0  # input + output, all model calls
+    cached_tokens: int = 0  # part of the input served from the provider's cache
     duration_ms: float | None = None
 
 
@@ -119,6 +120,7 @@ class Agent:
         result.tokens = root.attributes.get("gen_ai.usage.input_tokens", 0) + root.attributes.get(
             "gen_ai.usage.output_tokens", 0
         )
+        result.cached_tokens = root.attributes.get("kestrel.usage.cached_input_tokens", 0)
         result.duration_ms = root.duration_ms
 
         if result.stop_reason == "error":
@@ -267,6 +269,8 @@ class Agent:
                 output_tokens = estimate_tokens([reply])
         span.set("gen_ai.usage.input_tokens", input_tokens)
         span.set("gen_ai.usage.output_tokens", output_tokens)
+        if (cached := getattr(info, "cached_tokens", None)) is not None:
+            span.set("kestrel.usage.cached_input_tokens", cached)
         price = self.tracer.cost(provider, model, input_tokens, output_tokens)
         span.set("kestrel.cost_usd", price.actual_usd)
         span.set("kestrel.list_price_usd", price.list_usd)

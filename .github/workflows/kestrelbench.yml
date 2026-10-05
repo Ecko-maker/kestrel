@@ -1,0 +1,38 @@
+name: KestrelBench (full suite)
+
+# The full 100-task suite: weekly and on demand. Informational (no gate); compare with the
+# baseline in evals/kestrelbench/baseline.md. Uses Groq's free tier, so it's spread out with pauses.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      KESTREL_MCP: "off"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - run: uv sync --locked
+      - name: Run all tasks
+        # 180k billable tokens leaves headroom under the 200k/day free-tier cap; skipped tasks are reported.
+        run: uv run kestrel bench run --subset all --provider groq --judge groq --pause 3 --token-budget 180000 --out evals/results/full.json
+      - name: Report
+        if: always()
+        run: |
+          if [ -f evals/results/full.md ]; then cat evals/results/full.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kestrelbench-full
+          path: evals/results/

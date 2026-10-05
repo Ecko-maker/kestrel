@@ -1,0 +1,94 @@
+# Files: find and read the right file, answer from its contents, don't invent.
+category: files
+tasks:
+  - id: files-list
+    prompt: "What files do I have in my workspace?"
+    checks:
+      - {type: tool_called, tool: list_files}
+      - {type: answer_matches, pattern: 'budget\.csv'}
+      - {type: answer_matches, pattern: 'todo\.md'}
+
+  - id: files-summarize-notes
+    prompt: "Summarize notes.txt for me."
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'notes\.txt'}}
+    rubric: "A faithful summary of notes.txt: mentions the LLM class (step 1), tool calling in progress (step 2), and at least one of the morning-briefing idea, the .env reminder or the Groq free tier. Nothing invented."
+
+  - id: files-meeting-attendees
+    tags: [ci]
+    prompt: "Who attended the study group meeting on September 30?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'meeting'}}
+      - {type: answer_matches, pattern: 'Priya'}
+      - {type: answer_matches, pattern: 'Jordan'}
+      - {type: answer_matches, pattern: 'Sam'}
+
+  - id: files-meeting-actions
+    prompt: "What are the action items from the September 30 meeting, and who owns each one?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'meeting'}}
+    rubric: "Lists all four action items with the right owners: Priya (retrieval slides), Jordan (book room 2B), Sam (reading list), Noah (ten benchmark tasks)."
+
+  - id: files-top-priority
+    prompt: "What are my high-priority todo items?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'todo'}}
+      - {type: answer_matches, pattern: 'benchmark'}
+      - {type: answer_matches, pattern: 'dentist'}
+
+  - id: files-contact-email
+    tags: [ci]
+    prompt: "What's Sam's email address?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'contacts'}}
+      - {type: answer_matches, pattern: 'sam@example\.com'}
+
+  - id: files-recipe-eggs
+    prompt: "How many eggs does my pancake recipe need?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'pancakes'}}
+      - {type: answer_matches, pattern: '\b(2|two)\b'}
+
+  - id: files-flight-departure
+    prompt: "When does my flight to Tokyo leave?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'travel'}}
+      - {type: answer_matches, pattern: '19:00|7(:00)? ?p\.?m'}
+      - {type: answer_matches, pattern: '(Oct(ober)?\.? 12|12(th)? Oct|2026-10-12)'}
+
+  - id: files-list-subfolder
+    prompt: "What's in my recipes folder?"
+    checks:
+      - {type: tool_called, tool: list_files, args: {path: 'recipes'}}
+      - {type: answer_matches, pattern: 'pancakes'}
+
+  - id: files-largest-category
+    prompt: "Which spending category is the biggest in budget.csv?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'budget'}}
+      - {type: answer_matches, pattern: 'housing|rent'}
+
+  - id: files-missing-file
+    prompt: "Read the file called quarterly_report.txt and tell me the revenue."
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: "not (exist|found|find|present)|couldn'?t (find|read|open)|could not (find|read|open)|no such|doesn'?t exist|does not exist|isn'?t (there|in|present)|wasn'?t found"}
+    rubric: "Says the file doesn't exist and does NOT make up a revenue figure."
+
+  - id: files-meeting-decisions
+    prompt: "What decisions were made at the September 30 meeting?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'meeting'}}
+    rubric: "Both decisions: the session moves from Thursday to Tuesday 6pm in library room 2B, and Kestrel's traces become the dataset for the evaluation project."
+
+  - id: files-mentions-dentist
+    prompt: "Does my todo list say anything about the dentist?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'todo'}}
+      - {type: answer_matches, pattern: '\byes\b|book(ing)? (a |the )?dentist|dentist appointment'}
+
+  - id: files-quote-first-line
+    prompt: "What is the exact first line of notes.txt?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'notes\.txt'}}
+      - {type: answer_matches, pattern: 'Kestrel project notes'}

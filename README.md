@@ -30,7 +30,46 @@ Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`). Demo mod
 - **MCP, both directions**: uses tools from any MCP server (untrusted by default) and serves its own safe tools to clients like Claude Code.
 - **Tracing**: every request is a tree of spans (OpenTelemetry GenAI names) in SQLite, with tokens, latency, cost and list price, ratings, and training-data export.
 - **Web console**: live streaming chat, the agent's steps as they happen, approval cards, traces with a waterfall view, stats.
-- **Production basics**: Docker image (non-root, healthcheck), CI on Linux and Windows, secret scanning, 164 tests.
+- **Production basics**: Docker image (non-root, healthcheck), CI on Linux and Windows, secret scanning, 218 tests.
+
+## KestrelBench baseline
+
+[KestrelBench](docs/kestrelbench.md) is Kestrel's own 100-task eval: tool use, files, approvals, prompt injection, sandbox escapes, multi-step and multi-turn tasks, scored by deterministic checks plus an LLM judge on 43 open-ended tasks.
+
+> **Provisional.** These numbers are being re-graded with judge v2, which sees more of each tool result, and checked against a second run of the suite. They will be replaced, and may change, in the next update.
+
+**KestrelBench v1.1 (provisional): 92% pass rate (95% CI 86–97%, n=100)**: `openai/gpt-oss-120b` on Groq, run on 2026-10-04. The interval is a bootstrap over tasks (10,000 resamples): it says how much the score depends on which tasks happen to be in the suite.
+
+| Category | Tasks | Pass rate (95% CI) |
+|---|---:|---|
+| actions | 14 | 86% (64–100%) |
+| adapt | 8 | 100% (100–100%)\* |
+| arithmetic | 10 | 90% (70–100%) |
+| conversation | 6 | 100% (100–100%)\* |
+| files | 14 | 100% (100–100%)† |
+| multistep | 12 | 83% (58–100%) |
+| no_tools | 8 | 100% (100–100%)\* |
+| safety | 16 | 81% (62–100%) |
+| time | 6 | 100% (100–100%)\* |
+| web | 6 | 100% (100–100%)\* |
+
+\* Fewer than 10 tasks: too few to compare. † An all-pass category shows a zero-width interval, which understates the uncertainty (with 0 failures in n tasks, up to about 3/n could still fail).
+
+**Why v1.1 and not v1.0's 85%:** the same run scored **85% under v1.0**. Reviewing every failure found 7 that were bugs in the checks, not the model: correct answers written with narrow no-break spaces (`604 800`), curly quotes, "isn't present" instead of "doesn't exist", and an honest refusal that merely mentioned `[project]`. v1.1 fixes those checks, which flips exactly those 7 to passes. See [evals/CHANGELOG.md](evals/CHANGELOG.md) for each change with its evidence.
+
+The v1.1 score re-checks that run's stored answers with v1.1 checks ([scripts/rescore.py](scripts/rescore.py)). A fresh v1.1 run agrees (91%, 95% CI 84–98%, on the 57 tasks it finished before Groq's daily limit). It will replace this number once complete.
+
+**Read with care:**
+- **Judge: `openai/gpt-oss-120b` on Groq, prompt v1. Judge not yet calibrated** against human labels ([known issue #21](docs/known-issues.md)), and it is the same model as the one tested. A review of 15 passes found it lenient on faithfulness twice, and 1 of the 8 failures is a confirmed judge misgrade ([evals/reports/](evals/reports/)).
+- **A single run.** Outputs vary: the model sometimes skips the calculator on easy sums, and which task it skips changes from run to run. Run-to-run variance isn't measured yet ([#22](docs/known-issues.md)).
+- **Remaining failures** ([analysis](evals/reports/baseline-failures.md)):
+  - asking the user for information that's in the workspace (systematic);
+  - skipping the calculator;
+  - asking before sending instead of letting the approval card do that;
+  - one narrow reading of an instruction;
+  - two judge cases.
+
+  No safety failure: no injected action attempted, nothing deleted or leaked.
 
 ## Architecture
 
@@ -99,7 +138,7 @@ Known limitations are listed honestly in [docs/known-issues.md](docs/known-issue
 | Phase | Status | Contents |
 |---|---|---|
 | 1. Foundation | ✅ done (v0.1.0) | Model layer, tool calling, resilient agent loop, approval gate, tracing, MCP, web console, Docker, CI |
-| 2. Evals | planned | KestrelBench (100 tasks), LLM-judge calibration, evals in CI, baseline score |
+| 2. Evals | in progress | KestrelBench (100 tasks), LLM-judge calibration, evals in CI, baseline score |
 | 3. Memory and safety | planned | Long-term memory with hybrid RAG, permission tiers, prompt-injection test suite |
 | 4. Distillation | planned | Training set from rated traces, QLoRA fine-tune of a small open model, router, cost curve |
 | 5. Voice and launch | planned | Streaming voice with barge-in, demo video, more MCP servers, write-ups |
