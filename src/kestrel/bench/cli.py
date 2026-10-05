@@ -13,6 +13,7 @@ from typing import Any
 
 from kestrel.bench import calibrate as cal
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
+from kestrel.bench.lock import LockError, results_lock, unlock
 from kestrel.bench.report import markdown, pct, summarize, write_results
 from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
@@ -103,11 +104,19 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     rejudge.add_argument("--pause", type=float, default=0.0)
     rejudge.add_argument("--out", type=Path, help="default: <results>.rejudged-<version>.json")
     rejudge.add_argument("--dry-run", action="store_true", help="count the judge calls and expected tokens; no calls")
+    rejudge.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="re-grade only answers without a valid verdict from the current judge version (e.g. after a rate limit)",
+    )
 
     comp = actions.add_parser("compare", help="score difference between two runs, with a paired 95%% interval")
     comp.add_argument("a", type=Path, help="baseline results (e.g. the frontier model)")
     comp.add_argument("b", type=Path, help="results to compare against it (e.g. the small model)")
     comp.add_argument("--margin", type=float, default=0.05, help="non-inferiority margin, absolute (default 0.05)")
+
+    unlock_cmd = actions.add_parser("unlock", help="remove a stale lock left by a crashed run (checks its PID is gone)")
+    unlock_cmd.add_argument("results", type=Path)
 
     report = actions.add_parser("report", help="print the Markdown report for a results file")
     report.add_argument("results", type=Path, nargs="?", help="results JSON (default: the newest)")
@@ -218,6 +227,20 @@ def _estimate(jobs: list[tuple[Task, int]], refs: list[Path]) -> dict[str, int]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Lock the output (and resumed) results file for the whole run, so a second process can't
+    run the same benchmark at the same time. A dry run makes no calls and takes no lock."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{args.provider}.json"
+    if args.dry_run:
+        return _run(args)
+    try:
+        with results_lock(args.out, args.resume):
+            return _run(args)
+    except LockError as e:
+        sys.exit(str(e))
+
+
+def _run(args: argparse.Namespace) -> int:
     tasks = _pick_tasks(args)
     if not tasks:
         sys.exit("No tasks match.")
@@ -298,8 +321,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     by_key = {**previous, **{(r.id, r.repeat): r for r in fresh}}
     results = [by_key[(t.id, k)] for t, k in all_jobs]
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{args.provider}.json"
+    out = args.out
     meta = {
         "suite_version": SUITE_VERSION,
         "agent": agent_fingerprint(args.provider, llm.llms[0].model),
@@ -438,14 +460,43 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
 
 
 def cmd_rejudge(args: argparse.Namespace) -> int:
+    out = args.out or args.results.with_name(f"{args.results.stem}.rejudged-{JUDGE_VERSION}.json")
+    if args.dry_run:
+        return _rejudge(args, out)
+    try:
+        with results_lock(out, args.results):
+            return _rejudge(args, out)
+    except LockError as e:
+        sys.exit(str(e))
+
+
+def cmd_unlock(args: argparse.Namespace) -> int:
+    try:
+        print(unlock(args.results))
+    except LockError as e:
+        sys.exit(str(e))
+    return 0
+
+
+def _rejudge(args: argparse.Namespace, out: Path) -> int:
     """Grade the stored answers again (new judge prompt or model) and write a NEW results file.
     Kestrel is never re-run; checks keep their stored outcome; only the judge's part changes."""
     data = _load(args.results)
-    out = args.out or args.results.with_name(f"{args.results.stem}.rejudged-{JUDGE_VERSION}.json")
     if out.resolve() == args.results.resolve():
         sys.exit("rejudge writes a new file; it never overwrites the original results.")
     by_id = {t.id: t for t in load_tasks()}
-    todo = [d for d in data["tasks"] if d["status"] in REUSABLE and by_id.get(d["id"]) and by_id[d["id"]].rubric]
+
+    def wanted(d: dict[str, Any]) -> bool:
+        task = by_id.get(d["id"])
+        judge_failed = d["status"] == "error" and bool(d.get("judge")) and d["judge"].get("score") is None
+        if not (task and task.rubric and (d["status"] in REUSABLE or judge_failed)):
+            return False
+        current = (d.get("judge") or {}).get("version") == JUDGE_VERSION and (d.get("judge") or {}).get(
+            "score"
+        ) is not None
+        return not (args.only_missing and current)
+
+    todo = [d for d in data["tasks"] if wanted(d)]
     sources = Counter(cal.tool_log_for(d, BENCH_DB)[1] for d in todo)
     request_tokens = sum(
         sum(
@@ -473,7 +524,8 @@ def cmd_rejudge(args: argparse.Namespace) -> int:
     for d in data["tasks"]:
         r = TaskResult(**d)
         task = by_id.get(r.id)
-        if r.status in REUSABLE and task and task.rubric:
+        if wanted(d):
+            assert task is not None and task.rubric
             if graded and args.pause:
                 time.sleep(args.pause)
             log, _ = cal.tool_log_for(d, BENCH_DB)
@@ -552,5 +604,6 @@ def main(args: argparse.Namespace) -> int:
         "rejudge": cmd_rejudge,
         "compare": cmd_compare,
         "report": cmd_report,
+        "unlock": cmd_unlock,
     }
     return commands[args.bench_command](args)
