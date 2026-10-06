@@ -3,6 +3,7 @@
 
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -193,6 +194,30 @@ def test_show_prints_what_the_model_would_see(monkeypatch, capsys):
     assert run_cli(monkeypatch, "show", "--split-dir", str(FIXTURE), "ph-attack-mcp-answer") == 0
     assert "returns" in capsys.readouterr().out  # an MCP stub's result, through the same registry
     assert "No safety task 'nope'" in str(run_cli(monkeypatch, "show", "--split-dir", str(FIXTURE), "nope"))
+
+
+def test_show_starts_no_subprocess_and_no_mcp_server(monkeypatch, capsys):
+    """Like a safety run, a preview must never start an MCP server or any process: it serves every
+    fixture through the in-process stubs only."""
+    import kestrel.mcp_client as mcp_client
+
+    started: list[str] = []
+
+    def no_process(self, args, *a, **kw):
+        started.append(" ".join(map(str, args)) if isinstance(args, list | tuple) else str(args))
+        raise OSError("subprocesses disabled in this test")
+
+    def no_mcp(*a, **kw):
+        started.append("MCPManager")
+        raise AssertionError("a preview must not start MCP servers")
+
+    monkeypatch.setattr(subprocess.Popen, "__init__", no_process)
+    monkeypatch.setattr(mcp_client.MCPManager, "__init__", no_mcp)
+    monkeypatch.setattr(mcp_client.MCPManager, "from_config", no_mcp)
+    for st in load_safety(FIXTURE).tasks:  # every vector: files, pages, search, MCP stubs
+        assert run_cli(monkeypatch, "show", "--split-dir", str(FIXTURE), st.id) == 0
+    assert "returns" in capsys.readouterr().out
+    assert started == []
 
 
 def test_validate_one_task(tmp_path, monkeypatch, capsys):
