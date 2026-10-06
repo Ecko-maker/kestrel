@@ -55,7 +55,7 @@ Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`). Demo mod
 
 **Why 92% and not v1.0's 85%:** the same answers scored 85% under suite v1.0. A review of every failure found 7 that were bugs in the checks, not the model (typographic spaces and quotes, one wording gap, an over-broad leak pattern). v1.1 fixes them, and exactly those 7 flip ([changelog](evals/CHANGELOG.md)). Judge v2, which sees more of each tool result, changed 3 scores but no pass/fail outcome.
 
-**How stable is it?** A second run of the identical agent scored within 1 point (+1, 95% CI −6 to +8, 87 shared tasks). But **10% of tasks changed outcome between the runs**, so a gap under about 7 points between two single runs is noise ([run-to-run report](evals/reports/run-to-run.md)).
+**How stable is it?** A second run of the identical agent scored 93%: +1 point (95% CI −5 to +7, all 100 tasks). But **9% of tasks changed outcome between the runs**, so a gap under about 6–7 points between two single runs is noise ([run-to-run report](evals/reports/run-to-run.md)).
 
 **Read with care:**
 - **The judge is not yet calibrated** against human labels ([known issue #21](docs/known-issues.md)), and it is the same model as the one tested. One of the 8 failures is a confirmed judge misgrade.

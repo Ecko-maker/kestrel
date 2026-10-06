@@ -7,10 +7,10 @@
 | | Run 1 | Run 2 |
 |---|---|---|
 | File | `baseline-v1.1-judge-v2-final.json` | `run2-v1.1-judge-v2-final.json` |
-| When the agent answered (UTC) | 2026-10-04, 17:00–17:19 | 2026-10-04 17:21 to 2026-10-06 00:23, in five parts (Groq's daily limit) |
+| When the agent answered (UTC) | 2026-10-04, 17:00–17:19 | 2026-10-04 17:21 to 2026-10-06 11:55, in six parts (Groq's daily limit) |
 | Checks | suite v1.1 (the stored v1.0-run answers re-checked, `scripts/rescore.py`) | suite v1.1 |
 | Judge | `gpt-oss-120b` on Groq, **v2**, re-graded from stored answers | same, **v2** (first 57 tasks re-graded from stored answers) |
-| Graded | 100/100 | 87/100 (13 still to run, see below) |
+| Graded | 100/100 | 100/100 |
 
 ## Was it the same agent?
 
@@ -24,22 +24,23 @@
 
 **Caveats:**
 1. Groq can update the model behind the same ID; nothing we record rules that out.
-2. Run 2 spans 31 hours. The live-world tasks (time) saw a different clock, so they are cut out below as a check.
+2. Run 2 spans 43 hours. The live-world tasks (web search results, current time) saw a different world, so they are cut out below as a check.
+3. One web search in run 2 timed out (`web-ddgs-package`); the agent retried and passed. That task is in the web cut.
 
 ## Result
 
-Paired over the tasks graded in both runs (bootstrap over tasks, 10,000 resamples, seed 2026):
+Paired over all 100 tasks (bootstrap over tasks, 10,000 resamples, seed 2026):
 
 | Cut | Run 1 | Run 2 | Run 2 − run 1 (95% CI) | Tasks that flipped (better / worse in run 2) |
 |---|---|---|---|---|
-| **All tasks graded in both** | 91% (84–97%, n=87) | 92% (86–97%, n=87) | **+1 point (−6 to +8)** | 5 / 4 |
-| Without the 20 tasks that ran while a duplicate job overlapped | 93% (n=67) | 91% (n=67) | −1 point (−9 to +6) | 3 / 4 |
-| Without live-world tasks (web, time) | 90% (n=81) | 91% (n=81) | +1 point (−6 to +9) | 5 / 4 |
-| Without both | 92% (n=61) | 90% (n=61) | −2 points (−10 to +7) | 3 / 4 |
+| **All 100 tasks** | 92% (86–97%, n=100) | 93% (88–98%, n=100) | **+1 point (−5 to +7)** | 5 / 4 |
+| Without the 20 tasks that ran while a duplicate job overlapped | 94% (n=80) | 92% (n=80) | −1 point (−8 to +5) | 3 / 4 |
+| Without live-world tasks (web, time) | 91% (n=88) | 92% (n=88) | +1 point (−6 to +8) | 5 / 4 |
+| Without both | 93% (n=68) | 91% (n=68) | −1 point (−9 to +6) | 3 / 4 |
 
-**In plain words:** the overall score didn't move (+1 point). With this many tasks, though, a difference anywhere from about −6 to +8 points would be consistent with pure chance between two identical runs. Every cut gives the same picture.
+**In plain words:** the overall score didn't move (+1 point). With 100 tasks, though, a difference anywhere from about −5 to +7 points would be consistent with pure chance between two identical runs. Every cut gives the same picture.
 
-**Underneath, 9 of 87 tasks (10%) changed outcome:**
+**Underneath, 9 of 100 tasks changed outcome:**
 
 | Task | Run 1 | Run 2 | Why (failure groups in `baseline-failures.md`) |
 |---|---|---|---|
@@ -59,11 +60,11 @@ Paired over the tasks graded in both runs (bootstrap over tasks, 10,000 resample
 
 ## What it means
 
-- **The headline score is stable; individual tasks are not.** About 1 in 10 tasks changes outcome between identical runs. The flips are the two habits found in the failure analysis, skipping the calculator and drafting before sending. Both are random per run, not tied to a task.
-- **Comparing two models from one run each needs care.** A gap smaller than about 7 points can't be told apart from noise with this suite. Phase 4's "within 5 points" claim needs more runs or more tasks (repeats via `--repeat` shrink the interval), and always a paired comparison.
+- **The headline score is stable; individual tasks are not.** 9% of tasks changed outcome between identical runs. The flips are the two habits found in the failure analysis, skipping the calculator and drafting before sending. Both are random per run, not tied to a task.
+- **Comparing two models from one run each needs care.** A gap smaller than about 6–7 points can't be told apart from noise with this suite. Phase 4's "within 5 points" claim needs more runs or more tasks (repeats via `--repeat` shrink the interval), and always a paired comparison.
 - **The CI gate (75% on the 16-task subset)** stays as it is for now. A threshold based on measured variance needs repeats of that subset specifically (known issue #22).
 
-## Not compared, and why (not model failures)
+## Rate limits (not model failures)
 
-- **13 tasks run 2 hasn't run yet**, because Groq's daily token limit stopped it: `multi-email-todos`, the 6 `web-*` and the 6 `convo-*` tasks. They are marked error or skipped, never graded. A job at 03:15 UTC on 2026-10-06 finishes them, then this report gets its final numbers.
-- **No graded task in either run was affected by a rate-limit give-up, a tool timeout or a step limit** (`scripts/audit_rate_limits.py`). Many tasks had retries after Groq's per-minute limit. A retry re-sends the identical request, so the answer isn't affected.
+- **All 100 tasks are compared.** Run 2 took six parts because Groq's daily token limit stopped it repeatedly. Every task it stopped was marked error or skipped, never graded, then finished with `--resume`.
+- **No graded task in either run was affected by a rate-limit give-up or a step limit** (`scripts/audit_rate_limits.py`). One graded task had a tool timeout: `web-ddgs-package` in run 2 (a web search timed out once; the agent searched again and passed). It is in the live-world cut, which doesn't change the result. Many tasks had retries after Groq's per-minute limit. A retry re-sends the identical request, so the answer isn't affected.

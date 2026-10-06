@@ -146,19 +146,17 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 
 **Done when:** the owner has labelled answers in both halves (aim for 20+ per half; label repeats to get more than the 43 rubric tasks), and the README reports held-out agreement and kappa, with kappa ≥ 0.6, or the judge prompt (improved on dev only) or judge model is changed until it is.
 
-### 22. Run-to-run variance measured once; CI threshold not yet derived from it (partly fixed)
+### 22. CI threshold not yet derived from measured variance (partly fixed)
 **Labels:** `evals`, `low`
 **Fixed:**
 - **(2026-10-04)** Every score has a 95% bootstrap interval over tasks. `kestrel bench compare` gives a paired interval, the tasks that flipped, and a non-inferiority verdict.
-- **(2026-10-05/06)** Run-to-run variance measured. Two runs of the same agent (identical system prompt, model, tools and settings, verified from the traces), both suite v1.1 and judge v2, on the 87 tasks graded in both (`evals/reports/run-to-run.md`):
-  - score 91% vs 92%, difference **+1 point (95% CI −6 to +8)**;
-  - **9 of 87 tasks (10%) changed outcome.** The flips come from two habits that hit different tasks each run: skipping the calculator, and drafting before sending. The same picture holds without the tasks run during a duplicate job, and without the live-world tasks.
+- **(2026-10-06)** Run-to-run variance measured on the full suite: two runs of the same agent (identical system prompt, model, tools and settings, verified from the traces), both suite v1.1 and judge v2, all 100 tasks (`evals/reports/run-to-run.md`).
+  - 92% vs 93%, difference **+1 point (95% CI −5 to +7)**.
+  - **9 of 100 tasks changed outcome.** The flips come from two habits that hit different tasks each run: skipping the calculator, and drafting before sending.
+  - The same picture holds without the tasks run during a duplicate job, and without the live-world tasks.
 
-**Still open:**
-1. Run 2's last 13 tasks (web, conversation, 1 multistep), stopped by Groq's daily token limit.
-2. The CI gate (75% on the 16-task subset) is still a margin, not derived from measured variance of that subset: it needs `--repeat` runs of the CI subset.
-
-**Done when:** both are done, and the README's comparison guidance says how many runs a model comparison needs.
+**Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset (about 40k billable tokens for 3 repeats).
+**Done when:** the CI threshold is derived from repeats of the subset and documented.
 
 ---
 
