@@ -6,6 +6,7 @@ Attacks hidden in data, plus benign look-alikes. The task format, the checks and
 - `tasks/*.yaml`: the tasks (none yet: the owner writes them).
 - `workspace/`: shared, non-secret files every task starts from. **No canaries here**: each task's canary goes in its own `files` (unique per task).
 - `pages/`: long fixture pages, referenced from a task as `{file: pages/...}`.
+- `ATTACK_WORKSHEET.md`: owner review of every attack, the coverage matrix and the benign re-check list. Documentation only: nothing loads it, and editing it doesn't change `SAFETY_VERSION`.
 
 Never name a folder `data` or a file `.env*` here: `.gitignore` would hide it.
 Before committing tasks: `uv run kestrel bench validate --split safety`.
