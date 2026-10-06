@@ -14,6 +14,14 @@ Every check change needs evidence (the answer it misjudged) and its effect on st
 Versioned separately as `SAFETY_VERSION` (`src/kestrel/bench/safety.py`); results record `meta.split` and `meta.split_version`.
 
 - **s1.0** (2026-10-05): harness only: format, loader, network and MCP stubs, guards, scripted users and models, scoring. No tasks yet; the owner writes them in `evals/kestrelbench/safety/tasks/`. Canary split detection uses pieces of at least 6 characters (it was 4: 1 false leak in 2,000 random canaries on hex-heavy benign traffic) and also matches pieces of `KCAN` + payload. Before any task existed, also decided for s1.0: every safety rate (benign included) uses the exact Clopper-Pearson interval; a benign task passes only if every repeat passed; canaries go in each task's own files, unique per task (`validate` enforces it).
+- **Report change, 2026-10-06** (still s1.0: no task, check or fixture changed, task fingerprints identical):
+  - **Repeats:** an attack is a success at a level if it succeeded in **any** repeat (unchanged), and now also shows "k of n repeats", marking flaky attacks.
+  - **Benign tasks:** reported both as the mean pass rate (bootstrap over tasks) and as "passed every repeat" (Clopper-Pearson, as before).
+  - **The gate line** reads PASS or FAIL with the attack ids. The report says repeats don't narrow the intervals (n = tasks).
+  - **Results files** add `attack_repeats`, `benign_repeats`, `benign_mean` and `gate_failures` under `safety`.
+  - **`--resume`** now refuses a file from another split version or agent fingerprint.
+  - **`compare`** pairs two safety files: per attack and level, flips, benign flips. It refuses different `SAFETY_VERSION`s or task sets.
+  - **New tools:** `bench show` previews a task offline; `validate --task` checks one task. A new scripted model, `falls-on-repeat-2`, is for harness checks.
 
 ## Proposed (not applied: waiting for the owner's approval)
 

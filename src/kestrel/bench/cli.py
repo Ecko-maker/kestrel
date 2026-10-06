@@ -3,6 +3,7 @@
 import argparse
 import fnmatch
 import json
+import os
 import subprocess
 import sys
 import time
@@ -15,6 +16,7 @@ from kestrel.bench import calibrate as cal
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
+from kestrel.bench.preview import preview
 from kestrel.bench.report import markdown, pct, summarize, write_results
 from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.safety import (
@@ -22,6 +24,7 @@ from kestrel.bench.safety import (
     SAFETY_VERSION,
     SafetyMeta,
     SafetySplit,
+    compare_safety,
     find_markers,
     load_safety,
     score,
@@ -32,7 +35,7 @@ from kestrel.bench.scripted import MODELS, ScriptedSafetyModel
 from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
 from kestrel.bench.stubs import USERS, build_registry, make_setup
 from kestrel.bench.tasks import SUITE_VERSION, Task, TaskError, load_tasks, select, task_sha
-from kestrel.bench.validate import validate
+from kestrel.bench.validate import concerns, markers_of, validate
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
 from kestrel.tracing import Tracer
 
@@ -158,6 +161,16 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     )
     val.add_argument("--split", choices=SPLITS, default="safety")
     val.add_argument("--split-dir", type=Path, help="safety split folder (default evals/kestrelbench/safety)")
+    val.add_argument(
+        "--task", help="safety split: check one task (its problems and markers; behavior runs for it alone)"
+    )
+
+    show = actions.add_parser(
+        "show", help="safety split: print what the model would see in one task, and how it is graded (offline)"
+    )
+    show.add_argument("task_id")
+    show.add_argument("--split", choices=["safety"], default="safety")
+    show.add_argument("--split-dir", type=Path, help="safety split folder (default evals/kestrelbench/safety)")
 
     unlock_cmd = actions.add_parser("unlock", help="remove a stale lock left by a crashed run (checks its PID is gone)")
     unlock_cmd.add_argument("results", type=Path)
@@ -338,6 +351,11 @@ def _run(args: argparse.Namespace) -> int:
     judge_model = (args.judge_model or PROVIDERS[args.judge].default_model) if args.judge != "none" else None
     judge_name = f"{args.judge}/{judge_model}" if judge_model else None
 
+    safety = args.split == "safety"
+    registry = build_registry(SafetyMeta(), []) if safety else None  # safety: the common tools, without MCP stubs
+    # the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default), for the resume check
+    resolved = args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
+    agent = agent_fingerprint(args.provider, resolved, registry)
     previous: dict[tuple[str, int, str | None], TaskResult] = {}  # (task, repeat, user)
     if args.resume:
         old = _load(args.resume)
@@ -357,6 +375,18 @@ def _run(args: argparse.Namespace) -> int:
                 f"{judge_name}@{JUDGE_VERSION} and mix two judges in one score. Re-grade it first: "
                 f"uv run kestrel bench rejudge {args.resume}"
             )
+        version = SAFETY_VERSION if safety else SUITE_VERSION
+        if old_meta.get("split_version") not in (None, version):  # files from before versions were recorded pass
+            sys.exit(
+                f"{args.resume.name} was run on {args.split} split version {old_meta['split_version']}, not {version}: "
+                "resuming would mix two versions of the tasks in one score."
+            )
+        old_agent = (old_meta.get("agent") or {}).get("sha")
+        if old_agent and old_agent != agent["sha"]:  # same provider and model, so the prompt, tools or settings
+            sys.exit(
+                f"{args.resume.name} was run by agent {old_agent}, this one is {agent['sha']} (system prompt, tools "
+                "or settings changed): resuming would mix two agents in one score."
+            )
         previous = {
             (d["id"], d.get("repeat", 1), d.get("user")): TaskResult(**d) for d in old["tasks"] if d["status"] in DONE
         }
@@ -364,7 +394,6 @@ def _run(args: argparse.Namespace) -> int:
         for r in _reusable(args.reuse, args.provider, model, judge_name, tasks):
             previous.setdefault((r.id, 1, None), r)
 
-    safety = args.split == "safety"
     users: list[str | None] = (["strict", "rubber-stamp"] if args.user == "both" else [args.user]) if safety else [None]
     # user by user, then repeat by repeat: spread over time
     all_jobs = [(t, k, u) for u in users for k in range(1, args.repeat + 1) for t in tasks]
@@ -422,6 +451,8 @@ def _run(args: argparse.Namespace) -> int:
         extra: dict[str, Any] = {}
         if split is not None and user is not None:
             print(f"-- user: {user}")
+            if isinstance(llm, ScriptedSafetyModel):
+                llm.reset()  # repeat numbers restart for each user
             on_begin = llm.begin if isinstance(llm, ScriptedSafetyModel) else None
             extra = {
                 "base_workspace": split.workspace,
@@ -453,7 +484,7 @@ def _run(args: argparse.Namespace) -> int:
         "split": args.split,
         "split_version": SAFETY_VERSION if safety else SUITE_VERSION,
         # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
-        "agent": agent_fingerprint(args.provider, model, build_registry(SafetyMeta(), []) if safety else None),
+        "agent": agent_fingerprint(args.provider, model, registry),  # the model actually built
         "provider": args.provider,
         "model": model,
         "user": args.user if safety else None,
@@ -707,6 +738,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
     sa, sb = a.get("meta", {}).get("split", "main"), b.get("meta", {}).get("split", "main")
     if sa != sb:
         sys.exit(f"Can't compare a {sa} split run with a {sb} split run: they contain different tasks.")
+    if sa == "safety":
+        return _compare_safety(args, a, b)
     c = compare(a, b)
     if c.diff is None or c.a_rate is None or c.b_rate is None:
         print("No task was graded in both files.")
@@ -733,6 +766,44 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _compare_safety(args: argparse.Namespace, a: dict[str, Any], b: dict[str, Any]) -> int:
+    """Before (A) and after (B) a defense, attack by attack: any-repeat success at each level, flips."""
+    try:
+        c = compare_safety(a, b)
+    except ValueError as e:
+        sys.exit(f"Can't compare these safety runs: {e}.")
+    ma, mb = a["meta"], b["meta"]
+    print(f"A  {args.a.name}: {ma.get('provider')}/{ma.get('model')}, agent {(ma.get('agent') or {}).get('sha')}")
+    print(f"B  {args.b.name}: {mb.get('provider')}/{mb.get('model')}, agent {(mb.get('agent') or {}).get('sha')}")
+    print(f"Safety split {ma.get('split_version')}; attacks count as successes if any repeat succeeded.\n")
+    for level, (ra, rb) in c.rates.items():
+        stopped, started = c.flips(level)
+        print(f"{level:20} A {ra.fmt():32} B {rb.fmt()}")
+        print(f"{'':20} stopped succeeding in B: {', '.join(stopped) or 'none'}")
+        print(f"{'':20} newly succeeding in B:   {', '.join(started) or 'none'}")
+    for level in c.skipped_levels:
+        print(f"{level:20} not compared: that user did not run in both files")
+    if c.attacks:
+        hit = sorted({i for pairs in c.attacks.values() for i, (x, y) in pairs.items() if x or y})
+        if hit:
+            print("\nAttacks that succeeded in either run (A -> B):")
+            for i in hit:
+                cells = [
+                    f"{lv} {'yes' if p[0] else 'no'} -> {'yes' if p[1] else 'no'}"
+                    for lv, pairs in c.attacks.items()
+                    if (p := pairs.get(i))
+                ]
+                print(f"  {i}: " + "; ".join(cells))
+    if c.benign_rates:
+        better, worse = c.benign_flips()
+        print(f"\nBenign, passed every repeat (strict): A {c.benign_rates[0].fmt()}  B {c.benign_rates[1].fmt()}")
+        print(f"  newly passing in B: {', '.join(better) or 'none'}")
+        print(f"  newly failing in B: {', '.join(worse) or 'none'}")
+    for w in c.warnings:
+        print(f"Warning: {w}")
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     """For task authors: every problem, named file:task: field: message. Exit 1 if any."""
     if args.split == "main":
@@ -744,6 +815,8 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print(f"OK: {len(tasks)} main-split tasks load.")
         return 0
     root = args.split_dir or SAFETY_DIR
+    if args.task:
+        return _validate_one(root, args.task)
     print(f"Validating the safety split in {root} (scripted models only, no network)...")
     split, problems = validate(root)
     for p in problems:
@@ -775,6 +848,41 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _validate_one(root: Path, task_id: str) -> int:
+    """validate --task: one task's problems and markers. Problems in other tasks are counted, not hidden."""
+    if task_id not in load_safety(root).by_id:
+        sys.exit(f"No safety task {task_id!r} in {root}. Run `kestrel bench validate --split safety` for the list.")
+    print(f"Validating {task_id} in {root} (scripted models only, no network)...")
+    split, problems = validate(root, only=task_id)
+    mine = [p for p in problems if concerns(p, task_id)]
+    for p in mine:
+        print(f"PROBLEM {p}")
+    todo = markers_of(split, find_markers(root), task_id)
+    for mk in todo:
+        print(f"TODO not yet written: {mk.where} ({mk.field})" + (f": {mk.spec}" if mk.spec else ""))
+    if others := len(problems) - len(mine):
+        print(f"({others} problem(s) elsewhere in the split; run without --task to see them.)")
+    if mine:
+        print(f"\n{len(mine)} problem(s) in {task_id}.")
+        return 1
+    if todo:
+        print(
+            f"\nINCOMPLETE: {task_id} has {len(todo)} injection(s) not yet written; "
+            "its checks pass on the declared goals."
+        )
+        return 1
+    print(f"OK: {task_id}.")
+    return 0
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    split = load_safety(args.split_dir or SAFETY_DIR)
+    if args.task_id not in split.by_id:
+        sys.exit(f"No safety task {args.task_id!r}. Run `kestrel bench validate --split safety` for the list.")
+    print(preview(split, args.task_id), end="")
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     path = args.results or _newest_results()
     data = _load(path)
@@ -792,5 +900,6 @@ def main(args: argparse.Namespace) -> int:
         "report": cmd_report,
         "unlock": cmd_unlock,
         "validate": cmd_validate,
+        "show": cmd_show,
     }
     return commands[args.bench_command](args)
