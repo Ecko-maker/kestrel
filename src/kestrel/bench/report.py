@@ -69,10 +69,14 @@ def summarize(results: list[TaskResult] | list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def write_results(path: Path, results: list[TaskResult], meta: dict[str, Any]) -> dict[str, Any]:
+def write_results(
+    path: Path, results: list[TaskResult], meta: dict[str, Any], extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """extra: more top-level sections, e.g. the safety split's attack success rates."""
     data = {
         "meta": {**meta, "finished": datetime.now(UTC).isoformat(timespec="seconds")},
         "summary": summarize(results),
+        **(extra or {}),
         "tasks": [r.to_dict() for r in results],
     }
     path.parent.mkdir(parents=True, exist_ok=True)

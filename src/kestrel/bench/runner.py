@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from kestrel import llm as llm_module
 from kestrel import tools
@@ -19,6 +19,7 @@ from kestrel.approval import ApprovalGate, Decision
 from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
 from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
+from kestrel.tools import ToolRegistry
 from kestrel.tracing import Tracer
 
 # Tool results in the judge's log are cut to this length: judge v2 (2026-10-05) raised it from 600 so the
@@ -72,6 +73,8 @@ class TaskResult:
     repeat: int = 1  # 1..N with --repeat; (id, repeat) identifies a run
     tool_log: list[str] = field(default_factory=list)  # exactly what the judge saw, for labeling and re-judging
     task_sha: str = ""  # version of the task definition + fixture workspace, so runs are only compared like for like
+    safety: dict | None = None  # safety split only: attack success at model and system level, or the benign outcome
+    user: str | None = None  # safety split only: the scripted user (strict / rubber-stamp)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -106,6 +109,17 @@ def _tool_log(events: list[dict]) -> list[str]:
     return lines
 
 
+class Setup(Protocol):
+    """Per-task tools and user, for splits that need them (the safety split's network stubs and
+    approval profiles). Returns the registry, the approver, and a list the tools append events to."""
+
+    def __call__(self, task: Task) -> tuple[ToolRegistry, Any, list[dict]]: ...
+
+
+# Grades a finished task in place of the checks and judge (the safety split's guards).
+Grader = Callable[[Task, Outcome, TaskResult], None]
+
+
 def run_task(
     task: Task,
     llm: Any,
@@ -114,11 +128,14 @@ def run_task(
     base_workspace: Path = WORKSPACE_DIR,
     expected_provider: str | None = None,
     repeat: int = 1,
+    setup: Setup | None = None,
+    grader: Grader | None = None,
 ) -> TaskResult:
     """Run one task. With expected_provider, a task answered (even partly) by any other provider
-    is marked "excluded" and left out of the score, so results never mix models."""
+    is marked "excluded" and left out of the score, so results never mix models. Without setup and
+    grader (the main suite), it uses the built-in tools, the task's scripted user, and the checks."""
     workspace, originals = _prepare_workspace(task, base_workspace)
-    approver = ScriptedApprover(task.approvals)
+    registry, approver, extra_events = setup(task) if setup else (tools.registry, ScriptedApprover(task.approvals), [])
     events: list[dict] = []
     previous_workspace = tools.WORKSPACE
     tools.WORKSPACE = workspace.resolve()
@@ -126,6 +143,7 @@ def run_task(
     try:
         agent = Agent(
             llm,
+            tools=registry,
             max_steps=task.max_steps,
             tracer=tracer,
             on_event=events.append,
@@ -137,6 +155,7 @@ def run_task(
     latency = (time.perf_counter() - started) * 1000
     last = results[-1]
     events.extend(approver.requests)
+    events.extend(extra_events)
 
     outcome = Outcome(
         events=events,
@@ -173,6 +192,10 @@ def run_task(
         result.error = f"answered by {', '.join(others)}, not the provider under test ({expected_provider})"
         shutil.rmtree(workspace.parent, ignore_errors=True)
         return result
+    if grader:
+        grader(task, outcome, result)
+        shutil.rmtree(workspace.parent, ignore_errors=True)
+        return result
 
     for check in task.checks:
         ok, detail = run_check(check, outcome)
@@ -199,14 +222,15 @@ def run_task(
     return result
 
 
-def agent_fingerprint(provider: str, model: str) -> dict[str, Any]:
+def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None = None) -> dict[str, Any]:
     """Everything that shapes the agent's behavior in a benchmark run, so two runs can be checked for
     being the same agent before their difference is called run-to-run variance. The system prompt
     and tool list are hashed (the tools' names, descriptions, parameters and risk tiers). The bench
-    never starts MCP servers, so the tool list is always the built-in one. No temperature or seed is
-    sent, so the provider's default sampling applies."""
+    never starts MCP servers, so the tool list is the built-in one, or the safety split's (built-in
+    plus stubbed network and MCP tools). No temperature or seed is sent, so the provider's default
+    sampling applies."""
     tool_list = sorted(
-        ({"schema": t.schema, "risk": t.risk} for t in tools.registry.tools.values()),
+        ({"schema": t.schema, "risk": t.risk} for t in (registry or tools.registry).tools.values()),
         key=lambda t: json.dumps(t, sort_keys=True),
     )
     parts: dict[str, Any] = {
@@ -242,6 +266,8 @@ def run_suite(
     token_budget: int | None = None,
     repeats: list[int] | None = None,
     stop_after_errors: int | None = None,
+    setup: Setup | None = None,
+    grader: Grader | None = None,
 ) -> list[TaskResult]:
     """Run tasks in order (repeats[i] is task i's repeat number). The rest are marked "skipped", to
     resume later, once either:
@@ -266,7 +292,7 @@ def run_suite(
         else:
             if i and pause:
                 time.sleep(pause)  # spreads requests out under free-tier per-minute limits
-            result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat)
+            result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
             spent += billable_tokens(result)
             errors_in_a_row = errors_in_a_row + 1 if result.status == "error" else 0
         results.append(result)
