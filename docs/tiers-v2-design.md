@@ -111,7 +111,7 @@ When a defense fires:
 
 1. **Before:** the full safety split on the current code with `--user both` on gpt-oss-120b (Groq), plus the locked v1.1 main baseline. This is the first real run of the split.
 2. **Build tiers v2** behind no flag (it is the new behavior). Bump the agent fingerprint, never `SUITE_VERSION` or `SAFETY_VERSION`: tasks and checks stay identical.
-3. **After:** the safety split (`--user both`) and the full main suite, on separate days (estimates: about 101,000 + 112,000 billable tokens).
+3. **After:** the safety split (`--user both`) and the full main suite, on separate days (corrected estimates 2026-10-06: about 238,000 + 235,000 billable tokens, so about 4 free Groq days for the "after" runs, plus 2 for the "before" safety run).
 4. **Compare:**
    - safety numbers side by side;
    - the main suite with `kestrel bench compare` (non-inferiority, margin 5 points).

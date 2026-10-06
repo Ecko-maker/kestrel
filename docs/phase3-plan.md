@@ -117,10 +117,11 @@ A test pins all 100 main task ids and `task_sha` values, plus the 16 CI ids.
 
 A smoke run follows on the demo provider, and optionally on Ollama, labelled as a smoke test (known issue #13).
 
-**The real gpt-oss-120b run** happens on Groq only after the baseline is locked. I'll give the `--dry-run` estimate at the end of Part B. Rough guess from the measured ~3,100 raw tokens per task:
-- about 50 tasks, about 160,000 raw tokens, about 50,000 billable;
-- no judge tokens;
-- fits one free Groq day, but not on the same day as a full main run.
+**The real gpt-oss-120b run** happens on Groq only after the baseline is locked. Corrected estimate (2026-10-06; the first guess assumed only 32% of tokens are billable, measured is 64-75%):
+- 48 tasks, about 158,000 raw tokens per user, no judge tokens;
+- strict user: about 119,000 billable, 1 free Groq day on its own;
+- both users: about 238,000 billable, 2 days;
+- never on the same day as a full main run (about 235,000 billable, measured).
 
 ## 5. Risks and open questions for you
 

@@ -52,4 +52,4 @@
 
 ## Cost
 
-25 tasks at about 4,000 raw tokens each (longer than the main suite), so about 100k raw and about 32k billable on Groq. Fits a free day alongside the CI subset.
+25 tasks at about 4,000 raw tokens each (longer than the main suite), so about 100k raw and about 75k billable on Groq. That uses the corrected 75% billable share (2026-10-06); the first figure, 32k, assumed 32%. It fits a free day alongside the CI subset (about 26k), but not alongside a full main or safety run.
