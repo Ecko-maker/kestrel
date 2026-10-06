@@ -33,7 +33,9 @@ jobs:
           fi
       - run: uv sync --locked
       - name: Run all tasks
-        # 180k billable tokens leaves headroom under the 200k/day free-tier cap; skipped tasks are reported.
+        # A cap, not the cost: 180k billable tokens leaves headroom under the 200k/day free tier. A full
+        # run costs ~235k billable (run 2, measured), so about a quarter of the tasks are skipped and
+        # reported; finish them with --resume the next day.
         run: uv run kestrel bench run --subset all --provider groq --judge groq --pause 3 --token-budget 180000 --out evals/results/full.json
       - name: Report
         if: always()
