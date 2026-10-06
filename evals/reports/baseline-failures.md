@@ -1,6 +1,6 @@
 # Baseline failure analysis (KestrelBench v1.1)
 
-**Model:** `openai/gpt-oss-120b` on Groq. **Judge:** the same model, prompt v1, **not yet calibrated**.
+**Model:** `openai/gpt-oss-120b` on Groq. **Judge:** the same model, **v2** (re-graded 2026-10-05; same 8 failures as under v1), **not yet calibrated**.
 
 **Reported baseline:** `baseline-v1.0-rescored-v1.1.json`, the complete v1.0 run's stored answers checked with v1.1 checks (`scripts/rescore.py`; method in `evals/CHANGELOG.md`). Score **92% (95% CI 86–97%, n=100)**, 8 failures.
 

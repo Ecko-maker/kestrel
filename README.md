@@ -36,9 +36,7 @@ Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`). Demo mod
 
 [KestrelBench](docs/kestrelbench.md) is Kestrel's own 100-task eval: tool use, files, approvals, prompt injection, sandbox escapes, multi-step and multi-turn tasks, scored by deterministic checks plus an LLM judge on 43 open-ended tasks.
 
-> **Provisional.** These numbers are being re-graded with judge v2, which sees more of each tool result, and checked against a second run of the suite. They will be replaced, and may change, in the next update.
-
-**KestrelBench v1.1 (provisional): 92% pass rate (95% CI 86–97%, n=100)**: `openai/gpt-oss-120b` on Groq, run on 2026-10-04. The interval is a bootstrap over tasks (10,000 resamples): it says how much the score depends on which tasks happen to be in the suite.
+**KestrelBench v1.1: 92% pass rate (95% CI 86–97%, n=100)**: `openai/gpt-oss-120b` on Groq; the agent answered on 2026-10-04. Judge `gpt-oss-120b` v2. **Pass rule:** every deterministic check passes and, where there's a rubric, the judge gives at least 0.5 (partial credit ≥ 0.5 counts as a pass). The interval is a bootstrap over tasks (10,000 resamples). Full report: [evals/reports/baseline-v1.1.md](evals/reports/baseline-v1.1.md).
 
 | Category | Tasks | Pass rate (95% CI) |
 |---|---:|---|
@@ -55,21 +53,19 @@ Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`). Demo mod
 
 \* Fewer than 10 tasks: too few to compare. † An all-pass category shows a zero-width interval, which understates the uncertainty (with 0 failures in n tasks, up to about 3/n could still fail).
 
-**Why v1.1 and not v1.0's 85%:** the same run scored **85% under v1.0**. Reviewing every failure found 7 that were bugs in the checks, not the model: correct answers written with narrow no-break spaces (`604 800`), curly quotes, "isn't present" instead of "doesn't exist", and an honest refusal that merely mentioned `[project]`. v1.1 fixes those checks, which flips exactly those 7 to passes. See [evals/CHANGELOG.md](evals/CHANGELOG.md) for each change with its evidence.
+**Why 92% and not v1.0's 85%:** the same answers scored 85% under suite v1.0. A review of every failure found 7 that were bugs in the checks, not the model (typographic spaces and quotes, one wording gap, an over-broad leak pattern). v1.1 fixes them, and exactly those 7 flip ([changelog](evals/CHANGELOG.md)). Judge v2, which sees more of each tool result, changed 3 scores but no pass/fail outcome.
 
-The v1.1 score re-checks that run's stored answers with v1.1 checks ([scripts/rescore.py](scripts/rescore.py)). A fresh v1.1 run agrees (91%, 95% CI 84–98%, on the 57 tasks it finished before Groq's daily limit). It will replace this number once complete.
+**How stable is it?** A second run of the identical agent scored within 1 point (+1, 95% CI −6 to +8, 87 shared tasks). But **10% of tasks changed outcome between the runs**, so a gap under about 7 points between two single runs is noise ([run-to-run report](evals/reports/run-to-run.md)).
 
 **Read with care:**
-- **Judge: `openai/gpt-oss-120b` on Groq, prompt v1. Judge not yet calibrated** against human labels ([known issue #21](docs/known-issues.md)), and it is the same model as the one tested. A review of 15 passes found it lenient on faithfulness twice, and 1 of the 8 failures is a confirmed judge misgrade ([evals/reports/](evals/reports/)).
-- **A single run.** Outputs vary: the model sometimes skips the calculator on easy sums, and which task it skips changes from run to run. Run-to-run variance isn't measured yet ([#22](docs/known-issues.md)).
+- **The judge is not yet calibrated** against human labels ([known issue #21](docs/known-issues.md)), and it is the same model as the one tested. One of the 8 failures is a confirmed judge misgrade.
 - **Remaining failures** ([analysis](evals/reports/baseline-failures.md)):
-  - asking the user for information that's in the workspace (systematic);
-  - skipping the calculator;
-  - asking before sending instead of letting the approval card do that;
+  - asking you for information that's in the workspace (systematic: failed in every run);
+  - skipping the calculator and drafting before sending (random per run);
   - one narrow reading of an instruction;
   - two judge cases.
 
-  No safety failure: no injected action attempted, nothing deleted or leaked.
+  No safety failure: no injected action was attempted, and nothing was deleted or leaked.
 
 ## Architecture
 
