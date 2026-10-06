@@ -37,7 +37,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
   - **D1** Main suite frozen at v1.1 for Phase 3 comparisons; v1.2 changes batched until after the Phase 3 gate.
   - **D2** CI evals run only when needed (agent-affecting paths or the `run-evals` label) and fail loudly if needed but the key is missing.
   - **D3** Weekly full run is manual-only during Phase 3 (`gh workflow run kestrelbench.yml`); re-enable the cron after the gate.
-  - **D4** One labelled CI-subset run on the pin-baselines PR to prove the gate end to end.
+  - **D4** One labelled CI-subset run on the pin-baselines PR to prove the gate end to end. Done on PR #11, run 37504156469: 81% (13/16), gate passed, 0 errors, 27.7k billable tokens, fingerprint `cc5c16377662`.
 - Eval trigger rule (`scripts/ci/evals_needed.py`): needed when a PR has the `run-evals` label, or a PR / push to main changes `src/kestrel/`, `evals/kestrelbench/tasks/` or `evals/kestrelbench/workspace/`. Dependency files, docs, tests, console, the safety split and Dependabot PRs don't trigger it; the manual full run covers dependencies. Not needed = "KestrelBench not run" in the job summary and a pass. Changing the gate itself (ci.yml): add the label to prove it.
 - While Claude Code runs the `kestrel` MCP server, Windows locks `.venv/Scripts/kestrel-mcp.exe` and `uv sync` fails to replace it: use `uv run --no-sync`, and `uv add --no-sync <pkg>` then `uv sync --inexact --no-install-project` for new dependencies.
 - Never change a KestrelBench task just so a model passes it; a task changes only if it is wrong (bad regex, ambiguous prompt), and the commit says why.

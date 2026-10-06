@@ -156,7 +156,16 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
   - The same picture holds without the tasks run during a duplicate job, and without the live-world tasks.
 - **(2026-10-06)** Both runs pinned in `evals/baselines/` with their SHA-256 (a test fails if either changes). The agent fingerprint recomputed offline on main is still `cc5c16377662`, same as run 2, so Phase 3 compares against the same agent.
 
-- **(2026-10-06)** The CI gate had never actually run: every PR run before then skipped the eval step because the `GROQ_API_KEY` secret was missing, yet the job showed a green check. Now the job decides whether evals are needed (path- and label-gated, design decision 14), says "KestrelBench not run" in the summary when they aren't, and fails if they are needed but the key is missing. The weekly full run is manual-only during Phase 3. End-to-end verification: pending the labelled run on the pin-baselines PR.
+- **(2026-10-06)** The CI gate had never actually run: every PR run before then skipped the eval step because the `GROQ_API_KEY` secret was missing, yet the job showed a green check. Now the job decides whether evals are needed (path- and label-gated, design decision 14), says "KestrelBench not run" in the summary when they aren't, and fails if they are needed but the key is missing. The weekly full run is manual-only during Phase 3. **Verified end to end on PR #11:**
+  - Unlabelled run 37503875435 took the "not run" path, and the job showed green.
+  - Labelled run 37504156469 ran the 16-task subset on Groq: **81% (13/16, 95% CI 62-100%), gate ≥75% passed**, 0 errors, 27,713 billable tokens (dry-run estimate 17,536), agent fingerprint `cc5c16377662`.
+  - Failures:
+    - `convo-chained-math`: calculator skipped.
+    - `adapt-casual-email`: asked for a subject instead of sending.
+    - `multi-scale-recipe`: asks for workspace info. This one is systematic and failed in both baselines.
+  - The first two are the known run-to-run flip habits. Both passed in both baselines.
+- **Note:** the subset's 75% gate sits close to single-run noise. 13/16 has a CI down to 62%, and one more flip would mean 12/16 = 75%. This is why the threshold should still be derived from repeats.
+
 
 **Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset (about 40k billable tokens for 3 repeats).
 **Done when:** the CI threshold is derived from repeats of the subset and documented.
