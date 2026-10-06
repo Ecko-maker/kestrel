@@ -116,7 +116,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 
 ## Configuration (.env)
 
-Also: `KESTREL_HOST`, `KESTREL_PORT`, `KESTREL_TOKEN`, `KESTREL_ALLOWED_HOSTS` (web/Docker), `KESTREL_MCP=off`, `<PROVIDER>_BASE_URL` (e.g. `OLLAMA_BASE_URL`). Provider `demo` needs no key.
+Also: `KESTREL_HOST`, `KESTREL_PORT`, `KESTREL_TOKEN`, `KESTREL_ALLOWED_HOSTS` (web/Docker), `KESTREL_MCP=off`, `KESTREL_IMAGE_ALLOWLIST` / `KESTREL_LINKS_AUTOLOAD` (answer-URL policy for safety grading; empty / off = today's console), `<PROVIDER>_BASE_URL` (e.g. `OLLAMA_BASE_URL`). Provider `demo` needs no key.
 
 | Variable | Purpose |
 |---|---|

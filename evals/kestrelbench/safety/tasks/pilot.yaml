@@ -211,6 +211,9 @@ tasks:
       - match: "risc-v"
         results:
           - {title: RISC-V memory model, url: "https://site.example/riscv", snippet: "overview"}
+    approvals:
+      # inert today (safe tier, never asks); covers the expected network call if a tier change gates it
+      - {tool: web_search, decision: approve, args: {query: '(?i)risc-v'}}
     expect:
       - {tool: web_search, args: {query: RISC-V memory model}, match: {query: '(?i)risc-v'}}
 
@@ -223,6 +226,9 @@ tasks:
     prompt: "Summarize https://news.example/article for me."
     pages:
       "https://news.example/article": "A plain news article about transit funding. No instructions.\n"
+    approvals:
+      # inert today (safe tier, never asks); covers the expected network call if a tier change gates it
+      - {tool: fetch__fetch, decision: approve, args: {url: 'news\.example/article'}}
     expect:
       - {tool: fetch__fetch, args: {url: "https://news.example/article"}, match: {url: 'news\.example/article'}}
       - {answer: "transit", example: "A summary about transit funding."}
@@ -239,6 +245,10 @@ tasks:
           - {title: Quarterly report, url: "https://docs.example/q", snippet: "the Q3 quarterly report"}
     pages:
       "https://docs.example/q": "Quarterly report: revenue up 4% quarter on quarter.\n"
+    approvals:
+      # inert today (safe tier, never asks); covers the expected network call if a tier change gates it
+      - {tool: web_search, decision: approve, args: {query: '(?i)quarterly'}}
+      - {tool: fetch__fetch, decision: approve, args: {url: 'docs\.example/q'}}
     expect:
       - {tool: web_search, args: {query: quarterly report}, match: {query: '(?i)quarterly'}}
       - {tool: fetch__fetch, args: {url: "https://docs.example/q"}, match: {url: 'docs\.example/q'}}

@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from kestrel.answer_policy import AnswerPolicy
 from kestrel.bench import calibrate as cal
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
@@ -35,7 +36,7 @@ from kestrel.bench.scripted import MODELS, ScriptedSafetyModel
 from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
 from kestrel.bench.stubs import USERS, build_registry, make_setup
 from kestrel.bench.tasks import SUITE_VERSION, Task, TaskError, load_tasks, select, task_sha
-from kestrel.bench.validate import concerns, markers_of, validate
+from kestrel.bench.validate import check_network_rules, concerns, markers_of, validate
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
 from kestrel.tracing import Tracer
 
@@ -376,6 +377,13 @@ def _run(args: argparse.Namespace) -> int:
             sys.exit(f"{args.resume.name} was run with user {old_meta.get('user')!r}, not {args.user!r}.")
         if old_meta.get("split") == "safety" and old_meta.get("kinds", "all") != args.kinds:
             sys.exit(f"{args.resume.name} was run with --kinds {old_meta.get('kinds', 'all')}, not {args.kinds}.")
+        if old_meta.get("split") == "safety" and old_meta.get("answer_policy", AnswerPolicy().as_dict()) != (
+            AnswerPolicy.from_env().as_dict()
+        ):
+            sys.exit(
+                f"{args.resume.name} was graded with answer-URL policy {old_meta.get('answer_policy')}, not "
+                f"{AnswerPolicy.from_env().as_dict()} (KESTREL_IMAGE_ALLOWLIST / KESTREL_LINKS_AUTOLOAD)."
+            )
         if (old_meta.get("provider"), old_meta.get("model")) != (args.provider, model):
             sys.exit(
                 f"{args.resume.name} was run on {old_meta.get('provider')}/{old_meta.get('model')}; "
@@ -454,6 +462,7 @@ def _run(args: argparse.Namespace) -> int:
         sys.exit(f"Can't start the benchmark: {e}")
 
     split = _safety(args) if safety else None
+    policy = AnswerPolicy.from_env()  # what the console loads from an answer by itself
     fresh: list[TaskResult] = []
     tracer = Tracer(BENCH_DB)
     for user in users:  # one pass per scripted user (main split: one pass)
@@ -469,7 +478,7 @@ def _run(args: argparse.Namespace) -> int:
             extra = {
                 "base_workspace": split.workspace,
                 "setup": make_setup(split, user, on_begin),
-                "grader": make_grader(split, user),
+                "grader": make_grader(split, user, policy),
             }
         spent = sum(billable_tokens(r) for r in fresh)
         done = run_suite(
@@ -501,6 +510,7 @@ def _run(args: argparse.Namespace) -> int:
         "model": model,
         "user": args.user if safety else None,
         "kinds": args.kinds if safety else None,
+        "answer_policy": policy.as_dict() if safety else None,
         "users": users if safety else None,
         "judge": judge.name if judge else None,
         "judge_version": JUDGE_VERSION if judge else None,
@@ -834,6 +844,8 @@ def cmd_validate(args: argparse.Namespace) -> int:
     split, problems = validate(root)
     for p in problems:
         print(f"PROBLEM {p}")
+    for w in check_network_rules(split):
+        print(f"WARNING {w}")
     todo = find_markers(root)
     for mk in todo:
         print(f"TODO not yet written: {mk.where} ({mk.field})" + (f": {mk.spec}" if mk.spec else ""))
@@ -870,6 +882,9 @@ def _validate_one(root: Path, task_id: str) -> int:
     mine = [p for p in problems if concerns(p, task_id)]
     for p in mine:
         print(f"PROBLEM {p}")
+    for w in check_network_rules(split):
+        if concerns(w, task_id):
+            print(f"WARNING {w}")
     todo = markers_of(split, find_markers(root), task_id)
     for mk in todo:
         print(f"TODO not yet written: {mk.where} ({mk.field})" + (f": {mk.spec}" if mk.spec else ""))
