@@ -43,7 +43,12 @@ BENCH_DB = Path("logs") / "bench.db"  # kept apart from your personal traces and
 TOKENS_PER_TASK_ESTIMATE = 3_300  # raw agent tokens per task (the full-suite mean was 3,103)
 JUDGE_TOKENS_ESTIMATE = 500  # raw judge tokens per rubric task (measured 489)
 JUDGE_OUTPUT_ESTIMATE = 150  # judge output tokens per call, including gpt-oss reasoning (measured ~90-200)
-BILLABLE_SHARE = 0.32  # uncached share of raw agent + judge tokens (Groq caches the repeated prompt)
+# Uncached share of raw agent + judge tokens. Measured: 0.69 (run 2, 100 tasks), 0.64 (its 16 CI tasks),
+# 0.75 (CI run 37504156469). The highest is used so estimates err high. It was 0.32, which made the
+# CI subset cost 1.6x and the full suite 2.1x the estimate.
+BILLABLE_SHARE = 0.75
+# Measured per-task tokens for the main split (frozen at v1.1), used when no other reference is given.
+PINNED_REFERENCE = RESULTS_DIR.parent / "baselines" / "run2-v1.1-judge-v2-final.json"
 GROQ_FREE_DAILY = {"tokens": 200_000, "requests": 1_000}  # gpt-oss-120b free tier, cached tokens excluded
 DONE = ("pass", "fail", "excluded")  # results a resumed run keeps
 SPLITS = ("main", "safety")
@@ -116,7 +121,8 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         "--estimate-from",
         type=Path,
         action="append",
-        help="results file(s) with measured tokens per task for the estimate (repeatable; default: --reuse/--resume)",
+        help="results file(s) with measured tokens per task for the estimate (repeatable; default: --reuse/"
+        "--resume, else the pinned run 2 for the main split on its model)",
     )
 
     label = actions.add_parser("label", help="label stored answers pass/fail yourself, to calibrate the judge")
@@ -257,22 +263,34 @@ def _reusable(path: Path, provider: str, model: str, judge: str | None, tasks: l
     return usable
 
 
+def _default_reference(split: str, provider: str, model: str) -> list[Path]:
+    """The pinned run's measured tokens, for a main-split estimate on the same provider and model."""
+    if split != "main" or not PINNED_REFERENCE.is_file():
+        return []
+    meta = _load(PINNED_REFERENCE)["meta"]
+    return [PINNED_REFERENCE] if (meta.get("provider"), meta.get("model")) == (provider, model) else []
+
+
 def _estimate(jobs: list[tuple[Task, int]], refs: list[Path]) -> dict[str, int]:
     """Expected raw tokens, billable (uncached) tokens and requests for these jobs, from measured
     per-task numbers where a reference file has them, else from the averages above."""
-    measured: dict[str, dict[str, Any]] = {}
+    # A file that records caching (any task with cached tokens) is trusted for every task, including
+    # those with 0 cached (fully billable in that run). Files from before cache recording have 0
+    # everywhere, so only their agent tokens are used.
+    measured: dict[str, tuple[dict[str, Any], bool]] = {}
     for path in refs:
-        for d in _load(path)["tasks"]:
+        rows = _load(path)["tasks"]
+        recorded = any(d.get("cached_tokens", 0) > 0 for d in rows)
+        for d in rows:
             if d["status"] in REUSABLE and d["tokens"]:
                 best = measured.get(d["id"])
-                has_cache = d.get("cached_tokens", 0) > 0
-                if best is None or (has_cache and not best.get("cached_tokens", 0)):
-                    measured[d["id"]] = d
+                if best is None or (recorded and not best[1]):
+                    measured[d["id"]] = (d, recorded)
     raw = billable = requests = 0
     for task, _ in jobs:
-        d = measured.get(task.id)
+        d, recorded = measured.get(task.id, (None, False))
         judge_raw = JUDGE_TOKENS_ESTIMATE if task.rubric else 0
-        if d and d.get("cached_tokens", 0) > 0:  # fully recorded: agent + judge + cache
+        if d and recorded:  # fully recorded: agent + judge + cache
             raw += d["tokens"] + d.get("judge_tokens", 0)
             billable += billable_tokens(TaskResult(**d))
         else:
@@ -351,7 +369,8 @@ def _run(args: argparse.Namespace) -> int:
     # user by user, then repeat by repeat: spread over time
     all_jobs = [(t, k, u) for u in users for k in range(1, args.repeat + 1) for t in tasks]
     todo = [(t, k, u) for t, k, u in all_jobs if (t.id, k, u) not in previous]
-    est = _estimate([(t, k) for t, k, _ in todo], args.estimate_from or [p for p in (args.reuse, args.resume) if p])
+    refs = args.estimate_from or [p for p in (args.reuse, args.resume) if p]
+    est = _estimate([(t, k) for t, k, _ in todo], refs or _default_reference(args.split, args.provider, model))
     times = f"{args.repeat}" + (f" x {len(users)} users ({', '.join(str(u) for u in users)})" if safety else "")
     print(
         f"KestrelBench{' safety split' if safety else ''}: {len(tasks)} tasks x {times} = {len(all_jobs)} runs on "
