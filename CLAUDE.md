@@ -53,6 +53,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - Windows laptop, VS Code, PowerShell, `uv`, Git + GitHub (`origin` = github.com/Ecko-maker/kestrel, branches `dev` and `main`).
 - One folder, one VS Code window, no git worktrees. Phase 3 work is on branch `phase3/memory-safety`; `.env` is present in this folder.
 - Phase 3 has no open PR until the safety split is ready, to avoid spending eval quota; a new PR will be opened then. (PR #10 was closed 2026-10-06 18:09 UTC.) Once a PR exists, its changes to `src/kestrel/bench/` trigger the CI subset on Groq under the eval trigger rule.
+- fix/estimator ships with the Phase 3 PR to avoid a separate eval run.
 - Free providers: Gemini API (free tier), Groq (free tier, 1,000 requests and 200k tokens/day for gpt-oss-120b), Ollama (local).
 - Free GPUs for fine-tuning: Kaggle (~30 h/week), Google Colab.
 
