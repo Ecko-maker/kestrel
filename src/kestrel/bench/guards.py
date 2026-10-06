@@ -299,6 +299,7 @@ def grade_task(st: SafetyTask, outcome: Outcome) -> dict[str, Any]:
     expects = [(e, *expect_ok(e, ev)) for e in st.meta.expect]
     return {
         "kind": st.meta.kind,
+        "probe": st.meta.probe,
         "vector": st.meta.vector,
         "model_success": any(h.model for h in hits),
         "system_success": any(h.system for h in hits),

@@ -92,6 +92,13 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         help="safety split: who answers approvals. strict = the task's rules, rejects the rest (default; the "
         "Phase 3 gate); rubber-stamp = approves everything (approval fatigue); both = every task under each",
     )
+    run.add_argument(
+        "--kinds",
+        choices=["all", "attack", "benign"],
+        default="all",
+        help="safety split: run only attacks (policy probes included) or only benign tasks, e.g. the "
+        "rubber-stamp user on attacks only (default all)",
+    )
     run.add_argument("--provider", default="groq", help="model under test (default groq)")
     run.add_argument("--model", help="override the provider's default model")
     run.add_argument("--judge", default="groq", help="judge provider, or 'none' to skip rubric grading")
@@ -237,7 +244,10 @@ def _refuse_incomplete(args: argparse.Namespace) -> None:
 
 
 def _pick_tasks(args: argparse.Namespace) -> list[Task]:
-    pool = [st.task for st in _safety(args).tasks] if args.split == "safety" else load_tasks()
+    if args.split == "safety":
+        pool = [st.task for st in _safety(args).tasks if args.kinds in ("all", st.meta.kind)]
+    else:
+        pool = load_tasks()
     tasks = select(pool, args.subset, args.category, args.task, skip_tags=("network",) if args.skip_network else ())
     if args.tasks:
         patterns = [p.strip() for p in args.tasks.split(",") if p.strip()]
@@ -318,8 +328,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Lock the output (and resumed) results file for the whole run, so a second process can't
     run the same benchmark at the same time. A dry run makes no calls and takes no lock."""
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    if args.split == "main" and (args.scripted or args.split_dir or args.user != "strict"):
-        sys.exit("--scripted, --split-dir and --user apply to --split safety only.")
+    if args.split == "main" and (args.scripted or args.split_dir or args.user != "strict" or args.kinds != "all"):
+        sys.exit("--scripted, --split-dir, --user and --kinds apply to --split safety only.")
     if args.split == "safety":
         args.judge = "none"  # graded by deterministic guards only
         if args.reuse:
@@ -364,6 +374,8 @@ def _run(args: argparse.Namespace) -> int:
             sys.exit(f"{args.resume.name} is a {old_meta.get('split', 'main')} split run, not {args.split}.")
         if old_meta.get("split") == "safety" and old_meta.get("user") != args.user:  # strict / rubber-stamp / both
             sys.exit(f"{args.resume.name} was run with user {old_meta.get('user')!r}, not {args.user!r}.")
+        if old_meta.get("split") == "safety" and old_meta.get("kinds", "all") != args.kinds:
+            sys.exit(f"{args.resume.name} was run with --kinds {old_meta.get('kinds', 'all')}, not {args.kinds}.")
         if (old_meta.get("provider"), old_meta.get("model")) != (args.provider, model):
             sys.exit(
                 f"{args.resume.name} was run on {old_meta.get('provider')}/{old_meta.get('model')}; "
@@ -488,6 +500,7 @@ def _run(args: argparse.Namespace) -> int:
         "provider": args.provider,
         "model": model,
         "user": args.user if safety else None,
+        "kinds": args.kinds if safety else None,
         "users": users if safety else None,
         "judge": judge.name if judge else None,
         "judge_version": JUDGE_VERSION if judge else None,

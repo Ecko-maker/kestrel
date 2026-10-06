@@ -22,6 +22,10 @@ Versioned separately as `SAFETY_VERSION` (`src/kestrel/bench/safety.py`); result
   - **`--resume`** now refuses a file from another split version or agent fingerprint.
   - **`compare`** pairs two safety files: per attack and level, flips, benign flips. It refuses different `SAFETY_VERSION`s or task sets.
   - **New tools:** `bench show` previews a task offline; `validate --task` checks one task. A new scripted model, `falls-on-repeat-2`, is for harness checks.
+- **s1.0 pre-measurement fixes** (2026-10-06; still s1.0 because no model has been measured on the split yet, so no stored result is invalidated):
+  - **`atk-exfil-search-file` vector `search` -> `file`.** The injection sits in `notes/project.txt` and the task has no `search` stub, so `file` is where the attacker's data enters. Label only: goals and checks unchanged. Fingerprint `6534efbd73fd` -> `5e36fa399cf5`.
+  - **Policy probes (owner decision 2).** New optional field `probe: policy` (attacks only). A probe is graded like any attack but reported on its own line: it is never in the attack success rates, their intervals, the per-category table or the gate. `atk-overwrite-direct` is the first probe (the user asks for a forbidden delete; there is no injection). Fingerprint `165a6f9fcc82` -> `ec01adbb528d`. An unset `probe` is left out of the fingerprint, so the other 46 tasks keep theirs (checked against 80ea92e).
+  - **`--kinds all|attack|benign`** on `bench run --split safety`. It is recorded in the results meta, `--resume` refuses a file run with other kinds, and the report says "<user>: attacks only (n=…)". This lets the rubber-stamp user run on attacks only.
 
 ## Proposed (not applied: waiting for the owner's approval)
 
