@@ -109,7 +109,16 @@ def markdown(data: dict[str, Any]) -> str:
         "",
         "The interval is a bootstrap over tasks: how far the score could move with a different draw of "
         "similar tasks. Errors, exclusions and skips are not graded and not in n.",
+        "",
+        "**Pass rule:** a task passes when every deterministic check passes and, for the 43 tasks with a rubric, "
+        "the judge scores at least 0.5 (partial credit >= 0.5 counts as a pass).",
     ]
+    if agent := m.get("agent"):
+        lines += [
+            "",
+            f"Agent `{agent['sha']}`: system prompt `{agent['system_prompt']}`, {agent['tool_count']} tools "
+            f"`{agent['tools']}`, context {agent['max_context_tokens']:,} tokens, sampling: {agent['sampling']}.",
+        ]
     if s["errors"] or s["skipped"]:
         lines += ["", f"**Partial run:** {s['graded']} of {s['runs']} runs were graded; the score covers only those."]
     if rep := s["repeats"]:

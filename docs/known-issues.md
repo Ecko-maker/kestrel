@@ -146,17 +146,19 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 
 **Done when:** the owner has labelled answers in both halves (aim for 20+ per half; label repeats to get more than the 43 rubric tasks), and the README reports held-out agreement and kappa, with kappa ≥ 0.6, or the judge prompt (improved on dev only) or judge model is changed until it is.
 
-### 22. Run-to-run variance not yet measured (partly fixed)
+### 22. Run-to-run variance measured once; CI threshold not yet derived from it (partly fixed)
 **Labels:** `evals`, `low`
-**Fixed (2026-10-04):** every score now has a 95% bootstrap interval over tasks, overall and per category (categories under 10 tasks are flagged). `kestrel bench compare` gives a paired interval for the difference between two runs, the tasks that flipped, and a non-inferiority verdict for Phase 4's "within 5 points" gate.
+**Fixed:**
+- **(2026-10-04)** Every score has a 95% bootstrap interval over tasks. `kestrel bench compare` gives a paired interval, the tasks that flipped, and a non-inferiority verdict.
+- **(2026-10-05/06)** Run-to-run variance measured. Two runs of the same agent (identical system prompt, model, tools and settings, verified from the traces), both suite v1.1 and judge v2, on the 87 tasks graded in both (`evals/reports/run-to-run.md`):
+  - score 91% vs 92%, difference **+1 point (95% CI −6 to +8)**;
+  - **9 of 87 tasks (10%) changed outcome.** The flips come from two habits that hit different tasks each run: skipping the calculator, and drafting before sending. The same picture holds without the tasks run during a duplicate job, and without the live-world tasks.
 
-**Still open:** the interval covers which tasks are in the suite, not the model's randomness on a given task. Evidence that this matters: two runs of the same model flipped 3 arithmetic tasks (the model sometimes skips the calculator). The tooling is in place but hasn't been run:
-- `--repeat N`, `--sample N` (stratified), `--tasks`, `--reuse`;
-- `--resume` across repeats, and stop-after-errors for rate limits.
+**Still open:**
+1. Run 2's last 13 tasks (web, conversation, 1 multistep), stopped by Groq's daily token limit.
+2. The CI gate (75% on the 16-task subset) is still a margin, not derived from measured variance of that subset: it needs `--repeat` runs of the CI subset.
 
-A 3 × 20-task run needs about 57,000 billable tokens (fits one free Groq day).
-
-More evidence: across three runs of the same model, the calculator was skipped on 5 different easy tasks, never the same one twice (`evals/reports/baseline-failures.md`). **Done when:** a 3 × 20 run is done, the README reports the spread and the flaky tasks, and the CI threshold (75%, baseline 88% on the 16-task subset) is re-derived from it.
+**Done when:** both are done, and the README's comparison guidance says how many runs a model comparison needs.
 
 ---
 

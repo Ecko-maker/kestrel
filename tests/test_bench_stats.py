@@ -128,8 +128,12 @@ def test_repeats_count_tasks_not_runs_and_find_flaky_tasks():
 
 
 def test_identical_runs_differ_by_zero(tmp_path, monkeypatch, capsys):
+    from kestrel.bench.runner import agent_fingerprint
+
     rows = [row(f"t{i}", "pass" if i % 3 else "fail", task_sha="s") for i in range(30)]
-    c = stats.compare(results_file(rows), results_file([dict(r) for r in rows]))
+    a, b = results_file(rows), results_file([dict(r) for r in rows])
+    a["meta"]["agent"] = b["meta"]["agent"] = agent_fingerprint("groq", "m")  # the same agent both times
+    c = stats.compare(a, b)
     assert c.diff == stats.Estimate(0.0, 0.0, 0.0, 30)
     assert c.better_in_b == c.worse_in_b == c.only_in_one == c.warnings == []
     assert c.within(0.05) is True
@@ -197,13 +201,16 @@ def test_dev_heldout_split_is_stable_and_stratified():
 # --- versions: judge prompt, task definitions, tool log -----------------------------------
 
 
-def test_judge_prompt_changes_need_a_new_version():
+def test_judge_changes_need_a_new_version():
+    """What the judge sees: its prompt, the request layout, and how much of each tool result."""
+    from kestrel.bench.runner import MAX_RESULT_CHARS_IN_LOG
+
     request = build_request(["q"], "rubric", ["- tool() [ran] -> x"], "answer")
-    fingerprint = hashlib.sha256(json.dumps(request).encode()).hexdigest()[:12]
+    fingerprint = hashlib.sha256((json.dumps(request) + str(MAX_RESULT_CHARS_IN_LOG)).encode()).hexdigest()[:12]
     assert JUDGE_PROMPT in request[0]["content"]
-    assert (JUDGE_VERSION, fingerprint) == ("v1", "527eeb838bf2"), (
-        "The judge prompt or request changed: bump JUDGE_VERSION in judge.py, then update this test. "
-        f"New fingerprint: {fingerprint}"
+    assert (JUDGE_VERSION, fingerprint) == ("v2", "53dfa9418d6f"), (
+        "What the judge sees changed: bump JUDGE_VERSION in judge.py, log it in evals/CHANGELOG.md, then "
+        f"update this test. New fingerprint: {fingerprint}"
     )
 
 
@@ -425,3 +432,52 @@ def test_compare_warns_across_suite_versions():
     old["meta"]["suite_version"], new["meta"]["suite_version"] = "1.0", "1.1"
     assert any("different suite versions (1.0 vs 1.1)" in w for w in stats.compare(old, new).warnings)
     assert "suite version not recorded" in markdown(results_file(rows))  # files from before versioning
+
+
+def test_resume_refuses_to_mix_judge_versions(demo, monkeypatch):
+    out = demo / "r.json"
+    data = results_file([row("arith-percent", "pass", "arithmetic")], judge="groq/openai/gpt-oss-120b", version="v1")
+    data["meta"].update(provider="demo", model="demo")
+    out.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    args = ["run", "--provider", "demo", "--model", "demo", "--judge", "groq", "--resume", str(out)]
+    message = str(run_kestrel(monkeypatch, *args, "--tasks", "arith-percent"))
+    assert "mix two judges" in message and "rejudge" in message
+
+
+def test_rejudge_dry_run_estimates_without_calling_the_judge(cli_env, monkeypatch, capsys):
+    t = next(t for t in load_tasks() if t.rubric)
+    path = cli_env / "r.json"
+    path.write_text(json.dumps(results_file([row(t.id, "pass", t.category, tool_log=["- x() [ran] -> y"])])), "utf-8")
+    monkeypatch.setattr(bench_cli, "_judge", None)  # would fail if called
+    assert run_kestrel(monkeypatch, "rejudge", str(path), "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "Re-grade 1 stored answers with judge v2" in out and "1 stored" in out and "Expected ~" in out
+
+
+def test_agent_fingerprint_is_stable_and_sees_prompt_changes(monkeypatch):
+    from kestrel.bench import runner
+
+    first = runner.agent_fingerprint("groq", "m")
+    assert first == runner.agent_fingerprint("groq", "m") and first["tool_count"] >= 5
+    monkeypatch.setattr(runner, "SYSTEM_PROMPT", runner.SYSTEM_PROMPT + " Be brief.")
+    changed = runner.agent_fingerprint("groq", "m")
+    assert changed["system_prompt"] != first["system_prompt"] and changed["sha"] != first["sha"]
+
+
+def test_compare_refuses_to_call_a_changed_agent_variance():
+    from kestrel.bench.runner import agent_fingerprint
+
+    rows = [row(f"t{i}", "pass", task_sha="s") for i in range(10)]
+    a, b = results_file(rows), results_file([dict(r) for r in rows])
+    a["meta"]["agent"] = agent_fingerprint("groq", "m")
+    b["meta"]["agent"] = {**agent_fingerprint("groq", "m"), "system_prompt": "other", "sha": "x"}
+    assert any("NOT run-to-run variance" in w and "system_prompt" in w for w in stats.compare(a, b).warnings)
+    b["meta"]["agent"] = dict(a["meta"]["agent"])
+    assert not any("agent" in w for w in stats.compare(a, b).warnings)
+    del b["meta"]["agent"]
+    assert any("no agent fingerprint" in w for w in stats.compare(a, b).warnings)
+
+
+def test_report_states_the_pass_rule():
+    assert "partial credit >= 0.5 counts as a pass" in markdown(results_file([row("a", "pass")]))

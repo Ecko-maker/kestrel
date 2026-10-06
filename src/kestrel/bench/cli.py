@@ -6,14 +6,16 @@ import json
 import subprocess
 import sys
 import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from kestrel.bench import calibrate as cal
-from kestrel.bench.judge import JUDGE_VERSION, Judge
+from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
+from kestrel.bench.lock import LockError, results_lock, unlock
 from kestrel.bench.report import markdown, pct, summarize, write_results
-from kestrel.bench.runner import TaskResult, billable_tokens, run_suite
+from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
 from kestrel.bench.tasks import SUITE_VERSION, Task, load_tasks, select, task_sha
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
@@ -25,6 +27,7 @@ BENCH_DB = Path("logs") / "bench.db"  # kept apart from your personal traces and
 # Token estimates, measured on Groq gpt-oss-120b on 2026-10-04 (16 fully recorded tasks):
 TOKENS_PER_TASK_ESTIMATE = 3_300  # raw agent tokens per task (the full-suite mean was 3,103)
 JUDGE_TOKENS_ESTIMATE = 500  # raw judge tokens per rubric task (measured 489)
+JUDGE_OUTPUT_ESTIMATE = 150  # judge output tokens per call, including gpt-oss reasoning (measured ~90-200)
 BILLABLE_SHARE = 0.32  # uncached share of raw agent + judge tokens (Groq caches the repeated prompt)
 GROQ_FREE_DAILY = {"tokens": 200_000, "requests": 1_000}  # gpt-oss-120b free tier, cached tokens excluded
 DONE = ("pass", "fail", "excluded")  # results a resumed run keeps
@@ -100,11 +103,20 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     rejudge.add_argument("--judge-model")
     rejudge.add_argument("--pause", type=float, default=0.0)
     rejudge.add_argument("--out", type=Path, help="default: <results>.rejudged-<version>.json")
+    rejudge.add_argument("--dry-run", action="store_true", help="count the judge calls and expected tokens; no calls")
+    rejudge.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="re-grade only answers without a valid verdict from the current judge version (e.g. after a rate limit)",
+    )
 
     comp = actions.add_parser("compare", help="score difference between two runs, with a paired 95%% interval")
     comp.add_argument("a", type=Path, help="baseline results (e.g. the frontier model)")
     comp.add_argument("b", type=Path, help="results to compare against it (e.g. the small model)")
     comp.add_argument("--margin", type=float, default=0.05, help="non-inferiority margin, absolute (default 0.05)")
+
+    unlock_cmd = actions.add_parser("unlock", help="remove a stale lock left by a crashed run (checks its PID is gone)")
+    unlock_cmd.add_argument("results", type=Path)
 
     report = actions.add_parser("report", help="print the Markdown report for a results file")
     report.add_argument("results", type=Path, nargs="?", help="results JSON (default: the newest)")
@@ -215,6 +227,20 @@ def _estimate(jobs: list[tuple[Task, int]], refs: list[Path]) -> dict[str, int]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Lock the output (and resumed) results file for the whole run, so a second process can't
+    run the same benchmark at the same time. A dry run makes no calls and takes no lock."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{args.provider}.json"
+    if args.dry_run:
+        return _run(args)
+    try:
+        with results_lock(args.out, args.resume):
+            return _run(args)
+    except LockError as e:
+        sys.exit(str(e))
+
+
+def _run(args: argparse.Namespace) -> int:
     tasks = _pick_tasks(args)
     if not tasks:
         sys.exit("No tasks match.")
@@ -235,6 +261,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             sys.exit(
                 f"{args.resume.name} was run on {old_meta.get('provider')}/{old_meta.get('model')}; "
                 f"resuming on {args.provider}/{model} would mix models in one score."
+            )
+        if args.judge != "none" and judge_label(old_meta) != f"{judge_name}@{JUDGE_VERSION}":
+            sys.exit(
+                f"{args.resume.name} was graded by {judge_label(old_meta)}; this run would grade with "
+                f"{judge_name}@{JUDGE_VERSION} and mix two judges in one score. Re-grade it first: "
+                f"uv run kestrel bench rejudge {args.resume}"
             )
         previous = {(d["id"], d.get("repeat", 1)): TaskResult(**d) for d in old["tasks"] if d["status"] in DONE}
     if args.reuse:
@@ -289,10 +321,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     by_key = {**previous, **{(r.id, r.repeat): r for r in fresh}}
     results = [by_key[(t.id, k)] for t, k in all_jobs]
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{args.provider}.json"
+    out = args.out
     meta = {
         "suite_version": SUITE_VERSION,
+        "agent": agent_fingerprint(args.provider, llm.llms[0].model),
         "provider": args.provider,
         "model": llm.llms[0].model,
         "judge": judge.name if judge else None,
@@ -428,25 +460,76 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
 
 
 def cmd_rejudge(args: argparse.Namespace) -> int:
+    out = args.out or args.results.with_name(f"{args.results.stem}.rejudged-{JUDGE_VERSION}.json")
+    if args.dry_run:
+        return _rejudge(args, out)
+    try:
+        with results_lock(out, args.results):
+            return _rejudge(args, out)
+    except LockError as e:
+        sys.exit(str(e))
+
+
+def cmd_unlock(args: argparse.Namespace) -> int:
+    try:
+        print(unlock(args.results))
+    except LockError as e:
+        sys.exit(str(e))
+    return 0
+
+
+def _rejudge(args: argparse.Namespace, out: Path) -> int:
     """Grade the stored answers again (new judge prompt or model) and write a NEW results file.
     Kestrel is never re-run; checks keep their stored outcome; only the judge's part changes."""
     data = _load(args.results)
-    out = args.out or args.results.with_name(f"{args.results.stem}.rejudged-{JUDGE_VERSION}.json")
     if out.resolve() == args.results.resolve():
         sys.exit("rejudge writes a new file; it never overwrites the original results.")
+    by_id = {t.id: t for t in load_tasks()}
+
+    def wanted(d: dict[str, Any]) -> bool:
+        task = by_id.get(d["id"])
+        judge_failed = d["status"] == "error" and bool(d.get("judge")) and d["judge"].get("score") is None
+        if not (task and task.rubric and (d["status"] in REUSABLE or judge_failed)):
+            return False
+        current = (d.get("judge") or {}).get("version") == JUDGE_VERSION and (d.get("judge") or {}).get(
+            "score"
+        ) is not None
+        return not (args.only_missing and current)
+
+    todo = [d for d in data["tasks"] if wanted(d)]
+    sources = Counter(cal.tool_log_for(d, BENCH_DB)[1] for d in todo)
+    request_tokens = sum(
+        sum(
+            len(m["content"])
+            for m in build_request(list(t.prompts), t.rubric, cal.tool_log_for(d, BENCH_DB)[0], d["answer"])
+        )
+        // 4
+        for d in todo
+        if (t := by_id[d["id"]]).rubric
+    )
+    estimate = request_tokens + len(todo) * JUDGE_OUTPUT_ESTIMATE
+    print(
+        f"Re-grade {len(todo)} stored answers with judge {JUDGE_VERSION} (tool steps: "
+        + ", ".join(f"{n} {s}" for s, n in sources.items())
+        + f"). Expected ~{estimate:,} tokens ({request_tokens:,} in + ~{JUDGE_OUTPUT_ESTIMATE} out per call), "
+        f"{len(todo)} requests; nothing is re-run except the judge."
+    )
+    if args.dry_run:
+        return 0
     try:
         judge = _judge(args.judge, args.judge_model)
     except LLMError as e:
         sys.exit(f"Can't start the judge: {e}")
-    by_id = {t.id: t for t in load_tasks()}
-    results, graded = [], 0
+    results, graded, changed = [], 0, []
     for d in data["tasks"]:
         r = TaskResult(**d)
         task = by_id.get(r.id)
-        if r.status in REUSABLE and task and task.rubric:
+        if wanted(d):
+            assert task is not None and task.rubric
             if graded and args.pause:
                 time.sleep(args.pause)
             log, _ = cal.tool_log_for(d, BENCH_DB)
+            before = (r.status, (r.judge or {}).get("score"), (r.judge or {}).get("version") or "v1")
             v = judge.grade(list(task.prompts), task.rubric, log, r.answer)
             graded += 1
             r.judge = {"score": v.score, "reason": v.reason, "judge": judge.name, "version": judge.version}
@@ -457,7 +540,9 @@ def cmd_rejudge(args: argparse.Namespace) -> int:
                 checks = sum(c["ok"] for c in r.checks) / len(r.checks) if r.checks else 1.0
                 r.score = round((checks + v.score) / 2, 3)
                 r.status = "pass" if all(c["ok"] for c in r.checks) and v.score >= 0.5 else "fail"
-            print(f"  {r.status.upper():5} {r.id:<40} judge {v.score}")
+            print(f"  {r.status.upper():5} {r.id:<40} judge {before[2]} {before[1]} -> {judge.version} {v.score}")
+            if (before[0], before[1]) != (r.status, v.score):
+                changed.append(f"{r.id}: judge {before[1]} -> {v.score}, {before[0]} -> {r.status} ({v.reason})")
         results.append(r)
     meta = {
         **data["meta"],
@@ -468,6 +553,9 @@ def cmd_rejudge(args: argparse.Namespace) -> int:
     written = write_results(out, results, meta)
     print(f"\nRe-graded {graded} stored answers with {judge.name}@{judge.version}: {out}")
     print(f"Before: {pct(summarize(data['tasks'])['pass_rate'])}  after: {pct(written['summary']['pass_rate'])}")
+    print(f"{len(changed)} verdict(s) changed" + (":" if changed else "."))
+    for line in changed:
+        print(f"  - {line}")
     return 0
 
 
@@ -516,5 +604,6 @@ def main(args: argparse.Namespace) -> int:
         "rejudge": cmd_rejudge,
         "compare": cmd_compare,
         "report": cmd_report,
+        "unlock": cmd_unlock,
     }
     return commands[args.bench_command](args)

@@ -51,6 +51,10 @@ uv run kestrel bench run --shard 1/2                                 # or split 
 
 Gemini's free tier (20 requests/day per model) can't run the suite, so it runs on Groq. A task answered by any provider other than the one under test is marked `excluded` and left out of the score; `--resume` refuses to continue a file from a different provider or model.
 
+Groq's daily token budget behaves like a rolling ~24-hour window: tokens free up about a day after they were spent, while the request count resets at 00:00 UTC. A run stops itself after 3 rate-limit errors in a row. The remaining tasks are marked skipped, never failed, and `--resume` finishes them.
+
+**One process per results file.** `run` and `rejudge` lock every results file they read or write (`<file>.lock`: PID, host, command, start time). A second process on the same file refuses to start. If a crashed run leaves a lock behind, `uv run kestrel bench unlock <file>` removes it, but only after checking that its PID is gone. Every results file also records the agent's fingerprint: system prompt and tool-list hashes, model, limits and sampling. `compare` uses it to refuse calling a difference "run-to-run variance" when the agent changed. `scripts/check_results.py` checks a file's integrity, and `scripts/audit_rate_limits.py` lists tasks touched by rate limits, timeouts or step limits.
+
 ## Suite versions
 
 Scores are only comparable within one suite version. `SUITE_VERSION` in `src/kestrel/bench/tasks.py` is recorded in every results file and shown in every report. Each change to a task, a check or the fixture workspace bumps it, and is logged with its evidence in [`evals/CHANGELOG.md`](../evals/CHANGELOG.md).

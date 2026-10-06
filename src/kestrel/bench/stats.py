@@ -120,6 +120,17 @@ def compare(a: dict[str, Any], b: dict[str, Any], **kw: Any) -> Comparison:
     """Compare two results files (as loaded JSON) on the tasks graded in both."""
     warnings = []
     ma, mb = a.get("meta", {}), b.get("meta", {})
+    aa, ab = ma.get("agent"), mb.get("agent")
+    if aa and ab and aa.get("sha") != ab.get("sha"):
+        diff = sorted(k for k in set(aa) | set(ab) if k != "sha" and aa.get(k) != ab.get(k))
+        warnings.append(
+            f"the agent differs between the runs ({', '.join(diff)}): the difference is NOT run-to-run variance"
+        )
+    elif not (aa and ab):
+        warnings.append(
+            "a file has no agent fingerprint (recorded since 2026-10-05): check the agent was identical "
+            "before calling the difference run-to-run variance"
+        )
     va, vb = ma.get("suite_version"), mb.get("suite_version")
     if va != vb:
         warnings.append(
