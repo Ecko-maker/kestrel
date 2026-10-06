@@ -3,8 +3,10 @@ name: KestrelBench (full suite)
 # The full 100-task suite: weekly and on demand. Informational (no gate); compare with the
 # baseline in evals/kestrelbench/baseline.md. Uses Groq's free tier, so it's spread out with pauses.
 on:
-  schedule:
-    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  # Manual only during Phase 3 (no API quota until the owner says so): gh workflow run kestrelbench.yml
+  # Re-enable after the Phase 3 gate:
+  # schedule:
+  #   - cron: "0 6 * * 1" # Mondays 06:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -23,6 +25,12 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
+      - name: Check for the API key
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::error::GROQ_API_KEY is not available, so the full run can't start. Add it with: gh secret set GROQ_API_KEY"
+            exit 1
+          fi
       - run: uv sync --locked
       - name: Run all tasks
         # 180k billable tokens leaves headroom under the 200k/day free-tier cap; skipped tasks are reported.

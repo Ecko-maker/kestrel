@@ -156,7 +156,7 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
   - The same picture holds without the tasks run during a duplicate job, and without the live-world tasks.
 - **(2026-10-06)** Both runs pinned in `evals/baselines/` with their SHA-256 (a test fails if either changes). The agent fingerprint recomputed offline on main is still `cc5c16377662`, same as run 2, so Phase 3 compares against the same agent.
 
-**Also found (2026-10-06):** the CI gate has never actually run. Every PR run so far skipped the eval step because the `GROQ_API_KEY` secret was missing, but the job still showed a green check. The secret was added on 2026-10-06, so from then on PRs to main and the weekly full run use Groq quota.
+- **(2026-10-06)** The CI gate had never actually run: every PR run before then skipped the eval step because the `GROQ_API_KEY` secret was missing, yet the job showed a green check. Now the job decides whether evals are needed (path- and label-gated, design decision 14), says "KestrelBench not run" in the summary when they aren't, and fails if they are needed but the key is missing. The weekly full run is manual-only during Phase 3. End-to-end verification: pending the labelled run on the pin-baselines PR.
 
 **Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset (about 40k billable tokens for 3 repeats).
 **Done when:** the CI threshold is derived from repeats of the subset and documented.
