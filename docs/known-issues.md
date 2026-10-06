@@ -154,6 +154,9 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
   - 92% vs 93%, difference **+1 point (95% CI −5 to +7)**.
   - **9 of 100 tasks changed outcome.** The flips come from two habits that hit different tasks each run: skipping the calculator, and drafting before sending.
   - The same picture holds without the tasks run during a duplicate job, and without the live-world tasks.
+- **(2026-10-06)** Both runs pinned in `evals/baselines/` with their SHA-256 (a test fails if either changes). The agent fingerprint recomputed offline on main is still `cc5c16377662`, same as run 2, so Phase 3 compares against the same agent.
+
+**Also found (2026-10-06):** the CI gate has never actually run. Every PR run so far skipped the eval step because the `GROQ_API_KEY` secret was missing, but the job still showed a green check. The secret was added on 2026-10-06, so from then on PRs to main and the weekly full run use Groq quota.
 
 **Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset (about 40k billable tokens for 3 repeats).
 **Done when:** the CI threshold is derived from repeats of the subset and documented.
