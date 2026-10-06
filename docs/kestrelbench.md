@@ -105,7 +105,12 @@ uv run kestrel bench run --sample 20 --repeat 3 --pause 3             # 60 runs
 - `--reuse <file>` counts an earlier run as repeat 1, if it used the same model, the same judge version and identical task fingerprints. Files from before fingerprints existed (2026-10-04) can't be reused.
 - **Resumable:** after 3 errors in a row (`--stop-after-errors`), which on Groq almost always means the daily limit, the rest is marked skipped instead of burning through as errors. `--resume <file>` finishes it the next day, repeat by repeat.
 
-**Budget for 3 × 20:** 60 runs, about 180,000 raw tokens, about 57,000 billable (uncached), about 165 requests. Measured per task from the 2026-10-04 runs, where Groq served 68% of tokens from its cache. That fits one day of Groq's free tier for gpt-oss-120b (200,000 tokens, 1,000 requests a day, cached tokens not counted). It would fit even with no caching at all, though only just. It does not fit alongside a full 100-task run on the same day.
+**Budget for 3 × 20:** 60 runs, about 183,000 raw tokens, about **132,000 billable** (uncached), about 165 requests (dry-run estimate, 2026-10-06).
+- **Billable share:** tasks measured in the pinned run 2 count at their recorded cost. Others count at 75% billable, the highest share measured; runs so far billed 64-75%.
+- **History:** the earlier figure of 57,000 assumed Groq caches 68% of tokens, which no full run has shown.
+- **Fit:** it fits one day of Groq's free tier for gpt-oss-120b (200,000 tokens and 1,000 requests a day; cached tokens not counted), but not alongside a full 100-task run, which alone costs about 235,000 billable (run 2, measured).
+
+**Estimates:** `--dry-run` uses measured per-task tokens from `--estimate-from`, `--reuse` or `--resume`. Otherwise, for the main split on the pinned run's model, it uses the pinned run 2 (`evals/baselines/`). Failing both, it falls back to averages (3,300 agent tokens per task, 500 per judge call, 75% billable).
 
 ## Calibrating the judge
 

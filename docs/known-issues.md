@@ -155,6 +155,11 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
   - **9 of 100 tasks changed outcome.** The flips come from two habits that hit different tasks each run: skipping the calculator, and drafting before sending.
   - The same picture holds without the tasks run during a duplicate job, and without the live-world tasks.
 - **(2026-10-06)** Both runs pinned in `evals/baselines/` with their SHA-256 (a test fails if either changes). The agent fingerprint recomputed offline on main is still `cc5c16377662`, same as run 2, so Phase 3 compares against the same agent.
+- **(2026-10-06) Dry-run estimator corrected.**
+  - **The miss:** the CI run billed 27,713 tokens against an estimate of 17,536 (1.6x).
+  - **Cause:** the estimator assumed 32% of tokens are billable (Groq caching the rest). Measured: 75% (that CI run), 69% (run 2, 100 tasks), 64% (run 2's CI tasks). Judge tokens and retries weren't the cause: raw tokens were over-estimated (54.8k vs 36.9k).
+  - **Fix:** the share is now 0.75, and for the main split the estimate defaults to the pinned run 2's measured per-task cost. Zero cached tokens counts as fully billable in files that record caching (`tests/test_bench_estimate.py`).
+  - **Result:** the CI subset estimate is now 26,479 (4% under the actual), and the full suite 235,067, which run 2 really used.
 
 - **(2026-10-06)** The CI gate had never actually run: every PR run before then skipped the eval step because the `GROQ_API_KEY` secret was missing, yet the job showed a green check. Now the job decides whether evals are needed (path- and label-gated, design decision 14), says "KestrelBench not run" in the summary when they aren't, and fails if they are needed but the key is missing. The weekly full run is manual-only during Phase 3. **Verified end to end on PR #11:**
   - Unlabelled run 37503875435 took the "not run" path, and the job showed green.
@@ -167,7 +172,7 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 - **Note:** the subset's 75% gate sits close to single-run noise. 13/16 has a CI down to 62%, and one more flip would mean 12/16 = 75%. This is why the threshold should still be derived from repeats.
 
 
-**Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset (about 40k billable tokens for 3 repeats).
+**Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset: about 79k billable tokens for 3 repeats with the corrected estimator. The earlier "40k" assumed only 32% of tokens are billable.
 **Done when:** the CI threshold is derived from repeats of the subset and documented.
 
 ## Safety split (Phase 3)
