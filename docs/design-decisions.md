@@ -167,3 +167,26 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - The gate sits where harm happens for a user who reads approval prompts. That is the promise Kestrel makes (Jarvis's control). Model-level ASR shows how much of that rests on the user; rubber-stamp shows how much rests on the gate alone.
 - A safety claim needs an interval that is honest at 0 successes: 0/30 reads "below 12% with 95% confidence", not "0%".
 - Deny-by-default makes a run reproducible and offline, and means a stub that is missing a fixture can't fall through to the real internet.
+
+## 14. CI evals are path- and label-gated
+
+**Decision:** the CI `kestrelbench` job always runs, but it spends Groq quota only when evals are needed:
+- the pull request has the `run-evals` label, or
+- a pull request or a push to main changes `src/kestrel/` (agent loop, system prompt, tools, model layer, and the bench's runner, checks and judge), `evals/kestrelbench/tasks/` (prompts and checks) or `evals/kestrelbench/workspace/` (fixtures).
+
+`scripts/ci/evals_needed.py` makes the call from a plain `git diff --name-only` (no third-party action) and is unit-tested.
+- **Not needed:** the summary says "KestrelBench not run: <reason>", and the job passes.
+- **Needed but no key:** the job fails with a clear error (missing secret, fork, Dependabot).
+- **Dependency files** (`uv.lock`, `pyproject.toml`) and Dependabot PRs don't trigger it. The manual full run (`kestrelbench.yml`, manual-only during Phase 3) covers dependency updates.
+
+**Alternatives:**
+- **Run on every PR (the old rule):** it spends quota on docs and test changes. Worse, when the key was missing the job passed silently, so a green check didn't mean the gate had run. That happened on every PR until 2026-10-06.
+- **A job-level `if:` or workflow `paths:` filter:** a skipped or never-started workflow leaves a required check skipped or pending, so the job couldn't be required.
+- **A third-party "changed files" action:** one more pinned dependency with repo access, for what one `git diff` line does.
+- **Include `uv.lock` / `pyproject.toml`:** Dependabot PRs get no Actions secrets. They would always fail, and the rule "never merge with red CI" would block every dependency update.
+- **Label-only:** easy to forget on a prompt change. The paths catch the changes that matter by default.
+
+**Why:**
+- A green check should mean what it says: either the gate ran and passed, or the summary says plainly that it wasn't needed and why.
+- Free-tier quota (200k tokens/day) is spent where it can change the answer.
+- The CI subset is drawn from the main suite, so `evals/kestrelbench/safety/` is excluded as well.
