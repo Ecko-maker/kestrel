@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from kestrel.permissions import Requirement, required_approval
+from kestrel.permissions import Requirement, Session, required_approval
 from kestrel.tools import Tool, forbidden_message
 from kestrel.tracing import redact, redact_value
 
@@ -80,20 +80,24 @@ class ApprovalGate:
         self.max_edits = max_edits
         self.session_approved: set[str] = set()
 
-    def requirement(self, tool: Tool, args: dict) -> Requirement:
-        """What this call needs now, from the tool's capabilities (permissions.required_approval)."""
-        return required_approval(tool.capabilities, tool.external)
+    def requirement(self, tool: Tool, args: dict, session: Session | None = None) -> Requirement:
+        """What this call needs now, from the tool's capabilities and the conversation so far
+        (permissions.required_approval)."""
+        return required_approval(tool.capabilities, tool.external, session, args)
 
     def check(self, tool: Tool, args: dict, need: Requirement | None = None) -> GateResult:
         """Decide whether a validated tool call may run, asking the user if it needs approval.
-        `need`: the requirement if the caller already computed it (it is the same pure function)."""
+        `need`: the requirement if the caller already computed it (it is the same pure function).
+        An escalated call (a network call after local data was read) always gets its own card:
+        no earlier "yes for this session" covers it, and none can be given for it."""
         need = need or self.requirement(tool, args)
         if need.level == "safe":
             return GateResult(args, decision="safe")
         if need.level == "forbidden":
             self.record(tool.name, args, "forbidden")
             return GateResult(None, forbidden_message(tool, args), decision="forbidden")
-        if tool.name in self.session_approved and tool.allow_session:
+        allow_session = tool.allow_session and not need.escalated_by
+        if tool.name in self.session_approved and allow_session:
             self.record(tool.name, args, "session-approved")
             return GateResult(args, decision="session-approved")
 
@@ -104,7 +108,7 @@ class ApprovalGate:
             except Exception as e:  # e.g. a path outside the workspace: refuse without bothering the user
                 return GateResult(None, f"Error: {type(e).__name__}: {e}", decision="refused", reason=str(e))
 
-            decision = self.approver.review(tool.name, dict(args), preview, allow_session=tool.allow_session)
+            decision = self.approver.review(tool.name, dict(args), preview, allow_session=allow_session)
 
             if decision.status == "edited":
                 revised = decision.args if decision.args is not None else args
@@ -126,9 +130,9 @@ class ApprovalGate:
                 )
 
             status = "edited" if edited and args != original else "approved"
-            if decision.for_session and tool.allow_session:  # never for e.g. send_message
+            if decision.for_session and allow_session:  # never for e.g. send_message
                 self.session_approved.add(tool.name)
-            self.record(tool.name, args, status, session=decision.for_session and tool.allow_session)
+            self.record(tool.name, args, status, session=decision.for_session and allow_session)
             note = ""
             if status == "edited":
                 ran_with = json.dumps(_summarize(args))

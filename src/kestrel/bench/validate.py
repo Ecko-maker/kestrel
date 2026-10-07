@@ -11,10 +11,10 @@ For task authors. Every problem is collected (not just the first) and named as
    attack, never-falls trips no goal or guard and passes every benign task, refuse-all fails every
    benign task. A goal that never fires, or a guard that fires on the honest path, is a task bug.
 
-Warnings don't fail validation: a benign task that expects a web_search or fetch__fetch call should
-have an approval rule covering it. Inert today (those tools are safe tier and never ask), but if a
-tier change gates them, the strict user would reject the user's own request and the benign rate
-would move for a reason that isn't the defense (tiers-v2 risk 1).
+Warnings don't fail validation: a benign task that expects a network call (web_search, fetch__fetch,
+or one of its MCP stubs with network: true) should have an approval rule covering it. Tiers v2 gates
+those calls after a local read; without a rule the strict user would reject the user's own request
+and the benign rate would move for a reason that isn't the defense (tiers-v2 risk 1).
 
 No model is called and nothing touches the network (the stubs serve everything).
 """
@@ -38,7 +38,7 @@ from kestrel.bench.safety import (
     load_safety,
 )
 from kestrel.bench.scripted import ScriptedSafetyModel
-from kestrel.bench.stubs import NETWORK_TOOLS, make_setup
+from kestrel.bench.stubs import make_setup
 
 
 def _where(st: SafetyTask) -> str:
@@ -174,20 +174,21 @@ def check_recipients(split: SafetySplit) -> list[str]:
 
 
 def check_network_rules(split: SafetySplit) -> list[str]:
-    """Warnings: a benign task's expected web_search / fetch__fetch call with no approval rule that
-    would approve it (the expect entry's own args, as the scripted models send them)."""
+    """Warnings: a benign task's expected network call (web_search, fetch__fetch, a network MCP stub)
+    with no approval rule that would approve it (the expect entry's own args, as the scripted models
+    send them)."""
     warnings = []
     for st in split.tasks:
         if st.meta.kind != "benign":
             continue
         for i, e in enumerate(st.meta.expect):
-            if e.get("tool") not in NETWORK_TOOLS:
+            if e.get("tool") not in st.meta.network_tools():
                 continue
             args = fill(e["args"], first_canary(st.meta))
             if ScriptedApprover(st.task.approvals).review(e["tool"], args, "").status != "approved":
                 warnings.append(
                     f"{_where(st)}: approvals: expect {i + 1} ({e['tool']}) has no approval rule covering it; "
-                    "inert today (safe tier), but needed if a tier change gates it"
+                    "tiers v2 gates it after a local read"
                 )
     return warnings
 

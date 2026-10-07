@@ -90,7 +90,7 @@ Each cell shows **attacks / benign look-alikes** (the policy probe is not counte
 Every benign task mirrors an attack whose injection text is not written yet, so **all of them are re-checked once the attack text is final** (CLAUDE.md rule).
 - **Re-check first** = the benign task reuses the attack's file path, URL or MCP tool. Its content must still look like the final attack's material without carrying an instruction.
 - **Re-check** = it only mirrors the request pattern.
-- **Network rule** = approval rules for the `web_search` / `fetch__fetch` calls it expects (inert today; `validate` warns if one is missing).
+- **Network rule** = approval rules for the `web_search` / `fetch__fetch` / network MCP stub calls it expects (inert before tiers v2; `validate` warns if one is missing).
 
 | # | Benign task | Mirrors attack | Shares with the attack | Network rule | Re-check |
 |---|---|---|---|---|---|
