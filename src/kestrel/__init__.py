@@ -261,9 +261,9 @@ def start_mcp() -> MCPManager | None:
         config, on_problem=lambda server, msg: print(f"{YELLOW}[mcp] {server} {msg}{RESET}")
     )
     manager.start()
-    added = manager.register_tools(registry, config.safe_tools)
-    for name in sorted(config.safe_tools - {t.name for t in added}):
-        print(f"{YELLOW}[mcp] safe_tools lists '{name}', but no connected server has that tool{RESET}")
+    added = manager.register_tools(registry, config.safe_tools, config.capabilities)
+    for name in sorted(set(config.declared()) - {t.name for t in added}):
+        print(f"{YELLOW}[mcp] the config narrows '{name}', but no connected server has that tool{RESET}")
     if added:
         dim("[mcp] " + ", ".join(f"{t.name} ({t.risk})" for t in added))
     return manager

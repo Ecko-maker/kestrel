@@ -1,6 +1,19 @@
-# Permission tiers v2: design (proposal)
+# Permission tiers v2: design
 
-Status: **proposal, waiting for the owner's approval.** No code yet. The defenses are measured against a "before" run of the current code, so nothing that changes Kestrel's behavior lands until that run exists.
+Status: **approved 2026-10-06** by the owner. Built on branch `phase3/tiers-v2` only. The "before" safety run comes from `phase3/memory-safety`, which never gets this code; the branch is not merged until both runs exist.
+
+**Owner decisions (2026-10-06):**
+1. **Scope:** capabilities (section 2), plus defenses **a** (with **e1**), **b**, **d** (with the CSP header), **e2** and **e3**. Defense **c** (fetch domain allowlist) is optional and off by default.
+2. **Taint source = `reads_local` only** (open question 8). Web pages and search results don't taint, so search → search and search → fetch chains need no card.
+3. **Taint scope = per conversation** (open question 4). Taint is never cleared within a conversation.
+4. **Content-check hits → an approval card, never a hard block** (open question 5).
+5. **`safe_tools` stays** as an alias for "network_egress only" (open question 7).
+6. **Content-check threshold** starts at 24 normalized characters or 4 consecutive words. It never counts text that appears in the user's own messages (risk 3 measures it offline).
+
+**Implementation notes** (decided while building, within the decisions above):
+- `Tool.risk` stays, derived from the capabilities. Built-in tools keep their tier and model-facing schema, so the main registry snapshot at 5b1d900 still matches.
+- External (MCP) tools default to every capability. For them, `deletes_local` means "might delete" and asks (confirm), as they do today; forbidding every unconfigured MCP tool would change behavior with no taint.
+- External tools always keep `reads_untrusted`: their output is always wrapped as untrusted data. That flag describes output, not a permission, so `safe_tools` = "network_egress only" for everything that needs approval.
 
 ## 1. The problem
 

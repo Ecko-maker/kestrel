@@ -345,11 +345,12 @@ class Agent:
             if tool.server:
                 span.set("kestrel.tool.server", tool.server)
 
-            if tool.risk == "safe":
-                verdict = self.gate.check(tool, args)
+            need = self.gate.requirement(tool, args)  # from capabilities and the conversation so far
+            if need.level == "safe":
+                verdict = self.gate.check(tool, args, need)
             else:
                 approval = self.tracer.start_span("approval", span)
-                verdict = self.gate.check(tool, args)
+                verdict = self.gate.check(tool, args, need)
                 approval.set("kestrel.approval.decision", verdict.decision)
                 approval.set("kestrel.approval.reason", verdict.reason)
                 approval.end()
@@ -360,7 +361,7 @@ class Agent:
                 span.set("gen_ai.tool.call.result", verdict.message)
                 span.end()
                 result_event(i, results[i], False, span, verdict.decision)
-            elif tool.risk == "safe":
+            elif need.level == "safe":
                 safe.append((i, tool, verdict.args, verdict.note, span))
             else:
                 actions.append((i, tool, verdict.args, verdict.note, span))
@@ -369,7 +370,7 @@ class Agent:
         def run_one(item: tuple[int, Tool, dict, str, Span]) -> str:
             i, tool, args, note, span = item
             t0 = time.perf_counter()
-            output = self.tools.execute(tool.name, args, approved=tool.risk == "confirm")
+            output = self.tools.execute(tool.name, args, approved=tool.risk != "safe")
             span.set("kestrel.tool.exec_ms", round((time.perf_counter() - t0) * 1000, 1))
             span.set("kestrel.tool.ran", True)
             span.set("gen_ai.tool.call.result", output)

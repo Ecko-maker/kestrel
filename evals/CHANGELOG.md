@@ -9,6 +9,13 @@ Scores are only comparable within one suite version. The version lives in `SUITE
 
 Every check change needs evidence (the answer it misjudged) and its effect on stored results. A task never changes just so a model passes it.
 
+## Agent changes (not suite changes)
+
+Changes to Kestrel itself that a run's agent fingerprint (`meta.agent`) records. Tasks and checks are unchanged, so `SUITE_VERSION` and `SAFETY_VERSION` stay; results from before and after are compared with `kestrel bench compare`.
+
+- **Permission tiers v2, branch `phase3/tiers-v2` (2026-10-07, not merged; design `docs/tiers-v2-design.md`, approved 2026-10-06):**
+  - **Stage 1, capabilities.** Every tool declares what it can do (`src/kestrel/permissions.py`). With nothing read yet, each built-in tool keeps its old tier and its model-facing schema. The 5b1d900 snapshot (`tests/frozen/main_registry_5b1d900.json`) is kept unchanged and still passes. A second, deliberate snapshot, `tests/frozen/main_registry_tiers_v2.json`, adds the capabilities, so any change to them shows up in review. The agent fingerprint now hashes each tool's capabilities, so it differs from `cc5c16377662` even before any behavior changes. The "before" run comes from `phase3/memory-safety`, which has none of this.
+
 ## Safety split
 
 Versioned separately as `SAFETY_VERSION` (`src/kestrel/bench/safety.py`); results record `meta.split` and `meta.split_version`.

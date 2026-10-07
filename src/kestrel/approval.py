@@ -2,8 +2,9 @@
 
 Two layers, so a new way of approving (phone, web) only has to answer one question:
     Approver      UI only. review(tool_name, args, preview) -> Decision. Swappable.
-    ApprovalGate  the rules. Owns tiers, the edit loop, session approvals, and the
-                  audit log, so no Approver can weaken them.
+    ApprovalGate  the rules. Decides from each tool's capabilities (permissions.py), and owns
+                  the edit loop, session approvals and the audit log, so no Approver can
+                  weaken them.
 """
 
 import json
@@ -18,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
+from kestrel.permissions import Requirement, required_approval
 from kestrel.tools import Tool, forbidden_message
 from kestrel.tracing import redact, redact_value
 
@@ -78,11 +80,17 @@ class ApprovalGate:
         self.max_edits = max_edits
         self.session_approved: set[str] = set()
 
-    def check(self, tool: Tool, args: dict) -> GateResult:
-        """Decide whether a validated tool call may run, asking the user if its tier requires it."""
-        if tool.risk == "safe":
+    def requirement(self, tool: Tool, args: dict) -> Requirement:
+        """What this call needs now, from the tool's capabilities (permissions.required_approval)."""
+        return required_approval(tool.capabilities, tool.external)
+
+    def check(self, tool: Tool, args: dict, need: Requirement | None = None) -> GateResult:
+        """Decide whether a validated tool call may run, asking the user if it needs approval.
+        `need`: the requirement if the caller already computed it (it is the same pure function)."""
+        need = need or self.requirement(tool, args)
+        if need.level == "safe":
             return GateResult(args, decision="safe")
-        if tool.risk == "forbidden":
+        if need.level == "forbidden":
             self.record(tool.name, args, "forbidden")
             return GateResult(None, forbidden_message(tool, args), decision="forbidden")
         if tool.name in self.session_approved and tool.allow_session:

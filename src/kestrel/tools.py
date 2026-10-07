@@ -7,10 +7,13 @@ The registry is also the safety boundary between the model and real code: it che
 arguments before running anything, enforces each tool's risk tier, a time limit and a
 result size cap, and turns every failure into text the model can read and recover from.
 
-Risk tiers are fixed in code with @tool(risk=...):
-    safe       runs immediately (read-only)
+Each tool declares what it can do, fixed in code with @tool(capabilities=...) (see permissions.py):
+reads_local, reads_untrusted, network_egress, writes_local, sends, deletes_local. Its risk tier
+follows from them, and is what the call needs before anything has been read in the conversation:
+    safe       runs immediately
     confirm    runs only after the user approves it (see approval.py)
     forbidden  never runs; the model is told to ask the user to do it by hand
+The approval gate may ask for more later in a conversation (permissions.required_approval).
 """
 
 import ast
@@ -22,12 +25,14 @@ import operator
 import os
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, get_origin, get_type_hints
 from zoneinfo import ZoneInfo
+
+from kestrel.permissions import ALL, RISK_SHORTHAND, base_level, check_capabilities
 
 # Python type -> JSON Schema type
 JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean", list: "array", dict: "object"}
@@ -87,12 +92,12 @@ def _check_against_schema(args: dict, schema: dict) -> str | None:
     return None
 
 
-@dataclass(frozen=True)  # frozen: nothing can change a tool's tier after registration
+@dataclass(frozen=True)  # frozen: nothing can change a tool's capabilities or tier after registration
 class Tool:
     name: str
     func: Callable[..., Any]
     schema: dict
-    risk: Risk = "safe"
+    risk: Risk = "safe"  # derived from capabilities at registration: the tier with nothing read yet
     preview: Callable[[dict], str] | None = None  # shows the user what a risky call will do
     allow_session: bool = True  # may the user approve it for the whole session?
     untrusted_output: bool = False  # result comes from files/web: label it as data
@@ -101,6 +106,7 @@ class Tool:
     server: str | None = None
     annotations: dict | None = None  # what the server *claims*; shown, never trusted
     available: Callable[[], bool] | None = None  # False once its server has died
+    capabilities: frozenset[str] = frozenset()  # what it can do (permissions.CAPABILITIES)
 
     def is_available(self) -> bool:
         return self.available is None or self.available()
@@ -210,22 +216,35 @@ class ToolRegistry:
         self,
         func: Callable[..., Any] | None = None,
         *,
-        risk: Risk = "safe",
+        capabilities: Iterable[str] | None = None,
+        risk: Risk | None = None,
         preview: Callable[[dict], str] | None = None,
         allow_session: bool = True,
         untrusted_output: bool = False,
     ):
-        """Use as @tool or @tool(risk="confirm", preview=...)."""
-        if risk not in RISKS:
-            raise ValueError(f"risk must be one of {RISKS}, got {risk!r}")
+        """Use as @tool, @tool(capabilities={"writes_local"}, preview=...), or with risk= as shorthand
+        (tests, quick tools) for the smallest capability set with that tier."""
+        caps = _capabilities(capabilities, risk)
+        if untrusted_output:
+            caps |= {"reads_untrusted"}
+        tier = base_level(caps)
 
         def wrap(f: Callable[..., Any]) -> Callable[..., Any]:
             schema = build_schema(f)
-            if risk == "confirm":
+            if tier == "confirm":
                 schema["function"]["description"] += " Requires the user's approval; they may edit or reject it."
-            elif risk == "forbidden":
+            elif tier == "forbidden":
                 schema["function"]["description"] += " Disabled: always refused."
-            self.tools[f.__name__] = Tool(f.__name__, f, schema, risk, preview, allow_session, untrusted_output)
+            self.tools[f.__name__] = Tool(
+                f.__name__,
+                f,
+                schema,
+                tier,
+                preview,
+                allow_session,
+                untrusted_output="reads_untrusted" in caps,
+                capabilities=caps,
+            )
             return f
 
         return wrap(func) if func is not None else wrap
@@ -237,18 +256,22 @@ class ToolRegistry:
         description: str,
         input_schema: dict,
         *,
-        risk: Risk,
+        capabilities: Iterable[str] | None = None,
+        risk: Risk | None = None,
         server: str,
         annotations: dict | None = None,
         preview: Callable[[dict], str] | None = None,
         available: Callable[[], bool] | None = None,
     ) -> Tool:
-        """Register a tool from an MCP server. Its output is always treated as untrusted."""
-        if risk not in RISKS:
-            raise ValueError(f"risk must be one of {RISKS}, got {risk!r}")
+        """Register a tool from an MCP server. It can do anything unless `capabilities` says less
+        (from kestrel.mcp.json, never from the server's annotations). Its output is always treated
+        as untrusted, so it always has reads_untrusted."""
         if name in self.tools:
             raise ValueError(f"a tool named '{name}' is already registered")
-        if risk == "confirm":
+        declared = ALL if capabilities is None and risk is None else _capabilities(capabilities, risk)
+        caps = declared | {"reads_untrusted"}
+        tier = base_level(caps, external=True)
+        if tier == "confirm":
             description += " Requires the user's approval; they may edit or reject it."
         parameters = input_schema if input_schema.get("type") == "object" else {"type": "object", "properties": {}}
         schema = {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
@@ -256,7 +279,7 @@ class ToolRegistry:
             name,
             func,
             schema,
-            risk,
+            tier,
             preview,
             allow_session=True,
             untrusted_output=True,
@@ -264,6 +287,7 @@ class ToolRegistry:
             server=server,
             annotations=annotations,
             available=available,
+            capabilities=caps,
         )
         self.tools[name] = tool
         return tool
@@ -320,6 +344,16 @@ class ToolRegistry:
         return text
 
 
+def _capabilities(capabilities: Iterable[str] | None, risk: Risk | None) -> frozenset[str]:
+    if capabilities is not None and risk is not None:
+        raise ValueError("give capabilities or risk, not both")
+    if risk is not None:
+        if risk not in RISKS:
+            raise ValueError(f"risk must be one of {RISKS}, got {risk!r}")
+        return RISK_SHORTHAND[risk]
+    return check_capabilities(capabilities or ())
+
+
 registry = ToolRegistry()
 tool = registry.register  # the @tool decorator
 
@@ -327,7 +361,7 @@ tool = registry.register  # the @tool decorator
 # --- Safe, read-only tools ------------------------------------------------------
 
 
-@tool
+@tool(capabilities=())
 def get_current_time(timezone: str) -> str:
     """Get the current date and time in a timezone.
 
@@ -371,7 +405,7 @@ def _eval_node(node: ast.AST) -> float:
     raise ValueError(f"unsupported expression: {ast.dump(node)[:60]}")
 
 
-@tool
+@tool(capabilities=())
 def calculator(expression: str) -> str:
     """Evaluate a math expression exactly. Supports + - * / // % **, parentheses,
     sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent;
@@ -410,7 +444,7 @@ def _rel(target: Path) -> str:
     return "workspace/" + target.relative_to(WORKSPACE.resolve()).as_posix()
 
 
-@tool
+@tool(capabilities={"reads_local"})
 def list_files(path: str = ".") -> list[str]:
     """List the files and folders in the user's workspace folder.
 
@@ -423,7 +457,7 @@ def list_files(path: str = ".") -> list[str]:
     return sorted(f"{e.name}/" if e.is_dir() else e.name for e in folder.iterdir())
 
 
-@tool(untrusted_output=True)
+@tool(capabilities={"reads_local", "reads_untrusted"})
 def read_file(path: str) -> str:
     """Read a text file from the user's workspace folder. Long files are truncated.
 
@@ -433,7 +467,7 @@ def read_file(path: str) -> str:
     return _safe_path(path).read_text(encoding="utf-8", errors="replace")
 
 
-@tool(untrusted_output=True)
+@tool(capabilities={"network_egress", "reads_untrusted"})
 def web_search(query: str, max_results: int = 5) -> list[dict]:
     """Search the web (DuckDuckGo) and return titles, URLs and snippets.
 
@@ -484,7 +518,10 @@ def _appended(old: str, content: str) -> str:
     return old + (content if content.endswith("\n") else content + "\n")
 
 
-@tool(risk="confirm", preview=lambda a: _diff_preview(_writable(a["path"], a["content"]), a["content"]))
+@tool(
+    capabilities={"writes_local"},
+    preview=lambda a: _diff_preview(_writable(a["path"], a["content"]), a["content"]),
+)
 def write_file(path: str, content: str) -> str:
     """Create a text file in the workspace, or overwrite it completely.
 
@@ -504,7 +541,7 @@ def _append_preview(args: dict) -> str:
     return _diff_preview(target, _appended(_read_or_empty(target), args["content"]))
 
 
-@tool(risk="confirm", preview=_append_preview)
+@tool(capabilities={"writes_local"}, preview=_append_preview)
 def append_to_file(path: str, content: str) -> str:
     """Add text to the end of a file in the workspace (creates the file if missing).
 
@@ -536,7 +573,10 @@ def _note_text(title: str, body: str) -> str:
     return f"# {title.strip()}\n\n{body.strip()}\n"
 
 
-@tool(risk="confirm", preview=lambda a: _diff_preview(_note_path(a["title"]), _note_text(a["title"], a["body"])))
+@tool(
+    capabilities={"writes_local"},
+    preview=lambda a: _diff_preview(_note_path(a["title"]), _note_text(a["title"], a["body"])),
+)
 def create_note(title: str, body: str) -> str:
     """Save a new markdown note in the workspace notes/ folder.
 
@@ -569,7 +609,7 @@ def _message_preview(args: dict) -> str:
     )
 
 
-@tool(risk="confirm", preview=_message_preview, allow_session=False)
+@tool(capabilities={"sends"}, preview=_message_preview, allow_session=False)
 def send_message(to: str, subject: str, body: str) -> str:
     """Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.)
 
@@ -588,7 +628,7 @@ def send_message(to: str, subject: str, body: str) -> str:
     return f"Message to {to.strip()} sent (simulated: saved to {_rel(target)})"
 
 
-@tool(risk="forbidden")
+@tool(capabilities={"deletes_local"})
 def delete_file(path: str) -> str:
     """Delete a file from the workspace.
 

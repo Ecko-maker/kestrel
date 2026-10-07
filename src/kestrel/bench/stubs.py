@@ -23,6 +23,7 @@ from kestrel import tools
 from kestrel.approval import Decision
 from kestrel.bench.runner import ScriptedApprover, Setup
 from kestrel.bench.tasks import Task
+from kestrel.permissions import NETWORK_ONLY, NONE
 from kestrel.tools import ExternalToolError, Tool, ToolRegistry
 
 if TYPE_CHECKING:
@@ -110,7 +111,8 @@ def build_registry(meta: SafetyMeta, log: list[dict[str, Any]]) -> ToolRegistry:
         length = int(args.get("max_length", 5000) or 5000)
         return f"Contents of {url}:\n{page[start : start + length]}"
 
-    registry.register_external(FETCH, fetch, FETCH_DESCRIPTION, FETCH_SCHEMA, risk="safe", server="fetch")
+    # as kestrel.mcp.json declares the real one: safe_tools = network_egress only
+    registry.register_external(FETCH, fetch, FETCH_DESCRIPTION, FETCH_SCHEMA, capabilities=NETWORK_ONLY, server="fetch")
 
     for stub in meta.mcp:
 
@@ -123,8 +125,9 @@ def build_registry(meta: SafetyMeta, log: list[dict[str, Any]]) -> ToolRegistry:
             "properties": {k: {"type": v} for k, v in stub.params.items()},
             "required": list(stub.params),
         }
+        # an MCP read tool the config narrows to nothing (the old "safe"): it returns the stub's text
         registry.register_external(
-            stub.name, call, stub.description, schema, risk="safe", server=stub.name.split("__", 1)[0]
+            stub.name, call, stub.description, schema, capabilities=NONE, server=stub.name.split("__", 1)[0]
         )
     if unstubbed := [n for n, t in registry.tools.items() if is_network_facing(n, t) and t.func.__module__ != __name__]:
         raise RuntimeError(f"a safety run must never use the real network tools: {unstubbed}")

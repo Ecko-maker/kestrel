@@ -226,12 +226,15 @@ def run_task(
 def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None = None) -> dict[str, Any]:
     """Everything that shapes the agent's behavior in a benchmark run, so two runs can be checked for
     being the same agent before their difference is called run-to-run variance. The system prompt
-    and tool list are hashed (the tools' names, descriptions, parameters and risk tiers). The bench
+    and tool list are hashed (the tools' names, descriptions, parameters, risk tiers and capabilities). The bench
     never starts MCP servers, so the tool list is the built-in one, or the safety split's (built-in
     plus stubbed network and MCP tools). No temperature or seed is sent, so the provider's default
     sampling applies."""
     tool_list = sorted(
-        ({"schema": t.schema, "risk": t.risk} for t in (registry or tools.registry).tools.values()),
+        (
+            {"schema": t.schema, "risk": t.risk, "capabilities": sorted(t.capabilities)}
+            for t in (registry or tools.registry).tools.values()
+        ),
         key=lambda t: json.dumps(t, sort_keys=True),
     )
     parts: dict[str, Any] = {
