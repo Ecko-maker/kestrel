@@ -18,6 +18,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal
 
+from kestrel import egress
+
 Capability = Literal["reads_local", "reads_untrusted", "network_egress", "writes_local", "sends", "deletes_local"]
 CAPABILITIES: tuple[Capability, ...] = (
     "reads_local",
@@ -67,9 +69,11 @@ class Requirement:
     """What a call needs: run at once (safe), the user's approval (confirm), or never (forbidden)."""
 
     level: Level
-    # Why a network call needs a card it wouldn't need with nothing read: "taint:<tool>". Safe to log.
+    # Why a network call needs a card it wouldn't need with nothing read: "taint:<tool>" and
+    # "content:<hash>:<length>". Safe to log: hashes and lengths, never the matched text.
     escalated_by: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)  # the same, in words for the approval card
+    matches: list[egress.Match] = field(default_factory=list)  # the local text found (card only)
 
 
 def _norm(text: str) -> str:
@@ -83,6 +87,8 @@ class Session:
 
     user_texts: list[str] = field(default_factory=list)  # the user's own messages
     taint_sources: list[str] = field(default_factory=list)  # reads_local tools that ran, in order
+    local_texts: list[tuple[str, str]] = field(default_factory=list)  # (tool, result) of those reads
+    egress_texts: list[str] = field(default_factory=list)  # text arguments of network calls that ran
 
     def note_user(self, text: str) -> None:
         self.user_texts.append(text)
@@ -91,6 +97,15 @@ class Session:
         """Record a tool call that ran (successfully or not)."""
         if "reads_local" in caps:  # taint source = reads_local only (owner decision 2)
             self.taint_sources.append(name)
+            self.local_texts.append((name, egress.strip_wrapper(output)))
+        if "network_egress" in caps:
+            self.egress_texts.append(egress.call_text(args))
+
+    def content_matches(self, args: dict) -> list[egress.Match]:
+        """b: local text read this conversation inside this call (see egress.py)."""
+        if not self.local_texts:
+            return []
+        return egress.find(egress.call_text(args), self.local_texts, self.user_texts, self.egress_texts)
 
     @property
     def tainted(self) -> bool:
@@ -110,16 +125,24 @@ def required_approval(
     """The one place approval is decided: capabilities plus the conversation so far.
 
     a + e1: once a reads_local tool has run in this conversation, a network_egress call needs the
-    user's approval, unless the user typed its URL or query themselves. Forbidden stays forbidden.
-    A tool that needs approval anyway (an unconfigured MCP tool) is marked escalated too, so a
-    "yes for this session" given before can't skip the card."""
+    user's approval, unless the user typed its URL or query themselves.
+    b: a network_egress call carrying local text read this conversation needs approval, and the
+    card shows the text (content hits are cards, never blocks: owner decision 4).
+    Forbidden stays forbidden. A tool that needs approval anyway (an unconfigured MCP tool) is marked
+    escalated too, so a "yes for this session" given before can't skip the card."""
     need = Requirement(base_level(caps, external))
     if need.level == "forbidden" or "network_egress" not in caps or session is None or not session.tainted:
         return need
-    if session.user_named(args or {}):
-        return need
-    source = session.taint_sources[0]
-    need.level = "confirm"
-    need.escalated_by.append(f"taint:{source}")
-    need.reasons.append(f"{source} read your local data earlier in this conversation, and this call sends data out")
+    args = args or {}
+    if not session.user_named(args):
+        source = session.taint_sources[0]
+        need.escalated_by.append(f"taint:{source}")
+        need.reasons.append(f"{source} read your local data earlier in this conversation, and this call sends data out")
+    for m in session.content_matches(args):
+        need.matches.append(m)
+        need.escalated_by.append(m.tag())
+        how = "" if m.how == "as written" else f" ({m.how})"
+        need.reasons.append(f"this call contains {m.chars} characters of text from {m.source}{how}")
+    if need.escalated_by:
+        need.level = "confirm"
     return need
