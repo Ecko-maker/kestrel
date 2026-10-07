@@ -20,7 +20,7 @@ class FakeApprover:
         self.decisions = list(decisions)
         self.requests: list[dict] = []
 
-    def review(self, tool_name, args, preview, *, allow_session=False):
+    def review(self, tool_name, args, preview, *, allow_session=False, notice=None):
         self.requests.append({"tool": tool_name, "args": args, "preview": preview, "allow_session": allow_session})
         return self.decisions.pop(0)
 

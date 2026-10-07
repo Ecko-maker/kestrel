@@ -345,16 +345,21 @@ class Agent:
                 external=tool.external,
             )
             span.set("kestrel.tool.risk", tool.risk)
+            span.set("kestrel.tool.capabilities", sorted(tool.capabilities))
             span.set("kestrel.tool.external", tool.external)
             if tool.server:
                 span.set("kestrel.tool.server", tool.server)
 
             need = self.gate.requirement(tool, args, self.session)  # capabilities + the conversation so far
             if need.level == "safe":
-                verdict = self.gate.check(tool, args, need)
+                verdict = self.gate.check(tool, args, need, self.session)
             else:
                 approval = self.tracer.start_span("approval", span)
-                verdict = self.gate.check(tool, args, need)
+                if need.escalated_by:  # hashes and lengths only, never the matched text
+                    approval.set("kestrel.approval.escalated_by", list(need.escalated_by))
+                if need.matches:
+                    approval.set("kestrel.egress.matched_chars", sum(m.chars for m in need.matches))
+                verdict = self.gate.check(tool, args, need, self.session)
                 approval.set("kestrel.approval.decision", verdict.decision)
                 approval.set("kestrel.approval.reason", verdict.reason)
                 approval.end()

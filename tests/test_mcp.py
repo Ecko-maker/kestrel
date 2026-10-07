@@ -83,7 +83,7 @@ class RecordingApprover:
     def __init__(self, *decisions):
         self.decisions, self.previews = list(decisions), []
 
-    def review(self, tool_name, args, preview, *, allow_session=False):
+    def review(self, tool_name, args, preview, *, allow_session=False, notice=None):
         self.previews.append(preview)
         return self.decisions.pop(0)
 

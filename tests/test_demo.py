@@ -19,7 +19,7 @@ class Answers:
         self.decisions = list(decisions)
         self.asked = []
 
-    def review(self, tool_name, args, preview, *, allow_session=False):
+    def review(self, tool_name, args, preview, *, allow_session=False, notice=None):
         self.asked.append((tool_name, args))
         return self.decisions.pop(0)
 

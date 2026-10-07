@@ -5,6 +5,15 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 export type ApprovalStatus = "pending" | "approved" | "edited" | "rejected";
 
+// Why a card appeared (tiers v2): reasons, the call's arguments decoded, local text found in them,
+// and recipients the user never typed. The audit log and traces keep only hashes and lengths.
+export interface ApprovalNotice {
+  reasons: string[];
+  decoded: string[];
+  highlights: { before: string; match: string; after: string; source: string; chars: number }[];
+  recipient_warnings: string[];
+}
+
 export interface Approval {
   id: string;
   tool: string;
@@ -17,6 +26,7 @@ export interface Approval {
   receivedAt: number;
   status: ApprovalStatus;
   reason?: string;
+  notice?: ApprovalNotice | null;
 }
 
 export interface ToolRun {
@@ -176,6 +186,7 @@ export function reduce(turns: Turn[], action: Action): Turn[] {
           timeoutS: (e.timeout_s as number) ?? 300,
           receivedAt: now(),
           status: "pending",
+          notice: (e.notice as ApprovalNotice | null) ?? null,
         };
         // Attach it to the newest call of that tool that hasn't finished yet.
         const steps = [...turn.steps];

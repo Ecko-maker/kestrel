@@ -9,16 +9,18 @@ Two layers, so a new way of approving (phone, web) only has to answer one questi
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
+from kestrel import egress
 from kestrel.permissions import Requirement, Session, required_approval
 from kestrel.tools import Tool, forbidden_message
 from kestrel.tracing import redact, redact_value
@@ -35,14 +37,95 @@ class Decision:
     for_session: bool = False  # for "approved": don't ask again for this tool this session
 
 
+HIGHLIGHT_CONTEXT = 40  # characters shown on each side of a matched span
+MAX_DECODED_CHARS = 300
+
+
+@dataclass
+class Highlight:
+    """Where local text sits in a network call's arguments (as sent, or decoded)."""
+
+    text: str  # the argument text (or one of its decoded forms) the span was found in
+    start: int
+    end: int
+    source: str  # the tool whose result held it
+    chars: int
+
+    def parts(self) -> tuple[str, str, str]:
+        """(before, match, after), with the context cut to HIGHLIGHT_CONTEXT characters."""
+        before = self.text[max(0, self.start - HIGHLIGHT_CONTEXT) : self.start]
+        after = self.text[self.end : self.end + HIGHLIGHT_CONTEXT]
+        lead = "…" if self.start > HIGHLIGHT_CONTEXT else ""
+        tail = "…" if self.end + HIGHLIGHT_CONTEXT < len(self.text) else ""
+        return lead + before, self.text[self.start : self.end], after + tail
+
+
+@dataclass
+class Notice:
+    """What a card shows besides the preview (tiers v2): why it appeared, the call's arguments
+    decoded (e3), where local text sits in them, and recipients the user never typed (e2).
+    For the person deciding only: the audit log and traces get hashes and lengths, never this."""
+
+    reasons: list[str] = field(default_factory=list)
+    decoded: list[str] = field(default_factory=list)
+    highlights: list[Highlight] = field(default_factory=list)
+    recipient_warnings: list[str] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.reasons or self.decoded or self.highlights or self.recipient_warnings)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "reasons": self.reasons,
+            "decoded": self.decoded,
+            "highlights": [
+                dict(zip(("before", "match", "after"), h.parts(), strict=True), source=h.source, chars=h.chars)
+                for h in self.highlights
+            ],
+            "recipient_warnings": self.recipient_warnings,
+        }
+
+
+def _span_pattern(span: str) -> re.Pattern[str]:
+    """A normalized span (letters and digits) as it may appear in the original text: any case, with
+    separators between its characters."""
+    return re.compile(r"[\W_]*".join(re.escape(c) for c in span.replace(" ", "")), re.IGNORECASE)
+
+
+def _locate(span: str, texts: list[str]) -> tuple[str, int, int] | None:
+    pattern = _span_pattern(span)
+    for text in texts:
+        if m := pattern.search(text):
+            return text, m.start(), m.end()
+    return None
+
+
+def build_notice(tool: Tool, args: dict, need: Requirement, session: Session | None = None) -> Notice:
+    notice = Notice(reasons=list(need.reasons))
+    if "network_egress" in tool.capabilities:
+        sent = egress.call_text(args)
+        notice.decoded = [d[:MAX_DECODED_CHARS] for d in egress.decoded_forms(sent)]
+        for m in need.matches:
+            if found := _locate(m.text, [sent, *egress.decoded_forms(sent)]):
+                notice.highlights.append(Highlight(*found, source=m.source, chars=m.chars))
+    if "sends" in tool.capabilities and session is not None:
+        said = " ".join(session.user_texts).casefold()
+        for address in re.split(r"[,;\s]+", str(args.get("to", ""))):
+            if address and address.casefold() not in said:
+                notice.recipient_warnings.append(f"You never typed this address: {address}")
+    return notice
+
+
 class Approver(Protocol):
-    def review(self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False) -> Decision: ...
+    def review(
+        self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False, notice: Notice | None = None
+    ) -> Decision: ...
 
 
 class DenyAllApprover:
     """The default when no one is there to ask: safe by default."""
 
-    def review(self, tool_name, args, preview, *, allow_session=False) -> Decision:
+    def review(self, tool_name, args, preview, *, allow_session=False, notice=None) -> Decision:
         return Decision("rejected", reason="no approver is connected, so risky actions are disabled")
 
 
@@ -85,18 +168,23 @@ class ApprovalGate:
         (permissions.required_approval)."""
         return required_approval(tool.capabilities, tool.external, session, args)
 
-    def check(self, tool: Tool, args: dict, need: Requirement | None = None) -> GateResult:
+    def check(
+        self, tool: Tool, args: dict, need: Requirement | None = None, session: Session | None = None
+    ) -> GateResult:
         """Decide whether a validated tool call may run, asking the user if it needs approval.
         `need`: the requirement if the caller already computed it (it is the same pure function).
+        `session`: the conversation, for the card's notice (why it appeared, recipients never typed).
         An escalated call (a network call after local data was read) always gets its own card:
         no earlier "yes for this session" covers it, and none can be given for it."""
-        need = need or self.requirement(tool, args)
+        need = need or self.requirement(tool, args, session)
         if need.level == "safe":
             return GateResult(args, decision="safe")
         if need.level == "forbidden":
             self.record(tool.name, args, "forbidden")
             return GateResult(None, forbidden_message(tool, args), decision="forbidden")
-        allow_session = tool.allow_session and not need.escalated_by
+        why = need.escalated_by  # recorded with every decision on this call: hashes and lengths only
+        spans = [m.text for m in need.matches]  # masked in the logged arguments
+        allow_session = tool.allow_session and not why
         if tool.name in self.session_approved and allow_session:
             self.record(tool.name, args, "session-approved")
             return GateResult(args, decision="session-approved")
@@ -108,12 +196,18 @@ class ApprovalGate:
             except Exception as e:  # e.g. a path outside the workspace: refuse without bothering the user
                 return GateResult(None, f"Error: {type(e).__name__}: {e}", decision="refused", reason=str(e))
 
-            decision = self.approver.review(tool.name, dict(args), preview, allow_session=allow_session)
+            shown = need if args == original else self.requirement(tool, args, session)  # an edit: show it fresh
+            notice = build_notice(tool, args, shown, session)
+            decision = self.approver.review(
+                tool.name, dict(args), preview, allow_session=allow_session, notice=notice or None
+            )
 
             if decision.status == "edited":
                 revised = decision.args if decision.args is not None else args
                 if problem := tool.check_args(revised):
-                    self.record(tool.name, revised, "rejected", f"invalid edit: {problem}")
+                    self.record(
+                        tool.name, revised, "rejected", f"invalid edit: {problem}", escalated_by=why, hide=spans
+                    )
                     return GateResult(
                         None,
                         rejection_message(tool.name, f"their edit was invalid ({problem})"),
@@ -124,7 +218,7 @@ class ApprovalGate:
                 continue  # show the new preview and ask again
 
             if decision.status == "rejected":
-                self.record(tool.name, args, "rejected", decision.reason)
+                self.record(tool.name, args, "rejected", decision.reason, escalated_by=why, hide=spans)
                 return GateResult(
                     None, rejection_message(tool.name, decision.reason), decision="rejected", reason=decision.reason
                 )
@@ -132,14 +226,16 @@ class ApprovalGate:
             status = "edited" if edited and args != original else "approved"
             if decision.for_session and allow_session:  # never for e.g. send_message
                 self.session_approved.add(tool.name)
-            self.record(tool.name, args, status, session=decision.for_session and allow_session)
+            self.record(
+                tool.name, args, status, session=decision.for_session and allow_session, escalated_by=why, hide=spans
+            )
             note = ""
             if status == "edited":
                 ran_with = json.dumps(_summarize(args))
                 note = f"Note: the user edited this call before approving it. It ran with: {ran_with}\n"
             return GateResult(args, note=note, decision=status)
 
-        self.record(tool.name, args, "rejected", "too many edits")
+        self.record(tool.name, args, "rejected", "too many edits", escalated_by=why, hide=spans)
         return GateResult(
             None,
             rejection_message(tool.name, "too many edits without a decision"),
@@ -147,7 +243,21 @@ class ApprovalGate:
             reason="too many edits",
         )
 
-    def record(self, tool_name: str, args: dict, decision: str, reason: str = "", session: bool = False) -> None:
+    def record(
+        self,
+        tool_name: str,
+        args: dict,
+        decision: str,
+        reason: str = "",
+        session: bool = False,
+        escalated_by: list[str] | None = None,
+        hide: list[str] | None = None,
+    ) -> None:
+        """One line in the audit log. `hide`: spans of local text the content check found in the
+        arguments; they are logged as their length only, so the log never becomes a copy of them."""
+        for span in hide or ():
+            pattern, mask = _span_pattern(span), f"[local text, {len(span.replace(' ', ''))} characters]"
+            args = {k: pattern.sub(mask, v) if isinstance(v, str) else v for k, v in args.items()}
         entry: dict[str, object] = {
             "time": datetime.now(UTC).isoformat(timespec="seconds"),
             "tool": tool_name,
@@ -157,6 +267,8 @@ class ApprovalGate:
         }
         if session:
             entry["session"] = True
+        if escalated_by:  # why a card appeared: "taint:<tool>", "content:<hash>:<length>"; never the text
+            entry["escalated_by"] = list(escalated_by)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -164,13 +276,14 @@ class ApprovalGate:
 
 # --- Terminal UI --------------------------------------------------------------
 
-RED, GREEN, CYAN, YELLOW, BOLD, DIM, RESET = (
+RED, GREEN, CYAN, YELLOW, BOLD, DIM, REVERSE, RESET = (
     "\033[31m",
     "\033[32m",
     "\033[36m",
     "\033[33m",
     "\033[1m",
     "\033[2m",
+    "\033[7m",
     "\033[0m",
 )
 
@@ -211,8 +324,10 @@ class TerminalApprover:
         except EOFError:
             return None  # no one to answer: treated as a rejection
 
-    def review(self, tool_name, args, preview, *, allow_session=False) -> Decision:
+    def review(self, tool_name, args, preview, *, allow_session=False, notice=None) -> Decision:
         self.print(f"\n{YELLOW}{BOLD}== Approval needed: {tool_name} =={RESET}")
+        if notice:
+            self.show_notice(notice)
         self.print(colorize(preview))
         options = "[a]pprove  [e]dit  [r]eject" + ("  [s]ession-approve" if allow_session else "")
         while True:
@@ -235,6 +350,18 @@ class TerminalApprover:
                     return Decision("edited", args=revised)
                 continue
             self.print("Please type a, e, r" + (", or s" if allow_session else "") + ".")
+
+    def show_notice(self, notice: Notice) -> None:
+        for reason in notice.reasons:
+            self.print(f"{YELLOW}Why: {reason}{RESET}")
+        for h in notice.highlights:
+            before, match, after = h.parts()
+            label = f"{YELLOW}Local text ({h.chars} characters from {h.source}):{RESET}"
+            self.print(f"{label} {before}{REVERSE}{match}{RESET}{after}")
+        for d in notice.decoded:
+            self.print(f"{CYAN}Decoded:{RESET} {d}")
+        for warning in notice.recipient_warnings:
+            self.print(f"{RED}{BOLD}{warning}{RESET}")
 
     def _edit(self, args: dict) -> dict | None:
         fields = [k for k, v in args.items() if isinstance(v, str)]

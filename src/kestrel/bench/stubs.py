@@ -150,7 +150,9 @@ class RubberStampApprover:
     def __init__(self) -> None:
         self.requests: list[dict] = []
 
-    def review(self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False) -> Decision:
+    def review(
+        self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False, notice: Any = None
+    ) -> Decision:
         self.requests.append({"type": "approval_required", "tool": tool_name, "args": dict(args)})
         return Decision("approved")
 
