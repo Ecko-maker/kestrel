@@ -53,6 +53,18 @@ Gemini's free tier (20 requests/day per model) can't run the suite, so it runs o
 
 Groq's daily token budget behaves like a rolling ~24-hour window: tokens free up about a day after they were spent, while the request count resets at 00:00 UTC. A run stops itself after 3 rate-limit errors in a row. The remaining tasks are marked skipped, never failed, and `--resume` finishes them.
 
+**Long runs: `--wait-for-quota`.** Instead of stopping at the daily limit, the run waits for it to free and carries on in the same process:
+
+```powershell
+uv run kestrel bench run --subset ci --repeat 3 --wait-for-quota
+```
+
+- **What counts as a daily limit:** a 429 whose message names a per-day limit (Groq: "tokens per day (TPD)" or "requests per day (RPD)"). The LLM layer labels it `daily limit (429)` (`src/kestrel/llm.py`). Per-minute limits (TPM, RPM) keep today's behaviour: the LLM layer sits them out, and if it gives up, the run errors and counts toward `--stop-after-errors`.
+- **What happens:** the errored attempt is dropped, not recorded, and not counted toward the 3-errors-in-a-row stop. The run sleeps, then runs the same (task, repeat) again. A finished run is recorded once and never re-graded. The dropped attempt's tokens still count toward `--token-budget`, since they were spent.
+- **How long:** the server's `Retry-After`, or Groq's "Please try again in 1h2m3s", plus 30 s; with neither, every 15 minutes. After 26 hours of waiting in total, the error is recorded as before.
+- **Status:** one line per wait, e.g. `[quota] daily limit at arith-percent #2: 17 done, 31 remaining; waiting 20 min, next attempt 2026-10-07 09:20 EDT`.
+- **Safe to interrupt:** before each wait the results file is written with the finished runs, and the rest marked skipped ("waiting for the daily limit"). If the process dies while it sleeps, `--resume <file>` continues from there. The results lock (`bench/lock.py`) still keeps a second process off the same file.
+
 **One process per results file.** `run` and `rejudge` lock every results file they read or write (`<file>.lock`: PID, host, command, start time). A second process on the same file refuses to start. If a crashed run leaves a lock behind, `uv run kestrel bench unlock <file>` removes it, but only after checking that its PID is gone. Every results file also records the agent's fingerprint: system prompt and tool-list hashes, model, limits and sampling. `compare` uses it to refuse calling a difference "run-to-run variance" when the agent changed. `scripts/check_results.py` checks a file's integrity, and `scripts/audit_rate_limits.py` lists tasks touched by rate limits, timeouts or step limits.
 
 ## Suite versions

@@ -2,6 +2,7 @@
 
 import argparse
 import fnmatch
+import functools
 import json
 import os
 import subprocess
@@ -18,6 +19,7 @@ from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
 from kestrel.bench.preview import preview
+from kestrel.bench.quota import QuotaWait
 from kestrel.bench.report import markdown, pct, summarize, write_results
 from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.safety import (
@@ -55,6 +57,7 @@ BILLABLE_SHARE = 0.75
 PINNED_REFERENCE = RESULTS_DIR.parent / "baselines" / "run2-v1.1-judge-v2-final.json"
 GROQ_FREE_DAILY = {"tokens": 200_000, "requests": 1_000}  # gpt-oss-120b free tier, cached tokens excluded
 DONE = ("pass", "fail", "excluded")  # results a resumed run keeps
+WAITING = "not run yet: waiting for the daily limit (checkpoint; --resume continues)"
 SPLITS = ("main", "safety")
 REUSABLE = ("pass", "fail")
 
@@ -122,6 +125,12 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         type=int,
         default=3,
         help="skip the rest after this many errors in a row, e.g. a daily rate limit (default 3, 0 = never)",
+    )
+    run.add_argument(
+        "--wait-for-quota",
+        action="store_true",
+        help="when the provider's daily limit is hit, wait until it frees (Retry-After, else every 15 min) and "
+        "go on from the same task and repeat, instead of erroring; per-minute limits behave as before",
     )
     run.add_argument(
         "--resume", type=Path, help="continue an earlier results file: keep its pass/fail/excluded runs, run the rest"
@@ -463,7 +472,47 @@ def _run(args: argparse.Namespace) -> int:
 
     split = _safety(args) if safety else None
     policy = AnswerPolicy.from_env()  # what the console loads from an answer by itself
+    meta = {
+        "suite_version": SUITE_VERSION,
+        "split": args.split,
+        "split_version": SAFETY_VERSION if safety else SUITE_VERSION,
+        # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
+        "agent": agent_fingerprint(args.provider, model, registry),  # the model actually built
+        "provider": args.provider,
+        "model": model,
+        "user": args.user if safety else None,
+        "kinds": args.kinds if safety else None,
+        "answer_policy": policy.as_dict() if safety else None,
+        "users": users if safety else None,
+        "judge": judge.name if judge else None,
+        "judge_version": JUDGE_VERSION if judge else None,
+        "judge_independent": None if judge is None else judge.name != f"{args.provider}/{model}",
+        "subset": args.subset,
+        "category": args.category,
+        "tasks_filter": args.tasks,
+        "sample": args.sample,
+        "seed": args.seed if args.sample else None,
+        "repeat": args.repeat,
+        "reused_from": args.reuse.name if args.reuse else None,
+        "shard": args.shard,
+        "git": _git_sha(),
+    }
     fresh: list[TaskResult] = []
+    out = args.out
+
+    def checkpoint(user: str | None, partial: list[TaskResult]) -> None:
+        """Write what is finished so far, the rest as skipped, so --resume can continue this file."""
+        for r in partial:
+            r.user = user
+        have = {**previous, **{(r.id, r.repeat, r.user): r for r in fresh + partial}}
+        rows = [
+            have.get((t.id, k, u))
+            or TaskResult(id=t.id, category=t.category, status="skipped", score=0.0, error=WAITING, repeat=k, user=u)
+            for t, k, u in all_jobs
+        ]
+        sections = {"safety": score_dict(score([r.to_dict() for r in rows]))} if safety else None
+        write_results(out, rows, meta, extra=sections)
+
     tracer = Tracer(BENCH_DB)
     for user in users:  # one pass per scripted user (main split: one pass)
         jobs = [(t, k) for t, k, u in todo if u == user]
@@ -492,6 +541,13 @@ def _run(args: argparse.Namespace) -> int:
             token_budget=None if args.token_budget is None else max(0, args.token_budget - spent),
             repeats=[k for _, k in jobs],
             stop_after_errors=args.stop_after_errors or None,
+            quota=QuotaWait(
+                total=len(all_jobs),
+                done_before=len(previous) + len(fresh),
+                checkpoint=functools.partial(checkpoint, user),
+            )
+            if args.wait_for_quota
+            else None,
             **extra,
         )
         for r in done:
@@ -499,32 +555,6 @@ def _run(args: argparse.Namespace) -> int:
         fresh += done
     by_key = {**previous, **{(r.id, r.repeat, r.user): r for r in fresh}}
     results = [by_key[(t.id, k, u)] for t, k, u in all_jobs]
-    out = args.out
-    meta = {
-        "suite_version": SUITE_VERSION,
-        "split": args.split,
-        "split_version": SAFETY_VERSION if safety else SUITE_VERSION,
-        # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
-        "agent": agent_fingerprint(args.provider, model, registry),  # the model actually built
-        "provider": args.provider,
-        "model": model,
-        "user": args.user if safety else None,
-        "kinds": args.kinds if safety else None,
-        "answer_policy": policy.as_dict() if safety else None,
-        "users": users if safety else None,
-        "judge": judge.name if judge else None,
-        "judge_version": JUDGE_VERSION if judge else None,
-        "judge_independent": None if judge is None else judge.name != f"{args.provider}/{model}",
-        "subset": args.subset,
-        "category": args.category,
-        "tasks_filter": args.tasks,
-        "sample": args.sample,
-        "seed": args.seed if args.sample else None,
-        "repeat": args.repeat,
-        "reused_from": args.reuse.name if args.reuse else None,
-        "shard": args.shard,
-        "git": _git_sha(),
-    }
     if safety:
         scored = score([r.to_dict() for r in results])
         data = write_results(out, results, meta, extra={"safety": score_dict(scored)})

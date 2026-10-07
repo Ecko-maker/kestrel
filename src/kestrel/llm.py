@@ -5,6 +5,7 @@ Also the resilience layer: retries with backoff for errors that fix themselves
 model), and FallbackLLM to move on to the next provider when one is down.
 """
 
+import json
 import os
 import random
 import re
@@ -93,6 +94,26 @@ def _retry_after(error: Exception) -> float | None:
     return _retry_delay_in_body(getattr(error, "body", None))
 
 
+# Groq names the limit it hit: "... on tokens per day (TPD): Limit 200000, Used ..." (or requests
+# per day, RPD). Per-minute limits (TPM, RPM) free within a minute; daily ones within hours.
+_DAILY_LIMIT = re.compile(r"per day|\((?:TPD|RPD)\)", re.IGNORECASE)
+DAILY_LIMIT = "daily limit (429)"  # the reason in the LLMError text; the benchmark's wait-for-quota mode looks for it
+
+
+def _error_text(error: Exception) -> str:
+    """The message and the parsed body: the openai client puts the body in the message, but not always."""
+    return f"{error} {json.dumps(getattr(error, 'body', None), default=str)}"
+
+
+def _try_again_in(error: Exception) -> float | None:
+    """Groq's "Please try again in 1h2m3.5s" in the error message, in seconds."""
+    match = re.search(r"try again in ((?:\d+(?:\.\d+)?(?:ms|h|m|s))+)", _error_text(error))
+    if not match:
+        return None
+    unit = {"h": 3600, "m": 60, "s": 1, "ms": 0.001}
+    return sum(float(n) * unit[u] for n, u in re.findall(r"(\d+(?:\.\d+)?)(ms|h|m|s)", match.group(1)))
+
+
 def _retry_delay_in_body(body: Any) -> float | None:
     """Find a google.rpc.RetryInfo retryDelay ("37s", "1.5s") anywhere in a parsed error body."""
     if isinstance(body, list):
@@ -178,6 +199,9 @@ class LLM:
                     openai.APIConnectionError: "unreachable",
                 }.get(type(e), f"server error ({getattr(e, 'status_code', '5xx')})")
                 wait = _retry_after(e)
+                if isinstance(e, openai.RateLimitError) and _DAILY_LIMIT.search(_error_text(e)):
+                    reason = DAILY_LIMIT  # same handling; only the label (and a wait from the text) differ
+                    wait = wait if wait is not None else _try_again_in(e)
                 if wait is not None:
                     # The server told us how long to wait (e.g. Groq's tokens-per-minute limit):
                     # follow it, within a total budget; a long wait means hand over to the fallback.

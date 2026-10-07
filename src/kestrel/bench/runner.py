@@ -18,6 +18,7 @@ from kestrel.agent import MAX_CONTEXT_TOKENS, SYSTEM_PROMPT, Agent
 from kestrel.approval import ApprovalGate, Decision
 from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
+from kestrel.bench.quota import QuotaWait
 from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
 from kestrel.tools import ToolRegistry
 from kestrel.tracing import Tracer
@@ -268,13 +269,17 @@ def run_suite(
     stop_after_errors: int | None = None,
     setup: Setup | None = None,
     grader: Grader | None = None,
+    quota: QuotaWait | None = None,
 ) -> list[TaskResult]:
     """Run tasks in order (repeats[i] is task i's repeat number). The rest are marked "skipped", to
     resume later, once either:
     - token_budget: the agent + judge tokens spent (excluding cached input, which Groq doesn't
       rate-limit) reach it, since free tiers cap tokens per day;
     - stop_after_errors: that many tasks in a row errored, which almost always means the provider's
-      rate limit or an outage; carrying on would only turn the rest into errors too."""
+      rate limit or an outage; carrying on would only turn the rest into errors too.
+    quota (wait-for-quota mode): a run that errored on a provider's daily limit is dropped, not
+    counted toward stop_after_errors; the runner waits until the limit should free, then runs the same
+    (task, repeat) again. Its tokens still count toward token_budget: they were spent."""
     results: list[TaskResult] = []
     spent = 0
     errors_in_a_row = 0
@@ -292,8 +297,15 @@ def run_suite(
         else:
             if i and pause:
                 time.sleep(pause)  # spreads requests out under free-tier per-minute limits
-            result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
-            spent += billable_tokens(result)
+            while True:
+                result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
+                spent += billable_tokens(result)
+                wait = quota.wait_for(result.error) if quota and result.status == "error" else None
+                if quota is None or wait is None:
+                    break
+                if quota.checkpoint:
+                    quota.checkpoint(results)  # resumable if the process dies while it sleeps
+                quota.wait(wait, len(results), task.id, repeat)
             errors_in_a_row = errors_in_a_row + 1 if result.status == "error" else 0
         results.append(result)
         if on_result:
