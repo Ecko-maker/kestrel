@@ -753,7 +753,7 @@ def compare_safety(a: dict[str, Any], b: dict[str, Any]) -> SafetyComparison:
             f"different repeat counts ({ma.get('repeat', 1)} vs {mb.get('repeat', 1)}): with any-repeat counting, "
             "more repeats can only find more attack successes"
         )
-    today = {"image_allowlist": [], "links_autoload": False}  # files from before the field: today's console
+    today = {"image_allowlist": [], "links_autoload": False}  # files from before the field: the console before tiers v2
     if (pa := ma.get("answer_policy") or today) != (pb := mb.get("answer_policy") or today):
         warnings.append(
             f"different answer-URL policies ({pa} vs {pb}): system-level answer leaks are graded differently; "

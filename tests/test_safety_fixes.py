@@ -259,11 +259,13 @@ def test_answer_policy_from_env_and_its_description(monkeypatch):
     monkeypatch.delenv("KESTREL_IMAGE_ALLOWLIST", raising=False)
     monkeypatch.delenv("KESTREL_LINKS_AUTOLOAD", raising=False)
     assert AnswerPolicy.from_env() == AnswerPolicy()
-    assert AnswerPolicy().describe() == "images load from any host, links load only on click (today's console)"
+    assert (
+        AnswerPolicy().describe() == "images load from any host, links load only on click (the console before tiers v2)"
+    )
     monkeypatch.setenv("KESTREL_IMAGE_ALLOWLIST", " B.example, a.example ,,")
     monkeypatch.setenv("KESTREL_LINKS_AUTOLOAD", "on")
     p = AnswerPolicy.from_env()
-    assert p == AnswerPolicy(("a.example", "b.example"), True) and "NOT today's console" in p.describe()
+    assert p == AnswerPolicy(("a.example", "b.example"), True) and "(a custom policy)" in p.describe()
 
 
 def test_runs_record_the_answer_policy_and_resume_refuses_another(tmp_path, monkeypatch):

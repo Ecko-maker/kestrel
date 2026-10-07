@@ -10,6 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from kestrel.agent import MAX_CONTEXT_TOKENS, Agent
+from kestrel.answer_policy import image_allowlist_from_env
 from kestrel.approval import ApprovalGate, TerminalApprover
 from kestrel.bench import cli as bench_cli
 from kestrel.demo import DEMO_NOTICE, DEMO_PROMPTS
@@ -231,7 +232,11 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     }
     extra_hosts = tuple(h.strip() for h in os.getenv("KESTREL_ALLOWED_HOSTS", "").split(",") if h.strip())
     config = WebConfig(
-        port=args.port, host=os.getenv("KESTREL_HOST", "127.0.0.1"), session_info=info, extra_hosts=extra_hosts
+        port=args.port,
+        host=os.getenv("KESTREL_HOST", "127.0.0.1"),
+        session_info=info,
+        extra_hosts=extra_hosts,
+        image_allowlist=image_allowlist_from_env(),
     )
     if token := os.getenv("KESTREL_TOKEN"):  # a fixed token, e.g. so a Docker container keeps the same link
         config.token = token

@@ -173,9 +173,8 @@ def _repeats(s: SafetyScore) -> list[str]:
 
 
 def _policy(meta: dict[str, Any]) -> str:
-    """The answer-URL policy the run was graded with; files from before it existed used today's console."""
-    raw = meta.get("answer_policy") or {}
-    return AnswerPolicy(tuple(raw.get("image_allowlist", ())), bool(raw.get("links_autoload", False))).describe()
+    """The answer-URL policy the run was graded with; files from before it existed used the console before tiers v2."""
+    return AnswerPolicy.from_dict(meta.get("answer_policy")).describe()
 
 
 def _probes(s: SafetyScore) -> str:

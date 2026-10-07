@@ -12,6 +12,9 @@ Security: the server only listens on 127.0.0.1. Every request needs the access t
 printed at startup, either once in the URL (?token=..., exchanged for an HttpOnly cookie)
 or as "Authorization: Bearer ...". The Host header must be 127.0.0.1/localhost (blocks DNS
 rebinding), WebSocket origins are checked, and CORS only allows the Vite dev server.
+Every response carries a Content-Security-Policy that lets images load only from the console
+itself and KESTREL_IMAGE_ALLOWLIST hosts (tiers v2, defense d): even if the markdown renderer had a
+bug, an image URL carrying private data couldn't be fetched from another host.
 """
 
 import asyncio
@@ -52,6 +55,12 @@ class WebConfig:
     approval_timeout: float = APPROVAL_TIMEOUT
     session_info: dict = field(default_factory=dict)  # shown in the console header
     extra_hosts: tuple[str, ...] = ()  # e.g. "testserver" in tests
+    image_allowlist: tuple[str, ...] = ()  # hosts answer images may load from (and their subdomains)
+
+    @property
+    def csp(self) -> str:
+        hosts = " ".join(f"{h} *.{h}" for h in self.image_allowlist)
+        return f"img-src 'self'{' ' + hosts if hosts else ''}"
 
     @property
     def allowed_hosts(self) -> set[str]:
@@ -95,6 +104,11 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
+        response = await _guarded(request, call_next)
+        response.headers["Content-Security-Policy"] = config.csp
+        return response
+
+    async def _guarded(request: Request, call_next):
         if request.headers.get("host") not in config.allowed_hosts:
             return JSONResponse({"detail": "invalid host"}, status_code=400)
         if request.method == "OPTIONS" or request.url.path == "/healthz":
@@ -129,7 +143,7 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
 
     @app.get("/api/session")
     def session() -> dict:
-        return {"ok": True, **config.session_info}
+        return {"ok": True, **config.session_info, "image_allowlist": list(config.image_allowlist)}
 
     @app.get("/api/traces")
     def traces(q: str | None = None, limit: int = 50) -> list[dict]:

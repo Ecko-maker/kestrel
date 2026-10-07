@@ -11,6 +11,7 @@ export interface SessionInfo {
   problem: string | null;
   models: { provider: string; model: string }[];
   tools: { name: string; risk: Risk; server: string | null }[];
+  image_allowlist?: string[]; // hosts answer images may load from (tiers v2)
 }
 
 export interface TraceRow {
