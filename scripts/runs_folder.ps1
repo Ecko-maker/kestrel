@@ -43,6 +43,8 @@ try {
     $env:VIRTUAL_ENV = $null
     uv sync --locked
     if ($LASTEXITCODE -ne 0) { throw "uv sync failed in $Path" }
+    # git-ignored, so a fresh worktree lacks it; a log redirected there before the first run would fail
+    New-Item -ItemType Directory -Force (Join-Path $Path "evals\results") | Out-Null
 } finally {
     Pop-Location
 }

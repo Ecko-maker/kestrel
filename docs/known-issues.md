@@ -172,8 +172,13 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 - **Note:** the subset's 75% gate sits close to single-run noise. 13/16 has a CI down to 62%, and one more flip would mean 12/16 = 75%. This is why the threshold should still be derived from repeats.
 
 
-**Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset: about 79k billable tokens for 3 repeats with the corrected estimator. The earlier "40k" assumed only 32% of tokens are billable.
-**Done when:** the CI threshold is derived from repeats of the subset and documented.
+- **(2026-10-07) CI subset × 3 repeats measured** (`evals/reports/ci-threshold.md`). It ran from the runs folder at 642e8c7 with `--wait-for-quota`, agent `cc5c16377662`, using 66,573 billable tokens against an estimate of 79,437.
+  - **Scores:** 81%, 88%, 94%; mean **88% (95% CI 73-100%, n=16)**. 2 tasks flipped (`convo-chained-math`, `files-contact-email`); `multi-scale-recipe` failed every time.
+  - **Threshold:** each task's pass rate comes from 6 observations of the same agent (3 repeats + 2 pinned runs + PR #11); one CI run's score is simulated from those rates.
+  - **The 75% gate:** an unchanged agent fails it 0.3% of the time (at most 10% under a pessimistic prior). It catches a 4-task regression almost always and a 3-task one 69-84% of the time.
+
+**Still open:** a decision on the proposal. It is to keep 75% (derived, not just a margin) and change nothing in `ci.yml`; a later option is a rerun on failure. Also open: the subset can't see 1-2 task regressions, which is what the full suite with `kestrel bench compare` is for.
+**Done when:** the owner accepts the threshold (or picks another from the table in the report), and it is recorded in design-decisions.
 
 ## Safety split (Phase 3)
 
