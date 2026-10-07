@@ -37,6 +37,7 @@ Every price was checked against the official pages (ai.google.dev/gemini-api/doc
 **Labels:** `security`, `high`, `phase-3`
 A prompt injection can't make Kestrel *send* anything without approval, but it could get the model to put workspace contents into a `web_search` query or a `fetch__fetch` URL, both of which run without approval and contact the internet.
 **Done when:** Phase 3 permission tiers distinguish "reads local data" from "talks to the network", and the injection suite includes exfiltration attempts.
+**Status (2026-10-06): fixed in code on `phase3/tiers-v2`, not yet measured.** Tiers v2 (design decision 16): after a local read, every search or fetch needs a card unless the user typed it; a content check shows any local text in it; answer images load only from the console or an allowlist. Offline, on scripted models only, strict-user system-level attack success goes from 13/29 to 0/29 (`evals/reports/tiers-v2-offline.md`). Not merged and not closed until the before and after safety runs on gpt-oss-120b exist. Open: `ben-note-from-mcp` has no approval rule for the network MCP call tiers v2 now gates (owner decision; strict xfail).
 
 ### 5. `create_note` over MCP is approved by the client, not by Kestrel
 **Labels:** `security`, `medium`
@@ -118,6 +119,7 @@ One WebSocket is one conversation; a reload or reconnect loses the visible chat 
 **Labels:** `testing`, `medium`, `console`
 The console has typecheck, lint and build in CI, and was exercised end-to-end with Playwright for screenshots (`scripts/demo_console.py --shots`), but there are no automated frontend tests, and the event reducer in `useChat.ts` is the most logic-heavy untested code.
 **Done when:** unit tests for `reduce()` and the Playwright demo run in CI.
+Partly (2026-10-06, `phase3/tiers-v2`): `npm test` runs in CI with Node's built-in runner, covering the answer-image rule (`console/src/imagePolicy.test.mjs`). The card's notice panel and the reducer are still untested.
 
 ### 19. Editing in the terminal approver's external editor is untested
 **Labels:** `testing`, `low`

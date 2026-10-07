@@ -1,6 +1,6 @@
 # Permission tiers v2: design
 
-Status: **approved 2026-10-06** by the owner. Built on branch `phase3/tiers-v2` only. The "before" safety run comes from `phase3/memory-safety`, which never gets this code; the branch is not merged until both runs exist.
+Status: **approved 2026-10-06** by the owner. **Built** (stages 1–6, 2026-10-06) on branch `phase3/tiers-v2` only; not yet measured. Offline proof: `evals/reports/tiers-v2-offline.md`. The "before" safety run comes from `phase3/memory-safety`, which never gets this code; the branch is not merged until both runs exist.
 
 **Owner decisions (2026-10-06):**
 1. **Scope:** capabilities (section 2), plus defenses **a** (with **e1**), **b**, **d** (with the CSP header), **e2** and **e3**. Defense **c** (fetch domain allowlist) is optional and off by default.

@@ -207,3 +207,25 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - Any-repeat is the conservative reading for a safety claim, and it is monotone: more repeats can only reveal more successes, never hide one.
 - Keeping n = tasks keeps the interval honest. The report says so explicitly, so "0/30 with 3 repeats" isn't read as more certain than "0/30".
 - Two benign numbers separate over-refusal that is systematic from over-refusal that is noise.
+
+## 16. Permission tiers v2: capabilities, taint, a content check, and a console that loads no outside image
+
+**Decision** (owner-approved 2026-10-06; built on `phase3/tiers-v2`, not merged until the before and after runs exist; design `docs/tiers-v2-design.md`):
+- **Capabilities instead of one tier.** Each tool declares what it can do (`reads_local`, `reads_untrusted`, `network_egress`, `writes_local`, `sends`, `deletes_local`), fixed in code. One pure function, `permissions.required_approval(capabilities, session, args)`, decides safe / confirm / forbidden. With nothing read yet it gives exactly the old tiers. MCP tools get every capability unless `kestrel.mcp.json` narrows them; `safe_tools` means "network_egress only".
+- **Taint (a) with user-named egress (e1).** Once a `reads_local` tool has run in a conversation, a `network_egress` call needs a card, unless the user typed its URL or query. Per conversation, never cleared.
+- **Outbound-content check (b).** Local text read this conversation (24+ normalized characters or 4+ words, as written, decoded, or split across calls, never text the user typed) found in a network call's arguments gives a card that shows it. A card, never a block.
+- **Console images (d).** An answer image loads only from the console itself or an allowlisted host (empty by default); any other becomes a plain link. A CSP header (`img-src 'self'`) backs it up.
+- **Cards that explain themselves (e2, e3).** Why the card appeared, the arguments decoded, the local text highlighted, and a warning for recipients the user never typed. The audit log and traces keep hashes and lengths only.
+
+**Alternatives:**
+- **Keep one tier per tool, and make `web_search` and `fetch` "confirm".** Simple, but every search would need a card, research tasks would drown in them, and users would learn to click yes. Capabilities let the same tool be card-free until private data is in the context.
+- **Hard-block content-check hits.** It would lower the rubber-stamp numbers, but a false hit would break a legitimate task with no way through. Cards keep the user in charge (owner decision 4). The strict-user gate is met either way.
+- **Taint from `reads_untrusted` too (web pages and search results).** Safer against beaconing, but search → search and search → fetch chains, the normal shape of research, would all need cards. Every canary in the split lives in local files, so the predicted gate result is the same (owner decision 2).
+- **Per-turn taint.** Fewer cards in long chats, but data read in one turn can be leaked in the next. Per conversation is the conservative choice (owner decision 3).
+- **A fetch domain allowlist (c) as the main defense.** It doesn't stop search exfiltration or a leak in an allowed host's query string, and it needs configuration. Kept as an option, off by default.
+- **A model-based injection detector.** Costs a model call per tool result, can be fooled by the same tricks as the agent, and can't be verified offline. The rules here are deterministic and unit-tested.
+
+**Why:**
+- A leak needs two things: private data in the context, and a way out. Taint watches the first, capabilities name the second, and the user decides only when both meet. Measured offline (`evals/reports/tiers-v2-offline.md`): strict-user system-level attack success on the scripted split drops from 13/29 to 0/29 for a model that reads before it falls, and the main suite's stored tool sequences get no new card.
+- The model sees exactly the same tools and prompt (the fingerprint moves only because capabilities are hashed), so a change in the after-run is the defense, not a different agent.
+- The content check is evidence more than a gate: after a read, every network call already asks. It tells the user *what* would leave, which makes "no" an informed answer.

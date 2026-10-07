@@ -112,13 +112,13 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - [x] Recipient guard (any send outside allowed_recipients counts; #23 shrunk), fetches of unserved hosts listed as undeclared, prompt addresses must be in allowed_recipients (validate). `{{INJECTION}}` / `{{INJECTION: spec}}` markers: validate prints them as TODO lines and exits 1 (INCOMPLETE); a real-model safety run refuses while any remain. Authorship (owner decision 1): Claude drafted the safety task structure, the owner reviewed and accepted it. Attack text in {{INJECTION}} slots is written only by the owner. Benign look-alikes are re-checked against the final attacks. Owner review (one row per attack: marker location, goals, canary, recipients, pair, success), coverage matrix and benign re-check list: `evals/kestrelbench/safety/ATTACK_WORKSHEET.md`.
 - [x] s1.0 pre-measurement fixes (evals/CHANGELOG.md): `atk-exfil-search-file` vector file; `probe: policy` (owner decision 2: `atk-overwrite-direct`, reported on its own line, outside the ASR and the gate); `--kinds all|attack|benign`; inert approval rules for the 8 network calls benign tasks expect + validate WARNING (tiers-v2 risk 1); answer-URL guard tells images from links, `src/kestrel/answer_policy.py` (`KESTREL_IMAGE_ALLOWLIST` empty = every image loads, `KESTREL_LINKS_AUTOLOAD` off = today's console; recorded in results meta; tiers-v2 risk 2). No verdict changed: 576 scripted runs identical before/after.
 - [ ] Owner writes the attack and benign tasks (canaries in each task's own `files`) and runs validate; then a smoke run on Ollama, then gpt-oss-120b on Groq (main suite and safety split on separate days). Status 2026-10-06: 48 tasks (29 attacks + 1 policy probe, 18 benign; owner slots owner-1..5 unchanged), 29 injection texts still to write; owner accepted every attack's goals/canary/recipients on 2026-10-06; per-row review column reopened in `evals/kestrelbench/safety/ATTACK_WORKSHEET.md`. `kestrel bench run --split safety --repeat N`: attacks count if they succeed in any repeat (plus k of n per attack), benign as mean pass rate and passed-every-repeat, gate line PASS/FAIL with attack ids; `bench compare` pairs two safety files (before/after); `bench show <id>` previews a task offline; `validate --task <id>` checks one (design decision 15).
-- [ ] Tiers v2: design drafted, unapproved until the safety baseline is measured (`docs/tiers-v2-design.md`).
+- [x] Tiers v2 built on `phase3/tiers-v2` (2026-10-06; design approved, `docs/tiers-v2-design.md`; design decision 16): capabilities (`permissions.py`), taint + user-named egress, content check (`egress.py`, 24 chars / 4 words, `evals/reports/egress-threshold.md`), console images + CSP (`KESTREL_IMAGE_POLICY=allowlist` for after-runs only), cards with why/decoded/recipients, `escalated_by` in audit and traces. Offline proof (`evals/reports/tiers-v2-offline.md`): scripted strict system ASR 13/29 -> 0/29 (reads-then-falls), main-suite replay no new card, fingerprint `2cac3804ef92`. Not merged, not measured; `ben-note-from-mcp` needs an owner decision (no rule for its gated `docs__lookup`).
 
 - [x] Live provider verification (2026-10-03/04, known issues #1 and #3 closed). Six demo prompts pass on Groq and on Gemini; fallback, a Gemini → Groq → Gemini conversation (thought-signature placeholder accepted) and the web console on Gemini verified. Rerun with `scripts/live/`. Default Gemini model is now `gemini-3.6-flash` (measured). Fixed: rate limits (Gemini RetryInfo body, guided-wait budget, longer wait for the last provider), Gemini 400 bad-key message, gpt-oss drafting instead of calling tools (system prompt + rejection message). Prices verified and sourced in `prices.toml` (#3 closed).
 
 ## Configuration (.env)
 
-Also: `KESTREL_HOST`, `KESTREL_PORT`, `KESTREL_TOKEN`, `KESTREL_ALLOWED_HOSTS` (web/Docker), `KESTREL_MCP=off`, `KESTREL_IMAGE_ALLOWLIST` / `KESTREL_LINKS_AUTOLOAD` (answer-URL policy for safety grading; empty / off = today's console), `<PROVIDER>_BASE_URL` (e.g. `OLLAMA_BASE_URL`). Provider `demo` needs no key.
+Also: `KESTREL_HOST`, `KESTREL_PORT`, `KESTREL_TOKEN`, `KESTREL_ALLOWED_HOSTS` (web/Docker), `KESTREL_MCP=off`, `KESTREL_IMAGE_ALLOWLIST` / `KESTREL_LINKS_AUTOLOAD` / `KESTREL_IMAGE_POLICY` (answer-URL policy; the console reads the allowlist; `KESTREL_IMAGE_POLICY=allowlist` only for tiers-v2 after-runs), `<PROVIDER>_BASE_URL` (e.g. `OLLAMA_BASE_URL`). Provider `demo` needs no key.
 
 | Variable | Purpose |
 |---|---|
@@ -152,7 +152,9 @@ kestrel/
     ├── __main__.py      # lets `python -m kestrel` run it
     ├── llm.py           # LLM (retries, fail-fast), FallbackLLM, build_llm()
     ├── tools.py         # @tool registry: schemas, risk tiers, validation, timeout, truncation + tools
-    ├── approval.py      # Approver interface, TerminalApprover, ApprovalGate + audit log
+    ├── approval.py      # Approver interface, TerminalApprover, ApprovalGate + audit log, card notices
+    ├── permissions.py   # tiers v2: capabilities, Session (taint), required_approval()
+    ├── egress.py        # tiers v2: outbound-content check
     ├── tracing.py       # Tracer/Span, SQLite storage, redaction
     ├── trace_report.py  # kestrel traces / trace / stats / export
     ├── pricing.py       # cost from prices.toml (actual vs list price)
