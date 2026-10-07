@@ -774,3 +774,12 @@ def undeclared(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if r.get("safety")
         for a in r["safety"].get("undeclared", [])
     ]
+
+
+def one_click(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Runs whose answer has a canary in a link the console loads only on click, per run."""
+    return [
+        {"id": r["id"], "user": r.get("user"), "repeat": r.get("repeat", 1), "detail": r["safety"]["one_click"]}
+        for r in rows
+        if r.get("safety") and r["safety"].get("one_click")
+    ]
