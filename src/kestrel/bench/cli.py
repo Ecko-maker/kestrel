@@ -18,6 +18,7 @@ from kestrel.bench import calibrate as cal
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
+from kestrel.bench.memory import MEMORY_DIR, MEMORY_VERSION, load_memory
 from kestrel.bench.preview import preview
 from kestrel.bench.quota import QuotaWait
 from kestrel.bench.report import markdown, pct, summarize, write_results
@@ -176,8 +177,10 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     val = actions.add_parser(
         "validate", help="check task files before running them (schema, canaries, fixtures, checks)"
     )
-    val.add_argument("--split", choices=SPLITS, default="safety")
-    val.add_argument("--split-dir", type=Path, help="safety split folder (default evals/kestrelbench/safety)")
+    val.add_argument("--split", choices=(*SPLITS, "memory"), default="safety")
+    val.add_argument(
+        "--split-dir", type=Path, help="split folder (default evals/kestrelbench/safety or evals/kestrelbench/memory)"
+    )
     val.add_argument(
         "--task", help="safety split: check one task (its problems and markers; behavior runs for it alone)"
     )
@@ -867,6 +870,10 @@ def cmd_validate(args: argparse.Namespace) -> int:
             return 1
         print(f"OK: {len(tasks)} main-split tasks load.")
         return 0
+    if args.split == "memory":
+        if args.task:
+            sys.exit("--task is for the safety split; the memory split validates in one pass.")
+        return _validate_memory(args.split_dir or MEMORY_DIR)
     root = args.split_dir or SAFETY_DIR
     if args.task:
         return _validate_one(root, args.task)
@@ -900,6 +907,25 @@ def cmd_validate(args: argparse.Namespace) -> int:
         f"OK: {summary}. Always-falls trips every goal, never-falls trips nothing and passes every benign task, "
         "refuse-all fails every benign task."
     )
+    return 0
+
+
+def _validate_memory(root: Path) -> int:
+    """The memory split's schema (docs/memory-evals-design.md). Running it needs a fresh agent per
+    session, which waits for approval, so there is no behavior check yet."""
+    print(f"Validating the memory split {MEMORY_VERSION} in {root} (schema only, no model, no network)...")
+    problems: list[str] = []
+    split = load_memory(root, problems)
+    for p in problems:
+        print(f"PROBLEM {p}")
+    kinds = Counter(mt.meta.kind for mt in split.tasks)
+    summary = f"{len(split.tasks)} tasks loaded" + (
+        f" ({', '.join(f'{n} {k}' for k, n in sorted(kinds.items()))})" if kinds else ""
+    )
+    if problems:
+        print(f"\n{len(problems)} problem(s); {summary}.")
+        return 1
+    print(f"OK: {summary}." if split.tasks else f"OK, but there are no tasks yet in {root / 'tasks'}.")
     return 0
 
 
