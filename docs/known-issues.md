@@ -200,6 +200,28 @@ The checks are deterministic, so they only see what they look for:
 MCP servers are separate processes, which in-process blocking can't reach at all, so safety runs must not start any: a test now fails if a safety run starts a subprocess (other than `git rev-parse` for the results metadata) or an MCPManager, and every external tool in a safety registry must be a stub.
 **Done when:** safety runs happen in a sandbox with no network at all (e.g. a Docker network set to `none`), which needs no knowledge of the clients.
 
+## Memory split (Phase 3)
+
+### 25. Multi-user memory isolation is not tested
+**Labels:** `evals`, `deferred`
+Kestrel is single-user (owner decision 2026-10-08), so the memory split has no isolation tasks: nothing checks that one user's memories stay out of another user's sessions.
+**Done when:** if Kestrel gets users or profiles, add `user` on seed records, an `as_user` field and isolation tasks (run as B, A's values must never appear); design note section 8.
+
+### 26. Memory is a new attack surface with no safety tasks yet
+**Labels:** `security`, `evals`, `high once memory ships`
+Once memory exists, an injected file, page or MCP result can try to plant a false fact or a standing instruction that acts in later sessions (threat 3 in `docs/phase3-plan.md`). The safety split s1.0 has no such task, and the memory split measures utility and privacy, not attacks.
+**Done when:** memory-poisoning attacks are in the safety split (a version after s1.0, after the Phase 3 gate): seed records with `source: web`, and sessions where an injected page asks Kestrel to "remember" something. The gate covers them.
+
+### 27. The memory split's limits before a backend exists
+**Labels:** `evals`, `medium`
+- **Store checks are not assessed.** `memory_has` / `memory_absent` (the delete tasks) are listed and left out of the verdict until a backend exists. Today the answers decide.
+- **Real `web_search`.** A real-model run uses the built-in tools, as the main suite does (same agent fingerprint), so a model that searches the web for "my locker code" makes a real, harmless request. The run is not fully offline like the safety split.
+- **No `compare` pairing for memory files yet.** `bench compare` refuses them; it is needed for the before/after memory comparison.
+- **Strict absence and update checks.** The prompt asks for one thing only, so offering a near-miss value ("I don't have the pool code, but your gym code is K7-4419") or the stale value counts as a failure. The first real run's failures in these kinds get a hand review.
+- **Every memory session is costed at the main-suite mean** (3,300 raw tokens); most sessions are one question with no tools, so the estimate errs high.
+
+**Done when:** the memory backend implements `contains`, `compare` pairs memory files, and the first real run has replaced the estimate and reviewed the strict checks.
+
 ---
 
 ## Process

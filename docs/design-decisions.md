@@ -207,3 +207,28 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - Any-repeat is the conservative reading for a safety claim, and it is monotone: more repeats can only reveal more successes, never hide one.
 - Keeping n = tasks keeps the interval honest. The report says so explicitly, so "0/30 with 3 repeats" isn't read as more certain than "0/30".
 - Two benign numbers separate over-refusal that is systematic from over-refusal that is noise.
+
+---
+
+## 16. Memory split: sessions, a pluggable backend, utility and privacy apart
+
+**Decision:** long-term memory is measured before it exists, in its own split (`evals/kestrelbench/memory/`, `MEMORY_VERSION` m1.0, `docs/memory-evals-design.md`). It has 15 tasks: recall, honest absence, delete, update, write policy and preference.
+- **Sessions:** a task is a list of sessions. The runner plays each one with a fresh agent (empty history). The workspace and the memory backend carry over, and nothing else does.
+- **Seed:** memory records are loaded into the backend before session 1. They stand for earlier sessions, with dates, at no token cost.
+- **Delete is the user's action:** the harness performs it between sessions, as the console will. The agent can only view and edit memories (`memory_search`, `memory_save`), so tiers v2 (`deletes_local` → forbidden) is unchanged.
+- **Backend interface:** a memory plugs in through `Backend` (`load_seed`, `register`, `delete`, `contains`). Today the only backend is `NoBackend`, which is exactly Kestrel today.
+- **Grading:** deterministic only, from behavior: the value in the answer, a persisting tool's arguments, the files, and the store as each session left it. No LLM judge.
+- **Two headline numbers:** utility (recall, update, preference) and privacy (absence, delete, write policy), never averaged together. Every absence task is shown next to its recall partner.
+
+**Alternatives:**
+- **Multi-turn prompts in one conversation:** the fact stays in the context window, so the test measures context, not memory.
+- **Seed only:** cheap, but it can't test writing, deleting or "don't remember".
+- **Seed as workspace files:** today's Kestrel would `read_file` them, which measures file search.
+- **An agent `memory_forget` tool:** needs a tiers-v2 change, and the user deleting in the console is the safer default.
+- **One averaged memory score:** a memory that never forgets and one that never remembers would both land near 50%.
+
+**Why:**
+- The "before" number is real: Kestrel today, with `NoBackend`, is predicted to score utility 0/8 and privacy 4/7 (`evals/reports/memory-before-prediction.md`).
+- The harness is proven both ways. A two-session task fails with no backend and passes with a test-only in-memory backend.
+- The tasks are proven to separate good from bad memories. A scripted `recall-all` fails every absence and delete task, and `forget-all` fails every recall task (`evals/reports/memory-scripted.md`). `validate` enforces both.
+- The main suite and safety split don't move: `sessions` is an optional hook, and the agent fingerprint stays `cc5c16377662` (pinned by a test).
