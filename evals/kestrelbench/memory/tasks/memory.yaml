@@ -96,7 +96,7 @@ tasks:
       - prompt: What's on my packing list for the Iceland trip? Only that list, please.
         example: I don't have a packing list for an Iceland trip.
         checks:
-          - {type: answer_not_matches, pattern: 'G[- ]?12|Grivel|merino|thermos', why: those are the Lofoten list}
+          - {type: answer_not_matches, pattern: 'G[- ]?12|Grivel', why: the Lofoten list's own item (generic items like merino socks are fair advice)}
 
   # --- delete: a user's delete is real ----------------------------------------------------------
   - id: mem-delete-seeded

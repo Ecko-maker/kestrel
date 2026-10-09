@@ -40,6 +40,7 @@ Versioned separately as `MEMORY_VERSION` (`src/kestrel/bench/memory.py`). Design
   - **Runner and fields:** the sessions runner landed (agent fingerprint unchanged, `cc5c16377662`), and a required `proves:` line was added.
   - **15 tasks** in `memory/tasks/memory.yaml`: 4 recall, 3 absence (each paired with a recall), 2 delete, 2 update, 2 write policy, 2 preference.
   - **Scripted matrix:** `perfect` passes 15/15. `recall-all` fails every absence, delete, update and write-policy task. `forget-all` fails every recall, delete, update and preference task, and passes every absence task.
+  - **`mem-absence-other-list` check narrowed** (before any model run): it forbade `G12|Grivel|merino|thermos`, but merino socks and a thermos are generic items for any cold trip, so honest generic advice would have counted as a substituted list. It now forbids only the Lofoten list's own item, `G[- ]?12|Grivel`. `recall-all` still fails the task; the matrix is unchanged.
 
 ## Proposed (not applied: waiting for the owner's approval)
 
