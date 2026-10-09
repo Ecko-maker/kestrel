@@ -6,6 +6,7 @@ evals/kestrelbench/memory/tasks/*.yaml. A task has the main suite's common field
 tags, files, approvals, max_steps) plus memory fields kept in a MemoryMeta:
 
     kind: recall | absence | delete | update | write_policy | preference
+    proves: "..."                # one line: what passing this task shows (required)
     paired_with: <task id>        # absence: the recall task of the same shape
     seed:                         # memory records loaded before the run (an "earlier session")
       - {kind: fact, text: "...", at: 2026-09-12, source: user}
@@ -62,7 +63,7 @@ STORE_CHECKS = ("memory_has", "memory_absent")
 ANSWER_CHECKS = ("answer_matches", "answer_not_matches")
 
 COMMON_FIELDS = {"id", "category", "tags", "files", "approvals", "max_steps"}
-MEMORY_FIELDS = {"kind", "paired_with", "seed", "sessions"}
+MEMORY_FIELDS = {"kind", "proves", "paired_with", "seed", "sessions"}
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,7 @@ class Session:
 @dataclass(frozen=True)
 class MemoryMeta:
     kind: str = "recall"
+    proves: str = ""
     sessions: tuple[Session, ...] = ()
     seed: tuple[Record, ...] = ()
     paired_with: str | None = None
@@ -205,6 +207,9 @@ def _parse(raw: Any, default_category: str | None, source: str) -> MemoryTask:
     kind = raw.get("kind")
     if kind not in KINDS:
         raise TaskError(f"{where}: 'kind' must be one of {KINDS}")
+    proves = raw.get("proves")
+    if not isinstance(proves, str) or not proves.strip():
+        raise TaskError(f"{where}: 'proves' must say in one line what passing this task shows")
     sessions_raw = raw.get("sessions")
     if not isinstance(sessions_raw, list) or not sessions_raw:
         raise TaskError(f"{where}: 'sessions' must be a non-empty list")
@@ -242,7 +247,7 @@ def _parse(raw: Any, default_category: str | None, source: str) -> MemoryTask:
         raise TaskError(f"{where}: a delete task needs a user_action delete between sessions")
     if kind == "write_policy" and not any(c["type"] == "not_persisted" for s in talks for c in s.checks):
         raise TaskError(f"{where}: a write_policy task needs a not_persisted check")
-    meta = MemoryMeta(kind, sessions, seed, None if paired_with is None else str(paired_with))
+    meta = MemoryMeta(kind, proves.strip(), sessions, seed, None if paired_with is None else str(paired_with))
     return MemoryTask(task, meta)
 
 

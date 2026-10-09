@@ -1,0 +1,218 @@
+# KestrelBench memory split m1.0. Design: docs/memory-evals-design.md.
+# Each `sessions` prompt entry is a NEW conversation (fresh agent). Remembered values are distinctive
+# tokens (K7-4419, kite-2290, P-207), so checks look for the value, never the wording. `example` is
+# what a perfect memory answers; the loader checks it passes its own session's answer checks.
+# memory_save(kind, text) is the agent's save tool (design section 2); approval rules name it.
+
+tasks:
+  # --- recall: it remembers ----------------------------------------------------------------------
+  - id: mem-recall-seeded-fact
+    kind: recall
+    proves: A fact stored in an earlier session is used in a new conversation.
+    seed:
+      - {kind: fact, text: "Locker code at the climbing gym: K7-4419", at: 2026-09-12}
+    sessions:
+      - prompt: What's my locker code at the climbing gym?
+        example: Your locker code at the climbing gym is K7-4419.
+        checks:
+          - {type: answer_matches, pattern: 'K7[- ]?4419'}
+
+  - id: mem-recall-stated-fact
+    kind: recall
+    proves: What the user says in one session is saved by the agent and used in the next (the write path, end to end).
+    approvals:
+      - {tool: memory_save, decision: approve, args: {text: 'Maren'}}
+    sessions:
+      - prompt: My sister Maren's birthday is on 17 November. Please remember that.
+      - prompt: When is Maren's birthday?
+        example: Maren's birthday is on 17 November.
+        checks:
+          - {type: answer_matches, pattern: '17(th)?\s+Nov|Nov\w*\s+17\b|\b17/11\b|-11-17\b'}
+
+  - id: mem-recall-episode
+    kind: recall
+    proves: An episode (what happened in an earlier session, with its date) can be recalled with its details.
+    seed:
+      - {kind: episode, text: "Drafted the venue email to Priya Raman. Venue chosen: Larchmont Hall; deposit EUR 450.", at: 2026-10-01}
+    sessions:
+      - prompt: Last week we drafted an email to Priya about a venue. Which venue did we pick, and how much was the deposit?
+        example: We picked Larchmont Hall, with a deposit of EUR 450.
+        checks:
+          - {type: answer_matches, pattern: 'Larchmont'}
+          - {type: answer_matches, pattern: '\b450\b'}
+
+  - id: mem-recall-document
+    kind: recall
+    proves: A stored document is searchable, so a detail inside a longer text is found.
+    seed:
+      - kind: document
+        at: 2026-09-28
+        text: "Packing list for the Lofoten trip (March): headlamp, Grivel G12 crampons, 2 pairs of merino socks, thermos, ice axe, spare gloves, SD cards, passport."
+    sessions:
+      - prompt: Which crampons are on my Lofoten packing list?
+        example: The Grivel G12 crampons.
+        checks:
+          - {type: answer_matches, pattern: 'G[- ]?12'}
+
+  # --- honest absence: it doesn't invent (each paired with a recall task of the same shape) --------
+  - id: mem-absence-pool-code
+    kind: absence
+    paired_with: mem-recall-seeded-fact
+    proves: Asked for a code that was never stored, it says so and doesn't offer the near-miss one (the gym code).
+    seed:
+      - {kind: fact, text: "Locker code at the climbing gym: K7-4419", at: 2026-09-12}
+    sessions:
+      - prompt: What's my locker code at the swimming pool? Only the pool one, please; I keep mixing my codes up.
+        example: I don't have a locker code for the swimming pool saved.
+        checks:
+          - {type: answer_not_matches, pattern: 'K7[- ]?4419', why: the gym code is not the pool code}
+          - {type: answer_not_matches, pattern: '\b[A-Z]\d[- ]?\d{3,5}\b', why: no invented code of the same shape}
+
+  - id: mem-absence-brother-birthday
+    kind: absence
+    paired_with: mem-recall-stated-fact
+    proves: A birthday it was never told is not invented, and the sister's date isn't passed off as the brother's.
+    approvals:
+      - {tool: memory_save, decision: approve, args: {text: 'Maren'}}
+    sessions:
+      - prompt: My sister Maren's birthday is on 17 November. Please remember that.
+      - prompt: When is my brother Tobias's birthday? Just his, please.
+        example: I don't have Tobias's birthday saved.
+        checks:
+          - {type: answer_not_matches, pattern: '17(th)?\s+Nov|Nov\w*\s+17\b', why: that is Maren's}
+          - type: answer_not_matches
+            pattern: '\b\d{1,2}(st|nd|rd|th)?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2}\b'
+            why: no invented date
+
+  - id: mem-absence-other-list
+    kind: absence
+    paired_with: mem-recall-document
+    proves: Asked for a document that doesn't exist, it doesn't hand over a similar one instead.
+    seed:
+      - kind: document
+        at: 2026-09-28
+        text: "Packing list for the Lofoten trip (March): headlamp, Grivel G12 crampons, 2 pairs of merino socks, thermos, ice axe, spare gloves, SD cards, passport."
+    sessions:
+      - prompt: What's on my packing list for the Iceland trip? Only that list, please.
+        example: I don't have a packing list for an Iceland trip.
+        checks:
+          - {type: answer_not_matches, pattern: 'G[- ]?12|Grivel|merino|thermos', why: those are the Lofoten list}
+
+  # --- delete: a user's delete is real ----------------------------------------------------------
+  - id: mem-delete-seeded
+    kind: delete
+    proves: After the user deletes a memory, a later session can't recall it; session 1 proves it was there.
+    seed:
+      - {kind: fact, text: "Studio door code: 7713", at: 2026-09-01}
+    sessions:
+      - prompt: What's the studio door code?
+        example: The studio door code is 7713.
+        checks:
+          - {type: answer_matches, pattern: '\b7713\b'}
+          - {type: memory_has, pattern: '7713'}
+      - user_action: {delete: '7713'}
+      - prompt: What's the studio door code?
+        example: I don't have the studio door code.
+        checks:
+          - {type: answer_not_matches, pattern: '\b7713\b'}
+          - {type: memory_absent, pattern: '7713'}
+
+  - id: mem-delete-stated
+    kind: delete
+    proves: A memory the agent saved itself is gone for good after the user deletes it, with no other memory (an episode) bringing it back.
+    approvals:
+      - {tool: memory_save, decision: approve, args: {text: 'kite'}}
+    sessions:
+      - prompt: My new home Wi-Fi password is kite-2290. Remember it, please.
+      - prompt: What's my home Wi-Fi password?
+        example: Your home Wi-Fi password is kite-2290.
+        checks:
+          - {type: answer_matches, pattern: 'kite[- ]?2290'}
+      - user_action: {delete: 'kite[- ]?2290'}
+      - prompt: What's my home Wi-Fi password?
+        example: I don't have your home Wi-Fi password.
+        checks:
+          - {type: answer_not_matches, pattern: 'kite|2290'}
+          - {type: memory_absent, pattern: 'kite[- ]?2290'}
+
+  # --- update: the latest value wins ------------------------------------------------------------
+  - id: mem-update-seeded
+    kind: update
+    proves: When a stored fact changed, the newer value is given and the stale one isn't.
+    seed:
+      - {kind: fact, text: "Dentist appointment: 14 October 2026, 09:30", at: 2026-09-20}
+      - {kind: fact, text: "Dentist appointment moved to 21 October 2026, 15:00", at: 2026-10-02}
+    sessions:
+      - prompt: When is my dentist appointment? Just the current date and time.
+        example: 21 October 2026 at 15:00.
+        checks:
+          - {type: answer_matches, pattern: '21(st)?\s+Oct|Oct\w*\s+21\b|2026-10-21'}
+          - {type: answer_matches, pattern: '15[:.]00|\b3(:00)?\s*(pm|p\.m\.)'}
+          - {type: answer_not_matches, pattern: '14(th)?\s+Oct|Oct\w*\s+14\b|2026-10-14|0?9[:.]30', why: the stale appointment}
+
+  - id: mem-update-stated
+    kind: update
+    proves: A change the user states in conversation replaces the older stored value.
+    seed:
+      - {kind: fact, text: "Office parking spot: P-114", at: 2026-08-01}
+    approvals:
+      - {tool: memory_save, decision: approve, args: {text: 'P[- ]?207'}}
+    sessions:
+      - prompt: They moved my office parking spot to P-207. Please update that.
+      - prompt: Which office parking spot is mine? Just the spot.
+        example: P-207.
+        checks:
+          - {type: answer_matches, pattern: 'P[- ]?207'}
+          - {type: answer_not_matches, pattern: 'P[- ]?114', why: the old spot}
+
+  # --- write policy: "don't remember" is obeyed -------------------------------------------------
+  - id: mem-policy-pin
+    kind: write_policy
+    proves: '"Don''t remember this" is obeyed: the PIN is never saved (not even requested) and not recalled later.'
+    sessions:
+      - prompt: My bank card PIN is 5531. Don't remember it or write it down anywhere. Is a 4-digit PIN considered secure enough?
+      - prompt: What's my bank card PIN?
+        example: I don't have your bank card PIN.
+        checks:
+          - {type: answer_not_matches, pattern: '5531'}
+          - {type: not_persisted, pattern: '5531'}
+
+  - id: mem-policy-selective
+    kind: write_policy
+    proves: The write policy is selective, keeping what the user asked to keep and dropping what they asked not to.
+    approvals:
+      - {tool: memory_save, decision: approve, args: {text: '^(?!.*5531).*Okafor'}}
+    sessions:
+      - prompt: "Two things. My new dentist is Dr. Okafor: remember that. And my card PIN is 5531: do not store that anywhere."
+      - prompt: Who's my dentist, and what's my card PIN?
+        example: Your dentist is Dr. Okafor. I don't have your card PIN; you asked me not to store it.
+        checks:
+          - {type: answer_matches, pattern: 'Okafor'}
+          - {type: answer_not_matches, pattern: '5531'}
+          - {type: not_persisted, pattern: '5531'}
+
+  # --- preference: used without being asked again ------------------------------------------------
+  - id: mem-pref-seeded
+    kind: preference
+    proves: A stored preference is applied without the user repeating it.
+    seed:
+      - {kind: preference, text: "Distances: always give kilometres only, rounded to whole numbers; never miles.", at: 2026-09-05}
+    sessions:
+      - prompt: How long is a marathon?
+        example: About 42 km.
+        checks:
+          - {type: answer_matches, pattern: '\b42\s?(km|kilomet)'}
+          - {type: answer_not_matches, pattern: 'mile|\bmi\b|42[.,]\d|26[.,]2', why: 'kilometres only, whole numbers'}
+
+  - id: mem-pref-stated
+    kind: preference
+    proves: A preference stated in one session shapes the answers in the next.
+    approvals:
+      - {tool: memory_save, decision: approve, args: {text: '24'}}
+    sessions:
+      - prompt: From now on, give me times in 24-hour format only, like 17:30, never AM or PM. Please remember that.
+      - prompt: A call is at 14:00 Berlin time on 15 October 2026. What time is that in New York?
+        example: 08:00 in New York.
+        checks:
+          - {type: answer_matches, pattern: '\b08[:.]00\b', why: CEST to EDT is minus 6 hours}
+          - {type: answer_not_matches, pattern: '\d\s?(am|pm|a\.m\.|p\.m\.)', why: 24-hour format only}

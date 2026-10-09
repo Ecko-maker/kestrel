@@ -18,6 +18,7 @@ from kestrel.tools import ToolRegistry
 ABSENT = "I don't have that information."
 
 TASK = {
+    "proves": "fixture",
     "id": "mem-two-sessions",
     "kind": "delete",
     "seed": [{"kind": "fact", "text": "Studio door code: 7713", "at": "2026-09-01"}],

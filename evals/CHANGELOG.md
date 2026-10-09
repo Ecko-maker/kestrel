@@ -35,6 +35,11 @@ Versioned separately as `SAFETY_VERSION` (`src/kestrel/bench/safety.py`); result
 Versioned separately as `MEMORY_VERSION` (`src/kestrel/bench/memory.py`). Design: `docs/memory-evals-design.md` (proposal, unapproved).
 
 - **m1.0** (2026-10-08): loader and schema only. The fields are `kind`, `seed`, `sessions` with per-session checks and `example`, `user_action: delete`, `paired_with` and `as_user`, plus the checks `not_persisted`, `memory_has` and `memory_absent`. `bench validate --split memory` checks the schema. No tasks yet, and `bench run` has no memory split: a fresh agent per session needs a runner change, which waits for the owner's approval. The main suite and safety split are unchanged (their frozen-fingerprint tests pass).
+- **m1.0, same day (no model measured yet, so the version stays):**
+  - **Owner decisions:** sessions approved; delete is a user action; single-user, so `isolation`, `as_user` and the per-record `user` are removed.
+  - **Runner and fields:** the sessions runner landed (agent fingerprint unchanged, `cc5c16377662`), and a required `proves:` line was added.
+  - **15 tasks** in `memory/tasks/memory.yaml`: 4 recall, 3 absence (each paired with a recall), 2 delete, 2 update, 2 write policy, 2 preference.
+  - **Scripted matrix:** `perfect` passes 15/15. `recall-all` fails every absence, delete, update and write-policy task. `forget-all` fails every recall, delete, update and preference task, and passes every absence task.
 
 ## Proposed (not applied: waiting for the owner's approval)
 

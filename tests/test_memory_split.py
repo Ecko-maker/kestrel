@@ -12,6 +12,7 @@ from kestrel.bench.safety import SAFETY_VERSION
 from kestrel.bench.tasks import SUITE_VERSION, TaskError
 
 RECALL = {
+    "proves": "fixture",
     "id": "mem-recall-locker",
     "kind": "recall",
     "seed": [{"kind": "fact", "text": "Locker code at the climbing gym: K7-4419", "at": "2026-09-12"}],
@@ -24,6 +25,7 @@ RECALL = {
     ],
 }
 ABSENCE = {
+    "proves": "fixture",
     "id": "mem-absence-locker",
     "kind": "absence",
     "paired_with": "mem-recall-locker",
@@ -37,6 +39,7 @@ ABSENCE = {
     ],
 }
 DELETE = {
+    "proves": "fixture",
     "id": "mem-delete-locker",
     "kind": "delete",
     "sessions": [
@@ -58,6 +61,7 @@ DELETE = {
     ],
 }
 POLICY = {
+    "proves": "fixture",
     "id": "mem-policy-pin",
     "kind": "write_policy",
     "sessions": [
@@ -116,6 +120,7 @@ def test_yaml_dates_are_read_as_iso_text(tmp_path):
     ("change", "message"),
     [
         ({"kind": "remember"}, "'kind' must be one of"),
+        ({"proves": " "}, "'proves' must say"),
         ({"sessions": []}, "'sessions' must be a non-empty list"),
         ({"surprise": 1}, "unknown fields ['surprise']"),
         ({"seed": [{"kind": "fact", "text": "x"}]}, "needs kind, text and at"),
