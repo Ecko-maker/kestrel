@@ -5,20 +5,20 @@ neither moves. Design and open questions: docs/memory-evals-design.md (a proposa
 evals/kestrelbench/memory/tasks/*.yaml. A task has the main suite's common fields (id, category,
 tags, files, approvals, max_steps) plus memory fields kept in a MemoryMeta:
 
-    kind: recall | absence | delete | update | write_policy | isolation | preference
+    kind: recall | absence | delete | update | write_policy | preference
     paired_with: <task id>        # absence: the recall task of the same shape
-    as_user: <name>               # isolation: whose session this is
     seed:                         # memory records loaded before the run (an "earlier session")
-      - {kind: fact, text: "...", at: 2026-09-12, source: user, user: <name>}
+      - {kind: fact, text: "...", at: 2026-09-12, source: user}
     sessions:                     # each prompt entry is a NEW conversation (fresh agent)
       - prompt: "..." | ["turn 1", "turn 2"]
         example: "..."            # what a perfect memory answers; must pass this session's answer checks
         checks: [...]             # main-suite check types, plus not_persisted / memory_has / memory_absent
       - user_action: {delete: regex}   # what the user does in the console between sessions
 
-This module only loads and validates. Running the split needs a fresh agent per session, a runner
-change that waits for the owner's approval (design section 3); `bench run` has no memory split yet.
-Today there is no memory backend, so a seed is loaded nowhere: that is the "before" state.
+Kestrel is single-user (owner decision, 2026-10-08), so there are no isolation tasks. The memory
+itself plugs in through `Backend`; today the only one is `NoBackend`: a seed is loaded nowhere, a
+user's delete removes nothing, and the store checks are not assessed. That is the "before" state.
+Running the split (fresh agent per session): bench/memory_run.py.
 """
 
 import datetime
@@ -27,10 +27,11 @@ import json
 import re
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import yaml
 
+from kestrel import tools
 from kestrel.bench.checks import FLAGS, plain
 from kestrel.bench.tasks import CHECK_TYPES, OPTIONAL_CHECK_FIELDS, Task, TaskError, _parse_task, _workspace_sha
 
@@ -40,10 +41,14 @@ MEMORY_DIR = Path(__file__).resolve().parents[3] / "evals" / "kestrelbench" / "m
 # evals/CHANGELOG.md. Independent of SUITE_VERSION and SAFETY_VERSION.
 MEMORY_VERSION = "m1.0"
 
-KINDS = ("recall", "absence", "delete", "update", "write_policy", "isolation", "preference")
+KINDS = ("recall", "absence", "delete", "update", "write_policy", "preference")
+UTILITY = ("recall", "update", "preference")  # it remembers what it should
+PRIVACY = ("absence", "delete", "write_policy")  # it doesn't invent, keep or store what it shouldn't
 RECORD_KINDS = ("fact", "episode", "document", "preference")
 SOURCES = ("user", "file", "web", "mcp")  # where a record's text came from; only "user" is trusted
 ACTIONS = ("delete",)
+# The agent's memory tools (design section 2): view and edit only; deleting is the user's action.
+MEMORY_TOOLS = ("memory_search", "memory_save")
 # Tools whose arguments persist across sessions today or once memory exists (not_persisted, model level).
 PERSIST_TOOLS = ("write_file", "append_to_file", "create_note", "memory_save")
 # Checks only this split has. memory_has / memory_absent read the memory store after the run; with no
@@ -57,7 +62,7 @@ STORE_CHECKS = ("memory_has", "memory_absent")
 ANSWER_CHECKS = ("answer_matches", "answer_not_matches")
 
 COMMON_FIELDS = {"id", "category", "tags", "files", "approvals", "max_steps"}
-MEMORY_FIELDS = {"kind", "paired_with", "as_user", "seed", "sessions"}
+MEMORY_FIELDS = {"kind", "paired_with", "seed", "sessions"}
 
 
 @dataclass(frozen=True)
@@ -66,7 +71,6 @@ class Record:
     text: str
     at: str  # ISO date: when the earlier session stored it
     source: str = "user"
-    user: str | None = None
 
 
 @dataclass(frozen=True)
@@ -89,7 +93,6 @@ class MemoryMeta:
     sessions: tuple[Session, ...] = ()
     seed: tuple[Record, ...] = ()
     paired_with: str | None = None
-    as_user: str | None = None
 
     def conversations(self) -> list[Session]:
         return [s for s in self.sessions if not s.is_action]
@@ -130,7 +133,7 @@ def _regex(pattern: Any, where: str) -> str:
 def _record(raw: Any, where: str) -> Record:
     if not isinstance(raw, dict) or {"kind", "text", "at"} - set(raw):
         raise TaskError(f"{where}: a seed record needs kind, text and at: {raw}")
-    if extra := set(raw) - {"kind", "text", "at", "source", "user"}:
+    if extra := set(raw) - {"kind", "text", "at", "source"}:
         raise TaskError(f"{where}: unknown seed record fields {sorted(extra)}")
     if raw["kind"] not in RECORD_KINDS:
         raise TaskError(f"{where}: seed record kind must be one of {RECORD_KINDS}, got {raw['kind']!r}")
@@ -145,7 +148,7 @@ def _record(raw: Any, where: str) -> Record:
     text = raw["text"]
     if not isinstance(text, str) or not text.strip():
         raise TaskError(f"{where}: seed record text must be non-empty")
-    return Record(raw["kind"], text, at, source, None if raw.get("user") is None else str(raw["user"]))
+    return Record(raw["kind"], text, at, source)
 
 
 def _check(raw: Any, where: str) -> dict[str, Any]:
@@ -229,12 +232,9 @@ def _parse(raw: Any, default_category: str | None, source: str) -> MemoryTask:
     if not isinstance(seed_raw, list):
         raise TaskError(f"{where}: 'seed' must be a list of records")
     seed = tuple(_record(r, f"{where}: seed {i + 1}") for i, r in enumerate(seed_raw))
-    as_user = raw.get("as_user")
-    users = {r.user for r in seed if r.user is not None}
-    if kind == "isolation" and (as_user is None or len(users | {str(as_user)}) < 2):
-        raise TaskError(f"{where}: an isolation task needs 'as_user' and seed records of another user")
-    if as_user is not None and kind != "isolation":
-        raise TaskError(f"{where}: 'as_user' is for isolation tasks only")
+    known_tools = set(tools.registry.tools) | set(MEMORY_TOOLS)
+    if bad := sorted({r.tool for r in task.approvals} - known_tools):
+        raise TaskError(f"{where}: approvals name unknown tool(s) {bad}; known: {sorted(known_tools)}")
     paired_with = raw.get("paired_with")
     if kind == "absence" and not paired_with:
         raise TaskError(f"{where}: an absence task needs 'paired_with' (the recall task of the same shape)")
@@ -242,7 +242,7 @@ def _parse(raw: Any, default_category: str | None, source: str) -> MemoryTask:
         raise TaskError(f"{where}: a delete task needs a user_action delete between sessions")
     if kind == "write_policy" and not any(c["type"] == "not_persisted" for s in talks for c in s.checks):
         raise TaskError(f"{where}: a write_policy task needs a not_persisted check")
-    meta = MemoryMeta(kind, sessions, seed, None if paired_with is None else str(paired_with), as_user)
+    meta = MemoryMeta(kind, sessions, seed, None if paired_with is None else str(paired_with))
     return MemoryTask(task, meta)
 
 
@@ -291,3 +291,43 @@ def memory_sha(mt: MemoryTask, workspace: Path) -> str:
     definition = {k: v for k, v in asdict(mt.task).items() if k != "source"}
     blob = json.dumps([definition, asdict(mt.meta)], sort_keys=True, default=str) + _workspace_sha(workspace)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+
+
+# --- the memory under test ------------------------------------------------------------------
+
+
+class Backend(Protocol):
+    """What the harness needs from a memory. The memory feature implements it; until then only
+    NoBackend exists. Tests use a throwaway in-memory one to prove the harness carries state."""
+
+    name: str
+
+    def load_seed(self, records: tuple[Record, ...]) -> None:
+        """Before session 1: store these as if earlier sessions had."""
+
+    def register(self, registry: tools.ToolRegistry) -> None:
+        """Add the agent's memory tools (view and edit; never delete) to this task's registry."""
+
+    def delete(self, pattern: str) -> int:
+        """The user deletes every memory matching this regex (in the console). Returns how many."""
+
+    def contains(self, pattern: str) -> bool | None:
+        """Does any stored memory match? None: there is no store to look at (not assessed)."""
+
+
+class NoBackend:
+    """Kestrel today: no long-term memory. Nothing is stored, so nothing can be found or deleted."""
+
+    name = "none"
+
+    def load_seed(self, records: tuple[Record, ...]) -> None:
+        return None
+
+    def register(self, registry: tools.ToolRegistry) -> None:
+        return None
+
+    def delete(self, pattern: str) -> int:
+        return 0
+
+    def contains(self, pattern: str) -> bool | None:
+        return None

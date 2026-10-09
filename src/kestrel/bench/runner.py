@@ -1,5 +1,6 @@
 """Run KestrelBench tasks: fresh agent and workspace per task, scripted approvals, checks, judge."""
 
+import functools
 import hashlib
 import json
 import os
@@ -99,6 +100,10 @@ def _prepare_workspace(task: Task, base: Path) -> tuple[Path, dict[str, str]]:
     return root, originals
 
 
+def _tagged(events: list[dict], session: int, event: dict) -> None:
+    events.append({**event, "session": session})
+
+
 def _tool_log(events: list[dict]) -> list[str]:
     calls = {e.get("call_id"): e for e in events if e["type"] == "tool_call"}
     lines = []
@@ -120,6 +125,13 @@ class Setup(Protocol):
 # Grades a finished task in place of the checks and judge (the safety split's guards).
 Grader = Callable[[Task, Outcome, TaskResult], None]
 
+# A task that spans several conversations (the memory split): its steps in order. A tuple of prompts
+# is one session, played by a fresh agent with an empty history; a callable runs between sessions
+# (the user deletes a memory in the console, the harness reads the store). The workspace and whatever the
+# split's setup provides (a memory backend) carry over; nothing else does.
+SessionStep = tuple[str, ...] | Callable[[], None]
+Sessions = Callable[[Task], list[SessionStep]]
+
 
 def run_task(
     task: Task,
@@ -131,26 +143,39 @@ def run_task(
     repeat: int = 1,
     setup: Setup | None = None,
     grader: Grader | None = None,
+    sessions: Sessions | None = None,
 ) -> TaskResult:
     """Run one task. With expected_provider, a task answered (even partly) by any other provider
     is marked "excluded" and left out of the score, so results never mix models. Without setup and
-    grader (the main suite), it uses the built-in tools, the task's scripted user, and the checks."""
+    grader (the main suite), it uses the built-in tools, the task's scripted user, and the checks.
+    With sessions, each session gets a fresh agent and its events carry "session": 1, 2, ..."""
     workspace, originals = _prepare_workspace(task, base_workspace)
     registry, approver, extra_events = setup(task) if setup else (tools.registry, ScriptedApprover(task.approvals), [])
     events: list[dict] = []
     previous_workspace = tools.WORKSPACE
     tools.WORKSPACE = workspace.resolve()
     started = time.perf_counter()
+
+    def new_agent(on_event: Callable[[dict], None]) -> Agent:
+        gate = ApprovalGate(approver, log_path=workspace.parent / "approvals.jsonl")
+        return Agent(llm, tools=registry, max_steps=task.max_steps, tracer=tracer, on_event=on_event, gate=gate)
+
     try:
-        agent = Agent(
-            llm,
-            tools=registry,
-            max_steps=task.max_steps,
-            tracer=tracer,
-            on_event=events.append,
-            gate=ApprovalGate(approver, log_path=workspace.parent / "approvals.jsonl"),
-        )
-        results = [agent.run(prompt) for prompt in task.prompts]
+        if sessions is None:
+            agent = new_agent(events.append)
+            results = [agent.run(prompt) for prompt in task.prompts]
+        else:
+            results, n = [], 0
+            for step in sessions(task):
+                if callable(step):
+                    step()  # between sessions: a user action, or the harness reading state
+                    continue
+                n += 1
+                agent = new_agent(functools.partial(_tagged, events, n))
+                asked = len(approver.requests)
+                results += [agent.run(prompt) for prompt in step]
+                for request in approver.requests[asked:]:
+                    request["session"] = n
     finally:
         tools.WORKSPACE = previous_workspace
     latency = (time.perf_counter() - started) * 1000
@@ -270,6 +295,7 @@ def run_suite(
     setup: Setup | None = None,
     grader: Grader | None = None,
     quota: QuotaWait | None = None,
+    sessions: Sessions | None = None,
 ) -> list[TaskResult]:
     """Run tasks in order (repeats[i] is task i's repeat number). The rest are marked "skipped", to
     resume later, once either:
@@ -298,7 +324,9 @@ def run_suite(
             if i and pause:
                 time.sleep(pause)  # spreads requests out under free-tier per-minute limits
             while True:
-                result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
+                result = run_task(
+                    task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader, sessions
+                )
                 spent += billable_tokens(result)
                 wait = quota.wait_for(result.error) if quota and result.status == "error" else None
                 if quota is None or wait is None:
