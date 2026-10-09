@@ -117,6 +117,20 @@ Like the safety split's three fake models, built from each task's metadata, no m
 - Rates per kind, with Clopper-Pearson intervals (n is small, as in the safety split). Headline: **utility** = recall + update + preference; **privacy** = absence + delete + write policy. Both are reported side by side, never averaged into one number, with failures listed by id and every absence task next to its recall partner.
 - `--repeat N`: a task passes only if it passed every repeat (n stays the number of tasks), and each task shows k of n repeats. Strict user only. The rubber-stamp user adds nothing here: the write-policy tasks already catch an attempted save at model level, whatever the user answers.
 
+### Cost (dry run, 2026-10-08, corrected estimator)
+
+`uv run kestrel bench run --split memory --repeat 3 --dry-run` gives 15 tasks × 3 repeats = 45 runs, 24 sessions per repeat (72 in all):
+
+| Run | Sessions | Raw tokens | Billable (75%) | Requests | Groq days |
+|---|---:|---:|---:|---:|---|
+| Memory split, strict user, 3 repeats | 72 | ~237,600 | **~178,200** | ~216 | **1**, on a day nothing else ran (with `--token-budget 180000` there is almost no margin; budget 2 days with `--wait-for-quota`) |
+| Rubber-stamp user | — | — | — | — | not needed |
+
+- **How it is estimated.** No memory task has measured tokens yet, so each session is costed at the main suite's measured per-task mean (3,300 raw, 3 requests). Every session is a fresh agent that re-sends the system prompt and tool schemas, so the cost scales with sessions, not tasks.
+- **It errs high.** Most memory sessions are one question and one answer with no tool call, so they should cost less than an average main-suite task. Recompute after the first day, with `--estimate-from`.
+- **No rubber-stamp run.** The only approval that changes an outcome is `memory_save`, and the write-policy tasks already fail an attempted save at model level (`not_persisted`), whatever the user answers. A rubber-stamp run would add no new failure.
+- **Never on the same day** as a safety-split or main-suite run.
+
 ## 7. Open questions
 
 1. ~~Sessions runner change~~: approved (section 0).
