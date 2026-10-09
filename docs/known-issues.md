@@ -85,6 +85,7 @@ History is trimmed at ~4 characters per token. Real tokenizers differ, especiall
 ### 13. Small local models are poor agents
 **Labels:** `expectation`, `low`
 Tested small models fail in instructive ways: deepseek-r1:8b claimed to use tools without calling them; qwen2.5:0.5b picked wrong tools and wrote `17.5% 2340` (remainder, not percent). This is the gap Phase 4's distillation is meant to close; for now, use Gemini or Groq for real tasks.
+- **Why deepseek-r1:8b never calls tools (found 2026-10-08):** its Ollama chat template (`ollama show deepseek-r1:8b --template`) never renders the `tools` list, although `ollama show` lists the `tools` capability. The model never sees a tool schema, so it writes made-up calls as text. Measured on the safety split smoke run: 48 tasks, 0 tool calls, ~240 input tokens per call. A local smoke run with it checks the harness only (loading, stubs, grading, report). It reaches no injection and measures nothing about cost. Use a model whose template renders tools (e.g. `qwen3:8b` or `qwen2.5:7b`) for a smoke run that exercises tools.
 
 ---
 
