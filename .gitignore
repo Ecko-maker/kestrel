@@ -35,3 +35,6 @@ htmlcov/
 
 # KestrelBench run results (the committed baseline lives in evals/kestrelbench/)
 evals/results/
+
+# Long-term memory store (KESTREL_MEMORY_DB)
+memory/

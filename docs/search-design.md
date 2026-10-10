@@ -1,16 +1,17 @@
-# Search for long-term memory: design (proposal)
+# Search for long-term memory: design
 
-Status: **proposal, unapproved.** Branch `phase3/search-spike`. This is step 5 of `docs/phase3-plan.md` (hybrid search). It picks the search backend the memory feature will use. It builds no memory feature: the only backend is still `NoBackend` (`src/kestrel/bench/memory.py`).
+Status: **approved 2026-10-10** by the owner, with the decisions in section 6 (design decision 17). Proposed on branch `phase3/search-spike`; built on `phase3/memory` as `SqliteMemory` (`src/kestrel/memory.py`). This is step 5 of `docs/phase3-plan.md` (hybrid search).
 
-## 1. Decision (proposed)
+## 1. Decision
 
-| Choice | Proposal |
+| Choice | Decision |
 |---|---|
 | Keyword search | SQLite **FTS5** (BM25 ranking), built into Python's `sqlite3` |
-| Vector search | **sqlite-vec** `vec0` virtual table, KNN by distance |
-| Embeddings | local Ollama **`nomic-embed-text`**, 768 dimensions |
-| Hybrid | **reciprocal rank fusion** (RRF) of the keyword and vector rankings |
-| Storage | one SQLite file: records, FTS5 index and vectors side by side |
+| Vector search | **sqlite-vec** `vec0` virtual table, KNN by distance, **float32** |
+| Embeddings | local Ollama **`nomic-embed-text`**, 768 dimensions, with `search_query:` / `search_document:` prefixes |
+| Hybrid | **reciprocal rank fusion** (RRF, k = 60) of the keyword and vector rankings |
+| Storage | one SQLite file, `memory/kestrel-memory.db` (git-ignored, `KESTREL_MEMORY_DB`), never under `workspace/`: one `memories` table with a `kind` column, its FTS5 index and its vectors side by side, plus a `meta` row naming the embedding model and dimension |
+| Documents | chunked at about 400 tokens with about 50 overlapping; each chunk points to its parent document |
 
 Why: it costs $0, runs on Windows, needs no server, and Kestrel already uses SQLite for traces (`logs/traces.db`, `logs/bench.db`). Keyword and vector search then share one file, one connection and one transaction, so a delete removes a memory from both indexes at once.
 
@@ -56,10 +57,11 @@ The empirical comparison (which retriever finds the right record at rank 1, keyw
 - **No throwaway data.** The seed records already exist, are reviewed and are versioned (`MEMORY_VERSION`). A second corpus would need its own review and would drift from them.
 - **The decision doesn't wait on it.** Every option in section 1 is local and free. If the comparison shows vector or keyword alone is as good, the backend drops the other retriever without any change to storage.
 
-## 6. Open questions for you
+## 6. Owner decisions (2026-10-10)
 
-1. **Embedding dimension storage.** `vec0` fixes the dimension when the table is created (`float[768]`). Should the table name or a meta row record the model and dimension, so a model change forces a re-embed instead of mixing vectors? Also: store `float32` (3,072 bytes per record) or `int8` (`sqlite_vec.serialize_int8`, about 4× smaller, some recall loss)? Proposal: float32 plus a meta row, since memory is small.
-2. **Chunk size for documents.** Facts and episodes are one sentence, but documents can be long, and `nomic-embed-text` has a 2,048-token context. Chunk by paragraph, or by a fixed size (e.g. ~500 tokens with overlap)? A chunk would point back to its document so a delete removes every chunk.
-3. **One table or separate ones** for facts, episodes and documents. Proposal: one `memories` table with a `kind` column, so one search covers everything and RRF ranks across kinds. Separate tables would allow different chunking and ranking per kind.
-4. **Where the file lives.** Not in `workspace/`, so `read_file` can't bypass memory's own tools and tier. `data/` is for exported training data. Proposal: `memory/kestrel-memory.db`, git-ignored, set by a new `KESTREL_MEMORY_DB`.
-5. **Query/document prefixes.** The model card for `nomic-embed-text` asks for `search_query:` / `search_document:` prefixes. Use them? (To be checked against the installed model during the comparison.)
+The open questions of the proposal, answered:
+1. **Embedding storage:** float32 (3,072 bytes per vector), plus a `meta` row with the model and dimension. Opening the store with another model or dimension is refused until a re-embed rebuilds every vector, so vectors from two models never mix.
+2. **Chunking:** documents are split into chunks of about 400 tokens with about 50 overlapping. Each chunk row points to its parent document, so a delete removes every chunk.
+3. **One table:** one `memories` table with a `kind` column. One search covers facts, episodes, documents and preferences, and RRF ranks across kinds.
+4. **Where the file lives:** `memory/kestrel-memory.db`, git-ignored, overridable with `KESTREL_MEMORY_DB`, and refused under `workspace/`, so `read_file` can't bypass memory's own tools and tier.
+5. **Prefixes on:** `search_document:` for stored text, `search_query:` for queries (the `nomic-embed-text` model card's convention).

@@ -232,3 +232,22 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - The harness is proven both ways. A two-session task fails with no backend and passes with a test-only in-memory backend.
 - The tasks are proven to separate good from bad memories. A scripted `recall-all` fails every absence and delete task, and `forget-all` fails every recall task (`evals/reports/memory-scripted.md`). `validate` enforces both.
 - The main suite and safety split don't move: `sessions` is an optional hook, and the agent fingerprint stays `cc5c16377662` (pinned by a test).
+
+## 17. Memory search: SQLite FTS5 + sqlite-vec, local embeddings, RRF
+
+**Decision** (owner, 2026-10-10; `docs/search-design.md`): long-term memory lives in one SQLite file and is searched two ways at once.
+- **Keyword:** FTS5 with BM25 ranking.
+- **Vector:** sqlite-vec (`vec0`, float32), with embeddings from local Ollama `nomic-embed-text` (768 dimensions, `search_query:` / `search_document:` prefixes).
+- **Fusion:** reciprocal rank fusion, k = 60.
+- **Storage:** one `memories` table with a `kind` column, its FTS5 index and vectors side by side, plus a `meta` row with the embedding model and dimension that refuses a mismatched store until a re-embed. Documents are chunked at about 400 tokens with 50 overlapping, each chunk pointing to its parent. The file is `memory/kestrel-memory.db` (git-ignored, `KESTREL_MEMORY_DB`), never under `workspace/`.
+
+**Alternatives:**
+- **Postgres + pgvector:** needs a running server and a Windows build of the extension, for a few thousand records.
+- **Keyword or vector only:** expected to miss what the other finds (exact codes vs paraphrase); measured on the memory split in `evals/reports/search-comparison.md`.
+- **A weighted score sum:** BM25 and vector distance are on different scales, and the weight would have to be re-tuned whenever the embedder changes. RRF uses only ranks.
+- **Separate tables per kind:** one search could no longer rank across facts, episodes and documents.
+
+**Why:**
+- It costs $0, needs no server, and runs on Windows: sqlite-vec 0.1.9 loads in Python 3.14.4 (`scripts/spikes/vec_feasibility.py`).
+- One file and one transaction make the user's delete real in every index at once.
+- If Ollama is down, memory still works keyword-only and says so, with no cloud fallback.
