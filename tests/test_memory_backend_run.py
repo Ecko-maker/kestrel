@@ -200,3 +200,62 @@ def test_agent_fingerprints_hold_and_sqlite_is_a_different_agent():
     assert {"memory_search", "memory_save"} <= set(with_tools.tools)
     assert agent_fingerprint(p, m, with_tools)["sha"] != "cc5c16377662"  # memory tools: recorded as another agent
     assert not {"memory_search", "memory_save"} & set(tools.registry.tools)
+
+
+def test_memory_guidance_goes_only_to_an_agent_with_memory_tools():
+    """Design decision 18: the memory feature is the backend plus a system-prompt paragraph, given only
+    when the memory tools are registered. Every other agent keeps SYSTEM_PROMPT byte for byte."""
+    from kestrel.agent import MEMORY_GUIDANCE, SYSTEM_PROMPT, Agent, system_prompt_for
+    from kestrel.tools import ToolRegistry
+
+    split = load_memory(MEMORY_DIR)
+    assert system_prompt_for(tools.registry) == SYSTEM_PROMPT  # main suite and chat
+    assert system_prompt_for(build_registry(SafetyMeta(), [])) == SYSTEM_PROMPT  # safety split
+    assert system_prompt_for(MemoryHarness(split).registry()) == SYSTEM_PROMPT  # memory split, no backend
+    with TempSqliteBackends(HashEmbedder()) as backends:
+        registry = MemoryHarness(split, backend=backends).registry()
+        assert system_prompt_for(registry) == f"{SYSTEM_PROMPT}\n\n{MEMORY_GUIDANCE}"
+        agent = Agent(GroundedMemoryModel(), tools=registry)
+        assert agent.messages[0]["content"].endswith(MEMORY_GUIDANCE)
+    assert Agent(GroundedMemoryModel(), tools=ToolRegistry()).messages[0]["content"] == SYSTEM_PROMPT
+    assert Agent(GroundedMemoryModel(), system_prompt="x").messages[0]["content"] == "x"  # explicit wins
+
+
+def test_memory_guidance_is_general_not_task_specific():
+    """No task id, remembered value, person or place from the memory split appears in it."""
+    import re
+
+    from kestrel.agent import MEMORY_GUIDANCE
+
+    split = load_memory(MEMORY_DIR)
+    words = {mt.id for mt in split.tasks}
+    for mt in split.tasks:
+        texts = [r.text for r in mt.meta.seed] + [p for s in mt.meta.conversations() for p in s.prompts]
+        words |= {w for t in texts for w in re.findall(r"[A-Z][a-z]+|[A-Z]\d[\w-]*|\w+-\d+", t)}
+    common = {
+        "My",
+        "What",
+        "When",
+        "Which",
+        "Who",
+        "How",
+        "Please",
+        "Only",
+        "Just",
+        "From",
+        "Last",
+        "They",
+        "Two",
+        "Remember",
+        "Don",
+    }
+    leaked = sorted(w for w in words - common if re.search(rf"\b{re.escape(w)}\b", MEMORY_GUIDANCE))
+    assert leaked == []
+
+
+def test_the_sqlite_agent_fingerprint_is_pinned():
+    """The memory feature's agent for the graded "after" run (groq / gpt-oss-120b). If this moves, the
+    before/after comparison is of a different agent: update CLAUDE.md and decision 18 with the new value."""
+    with TempSqliteBackends(HashEmbedder()) as backends:
+        registry = MemoryHarness(load_memory(MEMORY_DIR), backend=backends).registry()
+    assert agent_fingerprint("groq", "openai/gpt-oss-120b", registry)["sha"] == "5e36663af8f8"

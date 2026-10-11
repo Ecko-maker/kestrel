@@ -256,3 +256,18 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Absence: an optional vector distance floor, off by default.** Vector KNN always returns its nearest records, so "nothing stored" is the agent's call today. A floor that drops far hits is designed in, not enabled. It is tuned on the first real `--memory-backend sqlite` run, because a value picked on 8 records would be a guess.
 - **Updates: append + dates for now, supersede deferred.** A new value is a new record. Both records reach the agent with their dates, and choosing the newer one is graded by the update tasks. Superseding waits until a real run shows it is needed.
 - **Bench:** `--memory-backend none|sqlite`, default `none` (the "before" numbers stay as they are). With `sqlite` each task gets a fresh temp store, deleted after the run, never the user's real memory file. A run with memory tools has a different agent fingerprint, so it is never mixed with a `none` run.
+
+## 18. The memory feature is the backend plus system-prompt guidance
+
+**Decision** (owner, 2026-10-11): when the memory tools are registered, the agent's system prompt gets one more paragraph (`MEMORY_GUIDANCE` in `src/kestrel/agent.py`, chosen by `system_prompt_for(tools)`).
+- **What it says:** the agent has long-term memory; before answering about the user's personal facts, preferences, plans or past conversations it searches memory; it never says it doesn't know or has no access without searching first; what it saves is there in later conversations.
+- **What it doesn't say:** nothing about any task, name or value, and no near-miss or "newer wins" advice. A test checks the paragraph against every task id and remembered value in the memory split.
+- **Without memory tools** (chat today, the main suite, the safety split, the memory split with `NoBackend`) the prompt is `SYSTEM_PROMPT` byte for byte. Fingerprints are unchanged: main `cc5c16377662`, safety `25719febaed9`, memory/NoBackend `cc5c16377662`.
+- **With memory tools**, the agent fingerprint hashes the prompt that registry actually gets. The memory-split sqlite agent is `5e36663af8f8` on Groq gpt-oss-120b, pinned by a test.
+
+**Why:** the first local smoke run (`evals/reports/memory-smoke-ollama.md`) showed the agent saving well but searching memory for 1 of 11 answerable questions. A memory the agent doesn't consult is not a feature. So the "after" side is defined as the backend *and* the guidance, and **the before/after comparison measures the memory feature as a whole**: `NoBackend` + `SYSTEM_PROMPT` against `SqliteMemory` + `SYSTEM_PROMPT` + `MEMORY_GUIDANCE`. It does not isolate the backend's contribution from the prompt's.
+
+**Alternatives:**
+- **Guidance in every prompt:** it would change the main and safety agents and their baselines, and tell an agent without memory to search a memory it doesn't have.
+- **Only the tool description** ("use it before saying you don't know"): already there, and the smoke model ignored it.
+- **Task-specific hints:** would teach to the test.

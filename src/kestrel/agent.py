@@ -36,6 +36,26 @@ SYSTEM_PROMPT = (
     "so don't paste a draft or ask whether to go ahead. If the user rejects one, read "
     "their reason and adapt; never repeat a rejected call unchanged."
 )
+# Added to the system prompt only when the memory tools are registered (design decision 18): the
+# memory feature is the backend plus this guidance. Without them the prompt is SYSTEM_PROMPT exactly.
+MEMORY_TOOLS = ("memory_search", "memory_save")
+MEMORY_GUIDANCE = (
+    "You have long-term memory that lasts across conversations: memory_search finds what earlier "
+    "conversations stored, and memory_save stores something for later. Before you answer a question about "
+    "the user (their personal facts, preferences, plans, or what happened in earlier conversations), "
+    "search your memory first and use what you find. Never say that you don't know something about the "
+    "user, or that you have no access to it, until you have searched your memory. What you save with "
+    "memory_save is still there in later conversations, so you can rely on it then."
+)
+
+
+def system_prompt_for(tools: ToolRegistry) -> str:
+    """The system prompt for an agent with these tools: memory guidance only if memory is there."""
+    if any(name in tools.tools for name in MEMORY_TOOLS):
+        return f"{SYSTEM_PROMPT}\n\n{MEMORY_GUIDANCE}"
+    return SYSTEM_PROMPT
+
+
 MAX_CONTEXT_TOKENS = 16_000  # history budget; Groq's free tier limits tokens per minute
 MAX_PARALLEL_TOOLS = 8
 
@@ -79,7 +99,7 @@ class Agent:
         llm: ChatModel,
         tools: ToolRegistry = default_registry,
         max_steps: int = 8,
-        system_prompt: str = SYSTEM_PROMPT,
+        system_prompt: str | None = None,  # default: system_prompt_for(tools)
         on_tool_step: StepCallback | None = None,
         max_context_tokens: int = MAX_CONTEXT_TOKENS,
         gate: ApprovalGate | None = None,
@@ -96,7 +116,8 @@ class Agent:
         self.max_context_tokens = max_context_tokens
         self.gate = gate or ApprovalGate()  # default approver rejects every risky call
         self.tracer = tracer or Tracer(db_path=None)  # default: measure, but don't save
-        self.messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        prompt = system_prompt if system_prompt is not None else system_prompt_for(tools)
+        self.messages: list[dict] = [{"role": "system", "content": prompt}]
 
     def run(self, user_text: str) -> AgentResult:
         """Answer one user message, running as many tool rounds as needed (up to max_steps).

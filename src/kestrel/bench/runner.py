@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 from kestrel import llm as llm_module
 from kestrel import tools
-from kestrel.agent import MAX_CONTEXT_TOKENS, SYSTEM_PROMPT, Agent
+from kestrel.agent import MAX_CONTEXT_TOKENS, Agent, system_prompt_for
 from kestrel.approval import ApprovalGate, Decision
 from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
@@ -254,15 +254,17 @@ def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None =
     and tool list are hashed (the tools' names, descriptions, parameters and risk tiers). The bench
     never starts MCP servers, so the tool list is the built-in one, or the safety split's (built-in
     plus stubbed network and MCP tools). No temperature or seed is sent, so the provider's default
-    sampling applies."""
+    sampling applies. The system prompt is the one this registry's agent gets (memory guidance only
+    with memory tools), so a run with memory is never mistaken for one without."""
+    registry = registry or tools.registry
     tool_list = sorted(
-        ({"schema": t.schema, "risk": t.risk} for t in (registry or tools.registry).tools.values()),
+        ({"schema": t.schema, "risk": t.risk} for t in registry.tools.values()),
         key=lambda t: json.dumps(t, sort_keys=True),
     )
     parts: dict[str, Any] = {
         "provider": provider,
         "model": model,
-        "system_prompt": hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12],
+        "system_prompt": hashlib.sha256(system_prompt_for(registry).encode("utf-8")).hexdigest()[:12],
         "tools": hashlib.sha256(json.dumps(tool_list, sort_keys=True).encode("utf-8")).hexdigest()[:12],
         "tool_count": len(tool_list),
         "max_context_tokens": MAX_CONTEXT_TOKENS,

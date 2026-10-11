@@ -456,11 +456,12 @@ def test_rejudge_dry_run_estimates_without_calling_the_judge(cli_env, monkeypatc
 
 
 def test_agent_fingerprint_is_stable_and_sees_prompt_changes(monkeypatch):
+    from kestrel import agent
     from kestrel.bench import runner
 
     first = runner.agent_fingerprint("groq", "m")
     assert first == runner.agent_fingerprint("groq", "m") and first["tool_count"] >= 5
-    monkeypatch.setattr(runner, "SYSTEM_PROMPT", runner.SYSTEM_PROMPT + " Be brief.")
+    monkeypatch.setattr(agent, "SYSTEM_PROMPT", agent.SYSTEM_PROMPT + " Be brief.")
     changed = runner.agent_fingerprint("groq", "m")
     assert changed["system_prompt"] != first["system_prompt"] and changed["sha"] != first["sha"]
 
