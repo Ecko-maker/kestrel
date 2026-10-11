@@ -18,9 +18,19 @@ from kestrel.bench import calibrate as cal
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
-from kestrel.bench.memory import MEMORY_DIR, MEMORY_VERSION, MemorySplit, load_memory
+from kestrel.bench.memory import MEMORY_DIR, MEMORY_VERSION, MemorySplit, NoBackend, load_memory
+from kestrel.bench.memory_run import (
+    BACKENDS,
+    TOOL_MODELS,
+    GroundedMemoryModel,
+    MemoryHarness,
+    ScriptedMemoryModel,
+    TempSqliteBackends,
+    format_matrix,
+    markdown_memory,
+    matrix,
+)
 from kestrel.bench.memory_run import MODELS as MEMORY_MODELS
-from kestrel.bench.memory_run import MemoryHarness, ScriptedMemoryModel, format_matrix, markdown_memory, matrix
 from kestrel.bench.memory_run import score as memory_score
 from kestrel.bench.preview import preview
 from kestrel.bench.quota import QuotaWait
@@ -95,9 +105,18 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     )
     run.add_argument(
         "--scripted",
-        choices=[*MODELS, *MEMORY_MODELS],
+        choices=[*MODELS, *MEMORY_MODELS, *TOOL_MODELS],
         help="safety or memory split: a scripted fake model instead of a provider, to validate the checks "
-        f"(no model calls). Safety: {', '.join(MODELS)}; memory: {', '.join(MEMORY_MODELS)}",
+        f"(no model calls). Safety: {', '.join(MODELS)}; memory: {', '.join([*MEMORY_MODELS, *TOOL_MODELS])} "
+        "(grounded uses the memory tools)",
+    )
+    run.add_argument(
+        "--memory-backend",
+        choices=BACKENDS,
+        default="none",
+        help='memory split: none = Kestrel today, no long-term memory (default; the "before" numbers); '
+        "sqlite = SqliteMemory with local Ollama embeddings, a fresh temp store per task, deleted after the run "
+        "(never memory/kestrel-memory.db)",
     )
     run.add_argument(
         "--user",
@@ -366,7 +385,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         sys.exit("--scripted, --split-dir, --user and --kinds apply to --split safety only.")
     if args.split == "memory" and (args.user != "strict" or args.kinds != "all"):
         sys.exit("The memory split runs with the strict user only, and --kinds is for the safety split.")
-    if args.scripted and args.scripted not in {"safety": MODELS, "memory": MEMORY_MODELS}.get(args.split, ()):
+    if args.memory_backend != "none" and args.split != "memory":
+        sys.exit("--memory-backend applies to --split memory only.")
+    memory_models = (*MEMORY_MODELS, *TOOL_MODELS)
+    if args.scripted and args.scripted not in {"safety": MODELS, "memory": memory_models}.get(args.split, ()):
         sys.exit(f"--scripted {args.scripted} is not a scripted model of the {args.split} split.")
     if args.split in ("safety", "memory"):
         args.judge = "none"  # graded by deterministic checks only
@@ -375,14 +397,22 @@ def cmd_run(args: argparse.Namespace) -> int:
         if args.scripted:
             args.provider = "scripted"
     label = f"{args.split}-{args.scripted or args.provider}" if args.split != "main" else args.provider
+    if args.memory_backend != "none":
+        label += f"-{args.memory_backend}"
     args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{label}.json"
-    if args.dry_run:
-        return _run(args)
+    # sqlite: one temp folder for this run, a fresh store per task, deleted however the run ends
+    backends = TempSqliteBackends() if args.memory_backend == "sqlite" else None
+    args._memory_backends = backends
     try:
+        if args.dry_run:
+            return _run(args)
         with results_lock(args.out, args.resume):
             return _run(args)
     except LockError as e:
         sys.exit(str(e))
+    finally:
+        if backends is not None:
+            backends.close()
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -401,8 +431,9 @@ def _run(args: argparse.Namespace) -> int:
 
     safety = args.split == "safety"
     memory_split = _memory(args) if args.split == "memory" else None
-    harness = MemoryHarness(memory_split) if memory_split else None
-    # safety: the common tools, without MCP stubs; memory: built-in tools plus the backend's (none today)
+    backends = getattr(args, "_memory_backends", None)
+    harness = MemoryHarness(memory_split, backend=backends or NoBackend) if memory_split else None
+    # safety: the common tools, without MCP stubs; memory: built-in tools plus the backend's memory tools
     registry = build_registry(SafetyMeta(), []) if safety else harness.registry() if harness else None
     # the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default), for the resume check
     resolved = args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
@@ -501,7 +532,10 @@ def _run(args: argparse.Namespace) -> int:
     llm: Any
     try:
         if args.scripted:
-            llm = ScriptedMemoryModel(args.scripted) if harness else ScriptedSafetyModel(args.scripted)
+            if args.scripted in TOOL_MODELS:
+                llm = GroundedMemoryModel(args.scripted)
+            else:
+                llm = ScriptedMemoryModel(args.scripted) if harness else ScriptedSafetyModel(args.scripted)
             model = llm.model
         else:
             llm, _ = build_llm([args.provider], args.model)
@@ -517,6 +551,9 @@ def _run(args: argparse.Namespace) -> int:
         "split": args.split,
         "split_version": SAFETY_VERSION if safety else MEMORY_VERSION if harness else SUITE_VERSION,
         "memory_backend": harness.backend_name if harness else None,
+        # sqlite: which embedder made the vectors, and that each task had a fresh temp store
+        "memory_embedder": f"{backends.embedder.model} ({backends.embedder.dim}-d)" if backends else None,
+        "memory_store": "fresh temp file per task, deleted after the run" if backends else None,
         # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
         "agent": agent_fingerprint(args.provider, model, registry),  # the model actually built
         "provider": args.provider,
@@ -577,7 +614,7 @@ def _run(args: argparse.Namespace) -> int:
                 "grader": make_grader(split, user, policy),
             }
         if harness is not None and memory_split is not None:
-            if isinstance(llm, ScriptedMemoryModel):
+            if isinstance(llm, ScriptedMemoryModel | GroundedMemoryModel):
                 llm.reset()
                 harness.on_begin = llm.begin
             extra = {

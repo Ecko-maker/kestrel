@@ -251,3 +251,8 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - It costs $0, needs no server, and runs on Windows: sqlite-vec 0.1.9 loads in Python 3.14.4 (`scripts/spikes/vec_feasibility.py`).
 - One file and one transaction make the user's delete real in every index at once.
 - If Ollama is down, memory still works keyword-only and says so, with no cloud fallback.
+
+**Follow-up notes (2026-10-10, from the comparison; known issue #28):**
+- **Absence: an optional vector distance floor, off by default.** Vector KNN always returns its nearest records, so "nothing stored" is the agent's call today. A floor that drops far hits is designed in, not enabled. It is tuned on the first real `--memory-backend sqlite` run, because a value picked on 8 records would be a guess.
+- **Updates: append + dates for now, supersede deferred.** A new value is a new record. Both records reach the agent with their dates, and choosing the newer one is graded by the update tasks. Superseding waits until a real run shows it is needed.
+- **Bench:** `--memory-backend none|sqlite`, default `none` (the "before" numbers stay as they are). With `sqlite` each task gets a fresh temp store, deleted after the run, never the user's real memory file. A run with memory tools has a different agent fingerprint, so it is never mixed with a `none` run.

@@ -15,9 +15,12 @@ No model is called unless the CLI is given a real provider.
 
 import json
 import re
+import shutil
+import tempfile
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from kestrel import tools
@@ -37,9 +40,44 @@ from kestrel.bench.memory import (
 from kestrel.bench.runner import ScriptedApprover, SessionStep, TaskResult, run_suite
 from kestrel.bench.stats import GRADED, Rate, clopper_pearson
 from kestrel.bench.tasks import Task
+from kestrel.memory import Embedder, OllamaEmbedder, SqliteMemory
 from kestrel.tools import ToolRegistry
 
+BACKENDS = ("none", "sqlite")  # --memory-backend; none = Kestrel today (the "before" numbers)
+
 # --- harness --------------------------------------------------------------------------------
+
+
+class TempSqliteBackends:
+    """--memory-backend sqlite: a fresh SqliteMemory for every task, each its own file in a temp
+    folder made for this run, so no task sees another's memories and the user's real store
+    (memory/kestrel-memory.db) is never opened. close() deletes the folder; use it as a context
+    manager. Embeddings: the local Ollama nomic-embed-text, unless an embedder is given (tests)."""
+
+    name = "sqlite"
+
+    def __init__(self, embedder: Embedder | None = None):
+        self.embedder: Embedder = embedder or OllamaEmbedder()
+        self.dir = Path(tempfile.mkdtemp(prefix="kestrel-memory-run-"))
+        self.stores: list[SqliteMemory] = []
+
+    def __call__(self) -> SqliteMemory:
+        for old in self.stores:  # the previous task is graded before the next one starts
+            old.close()
+        store = SqliteMemory(self.dir / f"task-{len(self.stores) + 1}.db", self.embedder)
+        self.stores.append(store)
+        return store
+
+    def close(self) -> None:
+        for store in self.stores:
+            store.close()
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def __enter__(self) -> TempSqliteBackends:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
 
 class MemoryHarness:
@@ -61,7 +99,9 @@ class MemoryHarness:
 
     @property
     def backend_name(self) -> str:
-        return self.make_backend().name
+        # a backend class or factory that carries its name is not instantiated just to read it
+        name = getattr(self.make_backend, "name", None)
+        return name if isinstance(name, str) else self.make_backend().name
 
     def registry(self, backend: Backend | None = None) -> ToolRegistry:
         """The built-in tools (never MCP, as in every bench run) plus the backend's memory tools.
@@ -307,6 +347,73 @@ class ScriptedMemoryModel:
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict[str, Any]:
         return {"role": "assistant", "content": self.queue.pop(0) if self.queue else ACK}
+
+
+TOOL_MODELS = ("grounded",)  # scripted models that use the memory tools (not in validate's matrix)
+SAVE_ASK = re.compile(r"\b(remember|update)\b", re.IGNORECASE)
+SAVE_REFUSED = re.compile(r"\b(don'?t|do not)\s+(remember|store|write)", re.IGNORECASE)
+
+
+class GroundedMemoryModel:
+    """Uses the memory tools as a careful agent would, scripted from the task so it runs offline:
+    - a turn that asks it to remember or update something (and doesn't also ask it not to store
+      something): memory_save with the user's own words, then a short acknowledgement;
+    - the question of a graded session: memory_search with the question, then the session's
+      `example` only if every answer_matches pattern of that session is in what the search
+      returned, else "I don't have that information.";
+    - with no memory tools (NoBackend) it can only say it doesn't know.
+    So recall passes only when the backend really returned the value. Absence passes by
+    construction (it never answers from a near miss): this proves what retrieval delivers, not how
+    a real model handles the near-miss record that vector search always returns (known issue #28)."""
+
+    supports_streaming = False
+
+    def __init__(self, name: str = "grounded"):
+        if name not in TOOL_MODELS:
+            raise ValueError(f"unknown tool-using memory model {name!r}; choose from {', '.join(TOOL_MODELS)}")
+        self.name = self.model = name
+        self.plan: list[dict[str, Any]] = []
+
+    def reset(self) -> None:
+        self.plan = []
+
+    def begin(self, mt: MemoryTask) -> None:
+        self.plan = []
+        for session in mt.meta.conversations():
+            patterns = [c["pattern"] for c in session.checks if c["type"] == "answer_matches"]
+            for i, prompt in enumerate(session.prompts):
+                ask = i == len(session.prompts) - 1 and bool(session.checks)
+                save = not ask and SAVE_ASK.search(prompt) is not None and SAVE_REFUSED.search(prompt) is None
+                self.plan.append(
+                    {"prompt": prompt, "save": save, "ask": ask, "patterns": patterns, "example": session.example}
+                )
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> dict[str, Any]:
+        if not self.plan:
+            return {"role": "assistant", "content": ACK}
+        turn, last = self.plan[0], messages[-1]
+        names = {t["function"]["name"] for t in tools or []}
+        if last["role"] == "user":
+            if turn["save"] and "memory_save" in names:
+                kind = "preference" if re.search(r"from now on", turn["prompt"], re.IGNORECASE) else "fact"
+                return _tool_call("save", "memory_save", {"kind": kind, "text": turn["prompt"]})
+            if turn["ask"] and "memory_search" in names:
+                return _tool_call("search", "memory_search", {"query": turn["prompt"]})
+            return self._reply(turn, "")
+        searched = str(last.get("tool_call_id", "")).startswith("search")  # a save's result is not evidence
+        return self._reply(turn, (last.get("content") or "") if searched else "")
+
+    def _reply(self, turn: dict[str, Any], found: str) -> dict[str, Any]:
+        self.plan.pop(0)
+        if not turn["ask"]:
+            return {"role": "assistant", "content": ACK}
+        ok = bool(turn["patterns"]) and all(re.search(p, plain(found), FLAGS) for p in turn["patterns"])
+        return {"role": "assistant", "content": turn["example"] if ok else ABSENT}
+
+
+def _tool_call(prefix: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    call = {"id": f"{prefix}-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+    return {"role": "assistant", "content": None, "tool_calls": [call]}
 
 
 # What validate requires of each scripted model, per kind: True = must pass, False = must fail.

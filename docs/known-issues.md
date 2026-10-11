@@ -216,7 +216,7 @@ Once memory exists, an injected file, page or MCP result can try to plant a fals
 - **Recall is wrapped as untrusted.** `memory_search` results come back inside `<untrusted_data>` with the same "data, not instructions" note as file and web results. A planted memory can't arrive as an instruction.
 - **Every save needs approval.** `memory_save` is confirm tier, so each save shows the user a card with the exact text. There is no agent delete tool.
 - **Still open:**
-  - **Saves are recorded as `source: user`.** The tool can't tell whether the text came from the user or from an injected page, so an approved poisoned save looks like the user's own.
+  - **Provenance: `memory_save` can't tell the owner's intent from a save that tool output triggered.** A save the user asked for ("remember my sister's birthday") and one an injected file, page or MCP result talked the agent into look the same: both are recorded as `source: user` once the card is approved. The approval card is the only line of defense, and approval fatigue weakens it. Done when: a save records whether a tool result was read earlier in the turn (the tiers-v2 taint), the card says so, and a tainted save is never auto-approved.
   - **No memory-poisoning task exists yet.** It will be written once memory is wired into the agent; the gate above still applies.
 
 ### 27. The memory split's limits before a backend exists
@@ -229,7 +229,7 @@ Once memory exists, an injected file, page or MCP result can try to plant a fals
 
 **Done when:** the memory backend implements `contains`, `compare` pairs memory files, and the first real run has replaced the estimate and reviewed the strict checks.
 
-**Update 2026-10-10:** `SqliteMemory` implements `contains`, so `memory_has` / `memory_absent` are assessed when it is the backend (proven by `tests/test_memory_store.py` on the two-session harness task). `kestrel bench run --split memory` still uses `NoBackend`: there is no option to pick `SqliteMemory` yet, and memory isn't wired into chat or the console.
+**Update 2026-10-10:** `SqliteMemory` implements `contains`, so `memory_has` / `memory_absent` are assessed when it is the backend (proven by `tests/test_memory_store.py` on the two-session harness task). `kestrel bench run --split memory --memory-backend sqlite` runs the split on it: a fresh temp store per task, deleted after the run (never `memory/kestrel-memory.db`), recorded in the results meta (`memory_backend`, `memory_embedder`, `memory_store`). The default stays `none`, so the "before" numbers don't move. Memory isn't wired into chat or the console yet.
 
 ### 28. Memory search limits (measured on a small sample)
 **Labels:** `memory`, `medium`
@@ -238,7 +238,11 @@ From `evals/reports/search-comparison.md` (7 queries over the memory split's 8 s
 - **No "nothing found" from vector search.** KNN always returns the nearest records, so an absence question gets the near-miss record (the gym code for the pool code). There is no similarity cutoff. Saying "I don't have that" is up to the agent.
 - **No recency in ranking.** For the moved dentist appointment, keyword and hybrid put the older record first. Both reach the agent with their dates, and choosing the newer one is the agent's job.
 - **Chunk size is approximate:** about 400 tokens is counted as 308 words (1.3 tokens per word), not with the model's tokenizer.
-**Done when:** the comparison is re-run on real memories or a larger split, and a similarity cutoff and recency are decided from the first real memory-split run.
+**Design notes (2026-10-10, design decision 17):**
+- **(a) Absence: an optional vector distance floor, off by default.** A vector hit farther than the floor would be dropped, so a question about something never stored can come back empty instead of with the nearest near-miss. It stays off until it is tuned on the first real `--memory-backend sqlite` run: a floor tuned on 8 records would be a guess, and a wrong one hides real memories.
+- **(b) Updates: append + dates for now; supersede is deferred.** A changed fact is saved as a new record next to the old one. Search returns both with their dates, and the agent picks the newer one (that is what the update tasks grade). Superseding (marking or replacing the old record) is deferred until the real run shows whether the agent gets this wrong.
+
+**Done when:** the comparison is re-run on real memories or a larger split, the floor (a) is tuned or dropped, and (b) is kept or replaced by supersede, both from the first real memory-split run.
 
 ---
 
