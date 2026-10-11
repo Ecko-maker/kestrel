@@ -244,6 +244,12 @@ From `evals/reports/search-comparison.md` (7 queries over the memory split's 8 s
 
 **Done when:** the comparison is re-run on real memories or a larger split, the floor (a) is tuned or dropped, and (b) is kept or replaced by supersede, both from the first real memory-split run.
 
+### 29. `--estimate-from` trusts another provider's cache share
+**Labels:** `evals`, `cost`, `low`
+The estimator treats a reference file with any cached tokens as fully recorded and uses its own uncached share for the billable figure. Ollama reports most input as cached (its own prompt reuse between calls). So an Ollama smoke file used with `--estimate-from` predicts ~10x too few billable Groq tokens: ~14k and ~11k for the memory split at 3 repeats, against ~93k and ~126k from raw tokens at Groq's measured 75% (`evals/reports/memory-smoke-ollama.md`).
+**Workaround:** for a Groq estimate, take raw tokens from a non-Groq file and apply 0.75 (`BILLABLE_SHARE`).
+**Done when:** the estimator uses a reference file's cache share only when the file's provider matches the run's, and otherwise falls back to `BILLABLE_SHARE`.
+
 ---
 
 ## Process
