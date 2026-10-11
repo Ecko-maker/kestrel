@@ -23,7 +23,7 @@ Why: it costs $0, runs on Windows, needs no server, and Kestrel already uses SQL
 - A `vec0(embedding float[3])` table took 4 inserts, and a k=2 KNN query returned the expected neighbours in order (`[(1, 0.05), (4, 0.1118)]`, asserted).
 - Rerun: `uv run --no-sync python scripts/spikes/vec_feasibility.py`.
 
-**Embedding model: installed, not yet measured.** `ollama show nomic-embed-text`: `nomic-bert` architecture, 137M parameters, embedding length **768**, context 2048 (num_ctx 8192), F16, Apache-2.0. **Per-embed latency was not measured** in this spike; it is measured with the comparison in section 5.
+**Embedding model: measured.** `ollama show nomic-embed-text`: `nomic-bert` architecture, 137M parameters, embedding length **768**, context 2048 (num_ctx 8192), F16, Apache-2.0. Per text, through `SqliteMemory`: median **43 ms**, p90 85 ms (28 calls); the first call, which loads the model, took 2.1 s (`evals/reports/search-comparison.md`).
 
 **FTS5: available locally.** A one-line check in the same environment created an `fts5` table, inserted a row and matched it with `bm25()` ranking. It is not part of the spike script. The memory backend's first test should create an FTS5 table, so a missing FTS5 fails loudly in CI on both Windows and Ubuntu.
 
@@ -37,7 +37,7 @@ Why: it costs $0, runs on Windows, needs no server, and Kestrel already uses SQL
 
 ## 4. How it plugs into the memory backend
 
-The memory evals define the contract (`Backend` protocol in `src/kestrel/bench/memory.py`; tools in `docs/memory-evals-design.md` section 2). A future `SqliteMemory` backend would implement it like this:
+The memory evals define the contract (`Backend` protocol in `src/kestrel/bench/memory.py`; tools in `docs/memory-evals-design.md` section 2). `SqliteMemory` (`src/kestrel/memory.py`, tests in `tests/test_memory_store.py`) implements it like this:
 
 | `Backend` method | With FTS5 + sqlite-vec |
 |---|---|
@@ -48,14 +48,24 @@ The memory evals define the contract (`Backend` protocol in `src/kestrel/bench/m
 
 **RRF in one line:** each record scores `sum over retrievers of 1 / (k + rank)`, with `k = 60` (Cormack, Clarke & Büttcher, 2009). It needs only ranks, not scores, so BM25 and vector distances never have to be put on one scale. That's why RRF over a weighted sum: a weight would have to be tuned, and it would drift if the embedding model changed.
 
-**If Ollama is down:** `memory_save` stores the record and its FTS5 entry and leaves the vector missing (backfilled later). `memory_search` falls back to keyword only and says so in its trace. Memory keeps working without the embedder, and no cloud fallback is ever used.
+**If Ollama is down:** `memory_save` stores the record and its FTS5 entry and leaves the vector missing (backfilled later). `memory_search` falls back to keyword only and says so at the top of its result, which the agent records in the trace (`gen_ai.tool.call.result`). Memory keeps working without the embedder, and no cloud fallback is ever used.
 
-## 5. Deferred, not skipped: the keyword vs vector vs hybrid comparison
+## 5. The comparison: keyword vs vector vs hybrid (done 2026-10-10)
 
-The empirical comparison (which retriever finds the right record at rank 1, keyword vs vector vs RRF, plus embed latency) **runs while building the memory backend**, against the memory split's own queries and seeds, not against a throwaway synthetic corpus. Why:
-- **Representative queries.** The memory tasks were written to test what Kestrel's memory must do (facts, episodes, latest-wins, absence). A result on them predicts real behavior; a hand-made corpus mostly measures how it was written.
-- **No throwaway data.** The seed records already exist, are reviewed and are versioned (`MEMORY_VERSION`). A second corpus would need its own review and would drift from them.
-- **The decision doesn't wait on it.** Every option in section 1 is local and free. If the comparison shows vector or keyword alone is as good, the backend drops the other retriever without any change to storage.
+Run on the memory split's own seeds and queries, as planned (not a synthetic corpus: the queries are the ones memory is graded on, and the seeds are already reviewed and versioned). Full table: `evals/reports/search-comparison.md`; rerun with `uv run --no-sync python scripts/search_comparison.py` (local Ollama only).
+
+| Retriever | Rank-1 hits (7 queries, 8 records) |
+|---|---|
+| keyword (FTS5) | 6/7 |
+| vector (sqlite-vec) | 7/7 |
+| hybrid (RRF) | 7/7 |
+
+- **Hybrid does not beat both singles.** It ties vector-only. Keyword misses one query, "How long is a marathon?", whose answer is the distances preference: no shared words, a paraphrase.
+- **Kept anyway, for reasons this sample doesn't measure:** the keyword index is memory's only search while Ollama is down, and exact codes are expected to need keyword search once thousands of similar records exist. With 8 records, vector search finds them too.
+- **Re-measure trigger:** if vector alone still matches hybrid on real memories or a larger split, drop keyword from ranking and keep it as the fallback only.
+- **Two findings for the agent, not the retriever** (known issue #28):
+  - Vector KNN always returns something, so absence questions get the near-miss record.
+  - Ranking has no notion of time: keyword and hybrid put the stale dentist appointment first. Both records reach the agent with their dates.
 
 ## 6. Owner decisions (2026-10-10)
 
@@ -65,3 +75,10 @@ The open questions of the proposal, answered:
 3. **One table:** one `memories` table with a `kind` column. One search covers facts, episodes, documents and preferences, and RRF ranks across kinds.
 4. **Where the file lives:** `memory/kestrel-memory.db`, git-ignored, overridable with `KESTREL_MEMORY_DB`, and refused under `workspace/`, so `read_file` can't bypass memory's own tools and tier.
 5. **Prefixes on:** `search_document:` for stored text, `search_query:` for queries (the `nomic-embed-text` model card's convention).
+
+## 7. Still open (from the comparison)
+
+- **A similarity cutoff for vector hits,** so an absence question can come back empty.
+- **Whether to boost newer records** in ranking.
+
+Both wait for the first real memory-split run (known issue #28).

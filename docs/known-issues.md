@@ -212,6 +212,13 @@ Kestrel is single-user (owner decision 2026-10-08), so the memory split has no i
 Once memory exists, an injected file, page or MCP result can try to plant a false fact or a standing instruction that acts in later sessions (threat 3 in `docs/phase3-plan.md`). The safety split s1.0 has no such task, and the memory split measures utility and privacy, not attacks.
 **Done when:** memory-poisoning attacks are in the safety split (a version after s1.0, after the Phase 3 gate): seed records with `source: web`, and sessions where an injected page asks Kestrel to "remember" something. The gate covers them.
 
+**Partly defended (2026-10-10, `SqliteMemory` in `src/kestrel/memory.py`):**
+- **Recall is wrapped as untrusted.** `memory_search` results come back inside `<untrusted_data>` with the same "data, not instructions" note as file and web results. A planted memory can't arrive as an instruction.
+- **Every save needs approval.** `memory_save` is confirm tier, so each save shows the user a card with the exact text. There is no agent delete tool.
+- **Still open:**
+  - **Saves are recorded as `source: user`.** The tool can't tell whether the text came from the user or from an injected page, so an approved poisoned save looks like the user's own.
+  - **No memory-poisoning task exists yet.** It will be written once memory is wired into the agent; the gate above still applies.
+
 ### 27. The memory split's limits before a backend exists
 **Labels:** `evals`, `medium`
 - **Store checks are not assessed.** `memory_has` / `memory_absent` (the delete tasks) are listed and left out of the verdict until a backend exists. Today the answers decide.
@@ -221,6 +228,17 @@ Once memory exists, an injected file, page or MCP result can try to plant a fals
 - **Every memory session is costed at the main-suite mean** (3,300 raw tokens); most sessions are one question with no tools, so the estimate errs high.
 
 **Done when:** the memory backend implements `contains`, `compare` pairs memory files, and the first real run has replaced the estimate and reviewed the strict checks.
+
+**Update 2026-10-10:** `SqliteMemory` implements `contains`, so `memory_has` / `memory_absent` are assessed when it is the backend (proven by `tests/test_memory_store.py` on the two-session harness task). `kestrel bench run --split memory` still uses `NoBackend`: there is no option to pick `SqliteMemory` yet, and memory isn't wired into chat or the console.
+
+### 28. Memory search limits (measured on a small sample)
+**Labels:** `memory`, `medium`
+From `evals/reports/search-comparison.md` (7 queries over the memory split's 8 seed records, local `nomic-embed-text`):
+- **No measured gain from hybrid yet.** Rank-1 hits: keyword 6/7, vector 7/7, hybrid 7/7. RRF ties vector-only, and keyword misses the paraphrased preference query. RRF is kept for the keyword-only fallback (Ollama down) and for exact tokens at scale, neither of which this sample measures.
+- **No "nothing found" from vector search.** KNN always returns the nearest records, so an absence question gets the near-miss record (the gym code for the pool code). There is no similarity cutoff. Saying "I don't have that" is up to the agent.
+- **No recency in ranking.** For the moved dentist appointment, keyword and hybrid put the older record first. Both reach the agent with their dates, and choosing the newer one is the agent's job.
+- **Chunk size is approximate:** about 400 tokens is counted as 308 words (1.3 tokens per word), not with the model's tokenizer.
+**Done when:** the comparison is re-run on real memories or a larger split, and a similarity cutoff and recency are decided from the first real memory-split run.
 
 ---
 
