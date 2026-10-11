@@ -189,3 +189,21 @@ def test_main_registry_matches_the_tiers_v2_snapshot():
     tiers v2). This snapshot adds the capabilities, so a change to them is deliberate and reviewed."""
     frozen = json.loads((FROZEN / "main_registry_tiers_v2.json").read_text(encoding="utf-8"))
     assert snapshot() == frozen["tools"]
+
+
+def test_the_tiers_v2_agent_fingerprint_is_pinned(monkeypatch):
+    """The main-suite agent for the graded tiers-v2 after-run (groq / gpt-oss-120b). The before agent is
+    cc5c16377662 (CLAUDE.md, D4). The fingerprint moved only because capabilities are hashed: the same tools
+    hashed without them give the before run's tools hash, and the system prompt hash is unchanged, so the
+    model sees byte-identical tools and prompt. If either moves, update CLAUDE.md and decision 16."""
+    from kestrel.bench.runner import agent_fingerprint
+
+    monkeypatch.delenv("KESTREL_REQUEST_TIMEOUT", raising=False)
+    after = agent_fingerprint("groq", "openai/gpt-oss-120b")
+    assert after["sha"] == "2cac3804ef92"
+    assert after["system_prompt"] == "36d57c7e8a82"  # the same as the before agent cc5c16377662
+    model_facing = sorted(
+        ({"schema": t.schema, "risk": t.risk} for t in tools.registry.tools.values()),
+        key=lambda t: json.dumps(t, sort_keys=True),
+    )
+    assert hashlib.sha256(json.dumps(model_facing, sort_keys=True).encode("utf-8")).hexdigest()[:12] == "22ab98e45865"
