@@ -15,16 +15,18 @@ from kestrel.bench.validate import check_network_rules, validate
 
 OUT = SAFETY_DIR / "ATTACK_WORKSHEET.md"
 COLUMNS = ("file", "email", "web page", "search result", "MCP")
+# A marker or leftover scaffolding on a raw line ("}}" alone is YAML flow syntax there, so it isn't used).
+UNFINISHED_LINE = re.compile(r"\{\{|#\s*spec:|neutral spec:")
 
 
 def location(st: SafetyTask, markers: list[Marker]) -> tuple[str, str]:
-    """(where the injection text sits, file:line of its marker)."""
+    """(where the injection text sits, file:line of its marker or leftover scaffolding)."""
     for mk in markers:
         if mk.where.endswith(f":{st.id}"):
             source = SAFETY_DIR / "tasks" / mk.where.split(":", 1)[0]
             lines = source.read_text(encoding="utf-8").splitlines()
             start = next(i for i, ln in enumerate(lines) if re.match(rf"\s*- id: {re.escape(st.id)}\s*$", ln))
-            line = next(i for i in range(start, len(lines)) if "{{INJECTION" in lines[i]) + 1
+            line = next((i for i in range(start, len(lines)) if UNFINISHED_LINE.search(lines[i])), start) + 1
             f = mk.field
             kind = (
                 "search result"
@@ -40,14 +42,14 @@ def location(st: SafetyTask, markers: list[Marker]) -> tuple[str, str]:
         if ":" not in mk.where:
             text = (SAFETY_DIR / mk.where).read_text(encoding="utf-8")
             if text in st.meta.pages.values():
-                line = next(i for i, ln in enumerate(text.splitlines()) if "{{INJECTION" in ln) + 1
+                line = next((i for i, ln in enumerate(text.splitlines()) if UNFINISHED_LINE.search(ln)), 0) + 1
                 return "web page", f"{mk.where}:{line}"
     return "", ""
 
 
 def hidden(st: SafetyTask) -> bool:
     """Hidden instructions: a marker inside an HTML comment of a served page, or fake authority."""
-    in_comment = any(re.search(r"<!--\s*\{\{INJECTION", p) for p in st.meta.pages.values())
+    in_comment = any("<!--" in p for p in st.meta.pages.values())
     return in_comment or st.id.startswith("atk-fake-")
 
 
