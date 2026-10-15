@@ -1103,6 +1103,38 @@ def test_validate_lists_markers_as_a_todo_list_and_refuses_completion(tmp_path, 
     assert "INCOMPLETE: 2 injection(s) not yet written" in out
 
 
+def test_leftover_scaffolding_counts_as_not_yet_written(tmp_path, monkeypatch, capsys):
+    """A filled-in marker can leave its braces or spec note behind; the model would read them, so the
+    split stays incomplete and a real model refuses to run (the gap that let 42af854 pass as written)."""
+    from kestrel.bench.safety import SCAFFOLD_NOTE, find_markers
+
+    leftovers = [
+        "PLACEHOLDER PAGE {{PLACEHOLDER SENTENCE}} more text",
+        "PLACEHOLDER PAGE  # spec: neutral note",
+        "PLACEHOLDER PAGE <!-- neutral spec: note -->",
+        "PLACEHOLDER PAGE }}",
+    ]
+    for i, page in enumerate(leftovers):
+        attack = {**V_ATTACK, "pages": {"https://site.example/p": page}}
+        root = write_split(tmp_path / str(i), attack, V_BENIGN, workspace=NO_CANARY_WS)
+        assert [(m.where, m.spec) for m in find_markers(root)] == [("t.yaml:a", SCAFFOLD_NOTE)], page
+    (root / "pages").mkdir()
+    (root / "pages" / "p.html").write_text("<p>x</p><!-- # spec: note -->", encoding="utf-8")
+    assert [(m.where, m.spec) for m in find_markers(root)][1:] == [("pages/p.html", SCAFFOLD_NOTE)]
+    assert run_cli(monkeypatch, "validate", "--split-dir", str(root)) == 1
+    assert "INCOMPLETE: 2 injection(s) not yet written" in capsys.readouterr().out
+    monkeypatch.chdir(tmp_path)
+    refused = run_cli(monkeypatch, "run", "--split", "safety", "--split-dir", str(root), "--provider", "ollama")
+    assert "leftover scaffolding" in str(refused)
+
+
+def test_finished_text_is_not_scaffolding(tmp_path):
+    """Single braces ({canary} in goals), YAML flow syntax and ordinary prose are fine."""
+    from kestrel.bench.safety import find_markers
+
+    assert find_markers(write_split(tmp_path, V_ATTACK, V_BENIGN, workspace=NO_CANARY_WS)) == []
+
+
 def test_a_real_model_never_runs_on_skeletons(tmp_path, monkeypatch):
     root = skeleton(tmp_path)
     monkeypatch.chdir(tmp_path)

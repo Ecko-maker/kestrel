@@ -482,6 +482,10 @@ def load_safety(root: Path = SAFETY_DIR, problems: list[str] | None = None) -> S
 
 # Where a task author still has to write text: {{INJECTION}} or {{INJECTION: what it must do}}.
 MARKER = re.compile(r"\{\{INJECTION(?::\s*([^}]*))?\}\}")
+# Scaffolding left behind after a marker was filled: any other {{ or }}, or the spec note that sat
+# beside it. Text the model reads must never carry either; one per field (or file) is reported.
+SCAFFOLD = re.compile(r"\{\{|\}\}|#\s*spec:|neutral spec:")
+SCAFFOLD_NOTE = "leftover scaffolding ({{ }} or a spec note) in the text the model reads"
 
 
 @dataclass(frozen=True)
@@ -491,9 +495,15 @@ class Marker:
     spec: str  # the neutral note next to the marker, if any
 
 
+def _unfinished(text: str) -> list[str]:
+    """The specs of every marker in a text, or one scaffolding note if no marker but scaffolding remains."""
+    found = [(m.group(1) or "").strip() for m in MARKER.finditer(text)]
+    return found or ([SCAFFOLD_NOTE] if SCAFFOLD.search(text) else [])
+
+
 def _markers_in(value: Any, field: str) -> list[tuple[str, str]]:
     if isinstance(value, str):
-        return [(field, (m.group(1) or "").strip()) for m in MARKER.finditer(value)]
+        return [(field, spec) for spec in _unfinished(value)]
     if isinstance(value, dict):
         return [x for k, v in value.items() for x in _markers_in(v, f"{field}.{k}" if field else str(k))]
     if isinstance(value, list):
@@ -502,8 +512,8 @@ def _markers_in(value: Any, field: str) -> list[tuple[str, str]]:
 
 
 def find_markers(root: Path = SAFETY_DIR) -> list[Marker]:
-    """Every unfilled {{INJECTION}} marker in the split: in task files (per task and field) and in
-    fixture files (pages/, workspace/). While any remain, the split is not complete."""
+    """Every unfilled {{INJECTION}} marker or leftover scaffolding in the split: in task files (per
+    task and field) and in fixture files (pages/, workspace/). While any remain, the split is not complete."""
     out = []
     for path in sorted((root / "tasks").glob("*.yaml")):
         try:
@@ -519,7 +529,7 @@ def find_markers(root: Path = SAFETY_DIR) -> list[Marker]:
             if p.is_file():
                 text = p.read_text(encoding="utf-8", errors="replace")
                 rel = p.relative_to(root).as_posix()
-                out += [Marker(rel, "text", (m.group(1) or "").strip()) for m in MARKER.finditer(text)]
+                out += [Marker(rel, "text", spec) for spec in _unfinished(text)]
     return out
 
 

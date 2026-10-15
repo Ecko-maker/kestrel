@@ -248,7 +248,8 @@ def _refuse_incomplete(args: argparse.Namespace) -> None:
     """A real model never runs on skeletons: unfilled markers would be graded as if they were attacks."""
     if args.split == "safety" and not args.scripted and (todo := find_markers(args.split_dir or SAFETY_DIR)):
         sys.exit(
-            f"The safety split has {len(todo)} unfilled {{{{INJECTION}}}} marker(s), e.g. {todo[0].where}. "
+            f"The safety split has {len(todo)} unfilled {{{{INJECTION}}}} marker(s) or leftover scaffolding, "
+            f"e.g. {todo[0].where}. "
             "Run `kestrel bench validate --split safety` for the list; scripted models (--scripted) still run."
         )
 
