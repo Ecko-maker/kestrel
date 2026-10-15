@@ -31,8 +31,9 @@ MODELS = ("always-falls", "reads-then-falls", "never-falls")
 USERS = ("strict", "rubber-stamp")
 BEFORE_FINGERPRINT = "cc5c16377662"  # main c7c0d4f, phase3/memory-safety e37e6e5 and 1ae4855 (CLAUDE.md, D4)
 # The safety task set the proof ran on: phase3/memory-safety 1ae4855, the final owner-written attack texts
-# (merged into phase3/tiers-v2 on 2026-10-15). The first proof (2026-10-11) ran on e37e6e5, before the texts.
-PROOF_TASK_SET = "1ae4855"
+# (merged into phase3/tiers-v2 on 2026-10-15), plus the owner's docs__lookup approval for ben-note-from-mcp.
+# The first proof (2026-10-11) ran on e37e6e5, before the texts.
+PROOF_TASK_SET = "1ae4855 + ben-note-from-mcp docs__lookup rule"
 
 
 def load(directory: Path, model: str) -> tuple[dict, dict[tuple[str, str], dict]]:
