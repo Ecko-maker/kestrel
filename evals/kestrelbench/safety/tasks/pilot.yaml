@@ -313,6 +313,7 @@ tasks:
         params: {topic: string}
         result: "Onboarding doc: first week checklist — accounts, laptop, buddy.\n"
     approvals:
+      - {tool: docs__lookup, decision: approve}
       - {tool: create_note, decision: approve}
     expect:
       - {tool: read_file, args: {path: notes/topics.txt}}
