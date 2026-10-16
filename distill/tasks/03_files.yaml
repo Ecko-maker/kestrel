@@ -1,0 +1,135 @@
+# Files (distill set): read the workspace. Tasks tagged beh-lookup don't name the file: the answer
+# is in the workspace, so asking the user for it is a failure (baseline-failures.md, cause 1).
+category: files
+tasks:
+  - id: dst-files-treasurer-email
+    tags: [distill, beh-lookup]
+    prompt: "What's the email address of our treasurer?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: 'tomasz@greenspoke\.example'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-files-free-plot
+    tags: [distill, beh-lookup]
+    prompt: "Which garden plot is still free this season?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '\bA3\b'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-files-quote-expiry
+    tags: [distill, beh-lookup]
+    prompt: "Until when can we still order at the prices Omar quoted?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '31 Oct|Oct(ober)? 31|2026-10-31'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-files-workshop-location
+    tags: [distill, beh-lookup]
+    prompt: "Where do the bike repair workshops take place?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: 'shed'}
+      - {type: answer_matches, pattern: '\bB3\b'}
+
+  - id: dst-files-yearly-fee
+    tags: [distill, beh-lookup]
+    prompt: "How much is a Greenspoke membership per year?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '\$ ?35\b|\b35 ?(dollars|USD)'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-files-insurance-deadline
+    tags: [distill, beh-lookup]
+    prompt: "By when do I have to renew the liability insurance?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '30 Nov|Nov(ember)? 30'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-files-workspace-overview
+    tags: [distill]
+    prompt: "Give me an overview of the files I have in the workspace."
+    checks:
+      - {type: tool_called, tool: list_files}
+      - {type: answer_matches, pattern: 'ledger_q3'}
+    rubric: "Lists the workspace files (e.g. people.csv, ledger_q3.csv, chores.md, the harvest folder) without inventing files."
+
+  - id: dst-files-bread-oven
+    tags: [distill]
+    prompt: "Open harvest/zucchini_bread.md. At what temperature does it bake?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'zucchini_bread'}}
+      - {type: answer_matches, pattern: '175'}
+
+  - id: dst-files-harvest-folder
+    tags: [distill]
+    prompt: "Show me what the harvest folder contains."
+    checks:
+      - {type: tool_called, tool: list_files, args: {path: 'harvest'}}
+      - {type: answer_matches, pattern: 'zucchini'}
+
+  - id: dst-files-minutes-decisions
+    tags: [distill]
+    prompt: "What did the steering group decide in minutes_2026-10-08.md?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'minutes'}}
+      - {type: answer_matches, pattern: 'grant'}
+    rubric: "Names the three decisions: the $35 fee stays, the plant sale moves to 24 October, and the co-op applies for the Green Corners grant. Doesn't list action items as decisions."
+
+  - id: dst-files-low-stock
+    tags: [distill]
+    prompt: "Look at parts_inventory.csv: what has dropped below its reorder level?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'parts_inventory'}}
+      - {type: answer_matches, pattern: '26'}
+      - {type: answer_matches, pattern: 'chain'}
+      - {type: answer_not_matches, pattern: 'brake pads.{0,40}below|spoke.{0,40}below'}
+
+  - id: dst-files-quote-two-sentences
+    tags: [distill]
+    prompt: "Give me supplier_quote.txt in two sentences."
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'supplier_quote'}}
+    rubric: "Two sentences covering the prices (chain $10.90, tube $3.60, brake pads $2.50), the shipping rule (free over $60, else $8) and validity until 31 October."
+
+  - id: dst-files-shed-code-policy
+    tags: [distill]
+    prompt: "According to welcome_packet.md, how does a new member get the shed code?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'welcome_packet'}}
+      - {type: answer_matches, pattern: 'in person'}
+      - {type: answer_matches, pattern: 'Aiko'}
+
+  - id: dst-files-biggest-harvest
+    tags: [distill]
+    prompt: "Which single entry in harvest_log.csv was the biggest harvest?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'harvest_log'}}
+      - {type: answer_matches, pattern: '11\.3'}
+      - {type: answer_matches, pattern: 'squash'}
+
+  - id: dst-files-missing-map
+    tags: [distill]
+    prompt: "Open garden_map.pdf and describe the layout."
+    rubric: "Reports that there is no garden_map.pdf in the workspace (after checking) and does not invent a layout. May offer what related files exist (e.g. plot_assignments.md)."
+
+  - id: dst-files-november-sessions
+    tags: [distill]
+    prompt: "Which sessions in workshop_schedule.md fall in November?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'workshop_schedule'}}
+      - {type: answer_matches, pattern: 'lights'}
+      - {type: answer_matches, pattern: 'open repair'}
+      - {type: answer_not_matches, pattern: 'flat tires.{0,30}November'}
+
+  - id: dst-files-grant-purpose
+    tags: [distill]
+    prompt: "What would the money from grant_application_draft.md be spent on?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'grant_application'}}
+      - {type: answer_matches, pattern: 'bench'}
+      - {type: answer_matches, pattern: 'rain ?water|tank'}

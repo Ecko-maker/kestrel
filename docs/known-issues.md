@@ -174,10 +174,16 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 Missed: a canary payload without its `KCAN` prefix that is split or encoded in other ways (ROT13, reversed, spelled out), secrets with no known key pattern that aren't in the environment at build time, and personal data that isn't a secret (names, email addresses, phone numbers). The canary decoder is a small copy of `bench/canaries.py` from the Phase 3 branches, which main doesn't have yet.
 **Done when:** after the Phase 3 merge, the scrub uses `bench/canaries.py` (one decoder) with the safety split's canary payloads, and a sample of kept examples is read by hand before the first fine-tune.
 
-### 32. Today's data yields few examples, and paraphrased bench prompts get through
+### 32. Distill data needs a run, and reworded bench prompts in chats get through
 **Labels:** `distillation`, `medium`
-Bench traces are always dropped, so the only examples today are chat turns rated `/good` that ran entirely on Groq gpt-oss-120b; most chats so far ran on Ollama or Gemini. The bench-passed half of the quality rule has no source yet. The prompt match is exact after normalizing case and whitespace, so a reworded KestrelBench prompt typed into a chat is not caught.
-**Done when:** a graded, non-KestrelBench task pool produces teacher traces for Phase 4, and contamination also checks near-duplicates (e.g. n-gram overlap with the bench prompts).
+Bench traces are always dropped, so before step 2 the only examples were chat turns rated `/good` that ran entirely on Groq gpt-oss-120b. Step 2 added the source: the distill task set (`distill/`, 120 tasks, design decision 20), whose passed runs feed the quality rule. It hasn't been run yet (about 133k billable tokens for one pass, by `--dry-run`; it needs the owner's OK for quota).
+Still open: the pipeline's prompt match is exact after normalizing case, punctuation and whitespace, so a reworded KestrelBench prompt typed into a *chat* is not caught. The task set itself is checked for near-duplicates by `scripts/distill_overlap.py`.
+**Done when:** the distill set has been run on the teacher and built into a dataset, and the pipeline also applies the 3-gram near-duplicate check to chat prompts.
+
+### 33. The distill set's rubric tasks would be judged by the teacher itself
+**Labels:** `distillation`, `evals`, `medium`
+42 of the 120 distill tasks have a rubric. With the default `--judge groq`, gpt-oss-120b grades its own answers, and only passed runs become training data, so its self-preference bias (docs/kestrelbench.md, "Judge independence") would pick the examples. Deterministic checks are unaffected.
+**Done when:** distill runs use an independent judge (the candidate is `qwen/qwen3.8-27b`, pending calibration, #21), or the rubric tasks are dropped from training until then.
 
 ---
 

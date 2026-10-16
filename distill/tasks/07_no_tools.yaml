@@ -1,0 +1,72 @@
+# No tools needed (distill set): answer directly.
+category: no_tools
+tasks:
+  - id: dst-notool-iron-symbol
+    tags: [distill]
+    prompt: "Which chemical symbol stands for iron?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: '\bFe\b'}
+
+  - id: dst-notool-photosynthesis
+    tags: [distill]
+    prompt: "Define photosynthesis in one sentence."
+    checks:
+      - {type: no_tools}
+    rubric: "One correct sentence: plants use light, water and carbon dioxide to make sugar (glucose) and release oxygen."
+
+  - id: dst-notool-japanese-thanks
+    tags: [distill]
+    prompt: "What's 'thank you' in Japanese?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: 'arigat|ありがとう'}
+
+  - id: dst-notool-austen
+    tags: [distill]
+    prompt: "Which author wrote Pride and Prejudice?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: 'Austen'}
+
+  - id: dst-notool-goodbye
+    tags: [distill]
+    prompt: "Great, I'm all set. Bye!"
+    checks:
+      - {type: no_tools}
+    rubric: "A short, friendly goodbye. No tool use, no long offer list."
+
+  - id: dst-notool-list-vs-tuple
+    tags: [distill]
+    prompt: "In Python, how does a list differ from a tuple? Two sentences, please."
+    checks:
+      - {type: no_tools}
+    rubric: "Correct in about two sentences: lists are mutable, tuples are immutable (may mention syntax or use as dict keys)."
+
+  - id: dst-notool-event-names
+    tags: [distill]
+    prompt: "Suggest three catchy names for a monthly bike repair evening."
+    checks:
+      - {type: no_tools}
+    rubric: "Three distinct, plausible event names related to bikes or repair."
+
+  - id: dst-notool-fahrenheit-freezing
+    tags: [distill]
+    prompt: "At what temperature in Fahrenheit does water freeze?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: '\b32\b'}
+
+  - id: dst-notool-hexagon
+    tags: [distill]
+    prompt: "How many sides has a hexagon got?"
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: '\b(6|six)\b'}
+
+  - id: dst-notool-friendlier
+    tags: [distill]
+    prompt: "Make this sound friendlier: 'Return the bike by Friday or pay the fee.'"
+    checks:
+      - {type: no_tools}
+    rubric: "A friendlier rewrite that keeps both facts: the Friday return date and that a fee applies otherwise."

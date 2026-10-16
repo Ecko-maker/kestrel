@@ -144,7 +144,7 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Decision:** `kestrel distill build` (`src/kestrel/distill/dataset.py`) turns a copy of a traces database into `train.jsonl`, `val.jsonl` and `manifest.json`. Filters run in a fixed order and each drop is counted: no stored messages, teacher, contamination (bench run, bench prompt), quality, secrets (canary, redaction pattern, `.env` line, env value), length, duplicate.
 - **Teacher (hard):** every model step's (provider, model) must be listed in `src/kestrel/distill/teachers.toml` (default `groq` + `openai/gpt-oss-120b`). There is no flag for other providers, and the loader refuses Gemini, Claude, GPT and demo entries, so editing the file can't admit them either.
-- **Contamination (hard):** any trace listed in a bench results file is dropped, and so is any trace whose user message equals a KestrelBench prompt from any task folder under `evals/kestrelbench/` (case and whitespace ignored). The command refuses the live `logs/traces.db` and any `bench.db`.
+- **Contamination (hard):** any trace listed in a bench results file is dropped, and so is any trace whose user message equals a KestrelBench prompt from any task folder under `evals/kestrelbench/` (case, punctuation and whitespace ignored). The command refuses the live `logs/traces.db` and any `bench.db`.
 - **Quality:** answered (not `max_steps` or error), not rated `/bad`, and either rated `/good` or part of a bench task that passed (all checks, judge >= 0.5). Since bench traces are always dropped, the second path only serves future graded sources that aren't KestrelBench runs.
 - **Secrets (hard):** drop, never redact, if any part of the example (system prompt, user turns, tool arguments, tool results, answer) holds a `KCAN-` canary (also URL, base64 or hex encoded, or its prefix alone), a `tracing.redact()` match or `[REDACTED]` marker, a `.env`-style secret line, or a secret environment variable's value.
 - **Format:** records come from `trace_report.export_record`, the function `kestrel export` uses, so there is one formatter. Over-long examples are dropped, not truncated. The split hashes the session id (salt 2026), so a conversation is never on both sides. The manifest holds the input SHA-256, the git commit, the teachers, the settings, the drops and the stats; no timestamps, so a rebuild is byte-identical.
@@ -157,3 +157,21 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Split by trace.** Turns of one conversation share context, so val would partly measure memorization.
 
 **Why:** the student should learn only behavior that a teacher it may learn from produced, that passed a check other than the benchmark it will be judged on, and that contains no planted or real secret. Every dropped example is counted by reason, so a small dataset is explained, not silent. Open items: known issues #30-#32.
+
+---
+
+## 20. Distill task set: disjoint from KestrelBench, told apart by metadata
+
+**Decision:** graded teacher data comes from a separate task set, `distill/` (120 tasks in the main format, version `d1.0`, its own fixture workspace), run with `kestrel bench run --split distill`.
+- **Disjoint by construction:** it lives outside `evals/kestrelbench/`, with a different setting (a community garden and bike co-op), people, addresses (all on example domains), numbers and file names. `scripts/distill_overlap.py` compares every distill prompt with every KestrelBench prompt (all splits; case, punctuation and whitespace ignored): an exact match or word 3-gram Jaccard >= 0.5 fails, >= 0.3 is listed for review. At `d1.0`: 0 fail, 0 in review (closest 0.23), also against the Phase 3 safety split.
+- **Same 10 categories in the main suite's proportions (x1.2), over-weighting three baseline failure modes** (`evals/reports/baseline-failures.md`): finding facts in the workspace instead of asking (12 tasks, `beh-lookup`), using the calculator (14, `beh-calc`), and calling the approval-gated tool instead of drafting and asking (12, `beh-gated`). The `safety` category holds risky requests the user makes themself (delete, outside paths, `.env`, skipped approvals, false claims); there is no injection or attack text in the set.
+- **Runner change, additive:** `--split {main,distill}` (default `main`) and `--split-dir`. A distill run reads `distill/tasks` and `distill/workspace`, writes traces to `logs/distill.db` (never `bench.db`), and records `split`, `split_version`, `task_dir` and `workspace_dir` in its results meta. Main runs gain only `"split": "main"`. Proof: the main suite's dry run is byte-identical before and after (with and without `--split main`), all 100 task fingerprints are identical, and the agent fingerprint stays `cc5c16377662`.
+- **Pipeline rule (deny unless proven):** `kestrel distill build` treats a results file as a distill run only if `meta.split == "distill"` and every task id starts with `dst-`. Anything else (no `split` key, as in every older file, `main`, `safety`, an unknown split, a mix) is KestrelBench and its traces are dropped. A trace listed by both kinds keeps the KestrelBench verdict. The file's location is never used. The manifest records each results file's hash and how it was classified.
+
+**Alternatives:**
+- **Hold out part of KestrelBench for training.** The held-out part would stop being a fair test, and the remaining suite would be smaller than its confidence intervals can bear.
+- **Tell runs apart by folder or file name.** A copied or renamed file would change its meaning; metadata travels with the file.
+- **Put the set under `evals/kestrelbench/`.** Its prompts would then count as KestrelBench prompts, and step 1's contamination filter would drop its own traces.
+- **Paraphrase bench tasks for the set.** Cheap, but it trains the student on the exam's wording; the overlap check exists to catch exactly that.
+
+**Why:** the student needs graded, teacher-written examples of the behaviors the baseline gets wrong, without ever seeing KestrelBench, which stays the deploy gate.

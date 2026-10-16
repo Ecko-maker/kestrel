@@ -17,7 +17,8 @@ from kestrel.bench.lock import LockError, results_lock, unlock
 from kestrel.bench.report import markdown, pct, summarize, write_results
 from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
-from kestrel.bench.tasks import SUITE_VERSION, Task, load_tasks, select, task_sha
+from kestrel.bench.tasks import SUITE_VERSION, TASKS_DIR, WORKSPACE_DIR, Task, load_tasks, select, task_sha
+from kestrel.distill import DISTILL_DB, DISTILL_DIR, DISTILL_VERSION
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
 from kestrel.tracing import Tracer
 
@@ -86,6 +87,16 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         action="append",
         help="results file(s) with measured tokens per task for the estimate (repeatable; default: --reuse/--resume)",
     )
+    run.add_argument(
+        "--split",
+        choices=["main", "distill"],
+        default="main",
+        help="main (KestrelBench, the default) or distill (the Phase 4 training task set in distill/; "
+        "traces go to logs/distill.db)",
+    )
+    run.add_argument(
+        "--split-dir", type=Path, help="distill only: a folder with tasks/ and workspace/ (default distill)"
+    )
 
     label = actions.add_parser("label", help="label stored answers pass/fail yourself, to calibrate the judge")
     label.add_argument("results", type=Path, nargs="?", help="results JSON (default: the newest)")
@@ -144,6 +155,13 @@ def _git_sha() -> str | None:
         return None
 
 
+def _repo_relative(path: Path) -> str:
+    """A folder as recorded in results meta: relative to the repo when it's inside it."""
+    resolved = path.resolve()
+    root = RESULTS_DIR.parents[1]
+    return resolved.relative_to(root).as_posix() if resolved.is_relative_to(root) else resolved.as_posix()
+
+
 def _progress(r: TaskResult) -> None:
     mark = {"pass": "PASS", "fail": "FAIL", "error": "ERR ", "excluded": "EXCL", "skipped": "SKIP"}[r.status]
     extra = f"  judge {r.judge['score']}" if r.judge else ""
@@ -159,9 +177,24 @@ def _judge(provider: str, model: str | None) -> Judge:
 # --- run ----------------------------------------------------------------------------------
 
 
+def _split_dirs(args: argparse.Namespace) -> tuple[Path, Path]:
+    """(tasks folder, fixture workspace) for --split. main is exactly what it always was."""
+    if getattr(args, "split", "main") == "main":
+        if getattr(args, "split_dir", None):
+            sys.exit("--split-dir applies to --split distill only.")
+        return TASKS_DIR, WORKSPACE_DIR
+    root = args.split_dir or DISTILL_DIR
+    return root / "tasks", root / "workspace"
+
+
 def _pick_tasks(args: argparse.Namespace) -> list[Task]:
+    tasks_dir, _ = _split_dirs(args)
     tasks = select(
-        load_tasks(), args.subset, args.category, args.task, skip_tags=("network",) if args.skip_network else ()
+        load_tasks(tasks_dir),
+        args.subset,
+        args.category,
+        args.task,
+        skip_tags=("network",) if args.skip_network else (),
     )
     if args.tasks:
         patterns = [p.strip() for p in args.tasks.split(",") if p.strip()]
@@ -178,7 +211,9 @@ def _pick_tasks(args: argparse.Namespace) -> list[Task]:
     return tasks
 
 
-def _reusable(path: Path, provider: str, model: str, judge: str | None, tasks: list[Task]) -> list[TaskResult]:
+def _reusable(
+    path: Path, provider: str, model: str, judge: str | None, tasks: list[Task], workspace: Path = WORKSPACE_DIR
+) -> list[TaskResult]:
     """Graded runs from an earlier file that may stand in for repeat 1: same model, same judge and
     judge version, and an identical task definition (fingerprint), so nothing is mixed."""
     old = _load(path)
@@ -187,7 +222,7 @@ def _reusable(path: Path, provider: str, model: str, judge: str | None, tasks: l
         sys.exit(f"--reuse: {path.name} was run on {m.get('provider')}/{m.get('model')}, not {provider}/{model}.")
     if judge_label(m) != (f"{judge}@{JUDGE_VERSION}" if judge else "none"):
         sys.exit(f"--reuse: {path.name} was graded by {judge_label(m)}; this run uses {judge}@{JUDGE_VERSION}.")
-    shas = {t.id: task_sha(t) for t in tasks}
+    shas = {t.id: task_sha(t, workspace) for t in tasks}
     usable, stale = [], 0
     for d in old["tasks"]:
         if d["id"] in shas and d["status"] in REUSABLE and d.get("repeat", 1) == 1:
@@ -230,7 +265,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Lock the output (and resumed) results file for the whole run, so a second process can't
     run the same benchmark at the same time. A dry run makes no calls and takes no lock."""
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{args.provider}.json"
+    prefix = "distill-" if args.split == "distill" else ""
+    args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{prefix}{args.provider}.json"
     if args.dry_run:
         return _run(args)
     try:
@@ -253,10 +289,13 @@ def _run(args: argparse.Namespace) -> int:
     judge_model = (args.judge_model or PROVIDERS[args.judge].default_model) if args.judge != "none" else None
     judge_name = f"{args.judge}/{judge_model}" if judge_model else None
 
+    tasks_dir, workspace = _split_dirs(args)
     previous: dict[tuple[str, int], TaskResult] = {}
     if args.resume:
         old = _load(args.resume)
         old_meta = old.get("meta", {})
+        if old_meta.get("split", "main") != args.split:
+            sys.exit(f"{args.resume.name} is a {old_meta.get('split', 'main')} split run, not {args.split}.")
         if (old_meta.get("provider"), old_meta.get("model")) != (args.provider, model):
             sys.exit(
                 f"{args.resume.name} was run on {old_meta.get('provider')}/{old_meta.get('model')}; "
@@ -270,14 +309,17 @@ def _run(args: argparse.Namespace) -> int:
             )
         previous = {(d["id"], d.get("repeat", 1)): TaskResult(**d) for d in old["tasks"] if d["status"] in DONE}
     if args.reuse:
-        for r in _reusable(args.reuse, args.provider, model, judge_name, tasks):
+        if _load(args.reuse).get("meta", {}).get("split", "main") != args.split:
+            sys.exit(f"--reuse: {args.reuse.name} is not a {args.split} split run.")
+        for r in _reusable(args.reuse, args.provider, model, judge_name, tasks, workspace):
             previous.setdefault((r.id, 1), r)
 
     all_jobs = [(t, k) for k in range(1, args.repeat + 1) for t in tasks]  # repeat by repeat: spread over time
     todo = [(t, k) for t, k in all_jobs if (t.id, k) not in previous]
     est = _estimate(todo, args.estimate_from or [p for p in (args.reuse, args.resume) if p])
+    name = "KestrelBench" if args.split == "main" else f"Distill set {DISTILL_VERSION} (not KestrelBench)"
     print(
-        f"KestrelBench: {len(tasks)} tasks x {args.repeat} = {len(all_jobs)} runs on {args.provider}/{model}, "
+        f"{name}: {len(tasks)} tasks x {args.repeat} = {len(all_jobs)} runs on {args.provider}/{model}, "
         f"judge {judge_name or 'none'} ({JUDGE_VERSION}); {len(todo)} to run, {len(all_jobs) - len(todo)} kept"
     )
     print(
@@ -311,7 +353,8 @@ def _run(args: argparse.Namespace) -> int:
         [t for t, _ in todo],
         llm,
         judge,
-        Tracer(BENCH_DB),
+        Tracer(BENCH_DB if args.split == "main" else DISTILL_DB),
+        base_workspace=workspace,
         pause=args.pause,
         on_result=_progress,
         expected_provider=args.provider,
@@ -339,7 +382,15 @@ def _run(args: argparse.Namespace) -> int:
         "reused_from": args.reuse.name if args.reuse else None,
         "shard": args.shard,
         "git": _git_sha(),
+        "split": args.split,  # `kestrel distill build` trains only on "distill" runs, never on KestrelBench
     }
+    if args.split == "distill":
+        meta |= {
+            "suite_version": DISTILL_VERSION,  # so `bench compare` never pairs it with KestrelBench
+            "split_version": DISTILL_VERSION,
+            "task_dir": _repo_relative(tasks_dir),
+            "workspace_dir": _repo_relative(workspace),
+        }
     data = write_results(out, results, meta)
     out.with_suffix(".md").write_text(markdown(data), encoding="utf-8")
     s = data["summary"]

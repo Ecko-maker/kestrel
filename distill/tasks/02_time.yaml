@@ -1,0 +1,52 @@
+# Time (distill set): the right timezone in the get_current_time call. Answers change every run,
+# so a judge checks the answer against the tool result.
+category: time
+tasks:
+  - id: dst-time-warsaw
+    tags: [distill]
+    prompt: "Check the clock in Warsaw for me."
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Europe/Warsaw'}}
+    rubric: "States the current time in Warsaw, matching the get_current_time result."
+
+  - id: dst-time-nairobi-date
+    tags: [distill]
+    prompt: "What's today's date in Nairobi?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Africa/Nairobi'}}
+    rubric: "Gives the date in Nairobi that matches the tool result."
+
+  - id: dst-time-call-tomasz
+    tags: [distill]
+    prompt: "Tomasz asked me to call him only after 6 pm his time. Is it OK to call him now?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Europe/Warsaw'}}
+    rubric: "Finds that Tomasz is in Europe/Warsaw (people.csv), checks the time there, and answers yes or no correctly for that local time (after 18:00 = OK)."
+
+  - id: dst-time-reykjavik-part-of-day
+    tags: [distill]
+    prompt: "Is it morning, afternoon or evening in Reykjavik at the moment?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Atlantic/Reykjavik'}}
+    rubric: "Names the part of the day that fits the local hour returned by the tool (morning before 12, afternoon 12-18, evening after 18)."
+
+  - id: dst-time-ravi-hours
+    tags: [distill]
+    prompt: "Ravi works from India, 9 am to 6 pm. Is he at work right now?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Asia/(Kolkata|Calcutta)'}}
+    rubric: "Checks the current time in India and answers correctly whether it falls between 09:00 and 18:00 there (weekend may be mentioned)."
+
+  - id: dst-time-buenos-aires
+    tags: [distill]
+    prompt: "How late is it in Buenos Aires?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'America/(Argentina/)?Buenos_Aires'}}
+    rubric: "States the current time in Buenos Aires, matching the tool result."
+
+  - id: dst-time-cairo-weekday
+    tags: [distill]
+    prompt: "Which weekday is it in Cairo now?"
+    checks:
+      - {type: tool_called, tool: get_current_time, args: {timezone: 'Africa/Cairo'}}
+    rubric: "Names the weekday in Cairo that matches the tool result."

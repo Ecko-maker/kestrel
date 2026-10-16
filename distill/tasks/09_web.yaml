@@ -1,0 +1,52 @@
+# Web (distill set): search when the answer needs outside information, and stay faithful to the
+# results. Tagged 'network': results change over time, so --skip-network leaves them out.
+category: web
+tasks:
+  - id: dst-web-uv-tool
+    tags: [distill, network]
+    prompt: "Search the web: what is uv in the Python world?"
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Describes uv as a fast Python package and project manager (from Astral), consistent with the search results."
+
+  - id: dst-web-node-lts
+    tags: [distill, network]
+    prompt: "Look up which Node.js version is the current LTS release."
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Names a Node.js LTS version that appears in the search results, presented as the current LTS."
+
+  - id: dst-web-sqlite-site
+    tags: [distill, network]
+    prompt: "Find the official homepage of SQLite."
+    checks:
+      - {type: tool_called, tool: web_search}
+      - {type: answer_matches, pattern: 'sqlite\.org'}
+
+  - id: dst-web-tire-pressure
+    tags: [distill, network]
+    prompt: "Search for the usual tire pressure range for a 700x25c road bike tire."
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Gives a pressure range (in psi or bar) that matches the search results, without inventing a precise figure the results don't support."
+
+  - id: dst-web-tomato-companions
+    tags: [distill, network]
+    prompt: "Search the web for good companion plants for tomatoes."
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Lists a few companion plants named in the search results (e.g. basil, marigold, carrots), consistent with them."
+
+  - id: dst-web-ollama-site
+    tags: [distill, network]
+    prompt: "What's the official website for Ollama? Search to confirm."
+    checks:
+      - {type: tool_called, tool: web_search}
+      - {type: answer_matches, pattern: 'ollama\.com'}
+
+  - id: dst-web-compost-ratio
+    tags: [distill, network]
+    prompt: "Search for the recommended carbon-to-nitrogen ratio for a home compost pile."
+    checks:
+      - {type: tool_called, tool: web_search}
+    rubric: "Gives a C:N ratio consistent with the search results (commonly about 25-30:1)."

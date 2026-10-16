@@ -41,6 +41,12 @@ uv run kestrel bench report                           # Markdown report of the n
 
 Results go to `evals/results/` (git-ignored): a JSON file with every check and judge verdict, and a Markdown report. Bench traces go to `logs/bench.db`, apart from your personal traces, so benchmark runs never become training data by accident.
 
+**Distill set (Phase 4, not KestrelBench).** `--split distill` runs the 120 training tasks in `distill/` with their own workspace, writes traces to `logs/distill.db` and records `"split": "distill"` in the results meta; `kestrel distill build` uses only such runs. `--split-dir DIR` points it at another folder with `tasks/` and `workspace/`. Main runs are unchanged (they record `"split": "main"`). Check the set never overlaps KestrelBench with `uv run python scripts/distill_overlap.py`.
+
+```powershell
+uv run kestrel bench run --split distill --dry-run --judge none   # what would run, expected tokens; no calls
+```
+
 **Free-tier budget:** Groq's free tier allows gpt-oss-120b 1,000 requests, 8,000 tokens per minute and **200,000 tokens per day**, but [cached input tokens don't count](https://console.groq.com/docs/rate-limits). A full run measured ~310,000 raw agent tokens (~3,100 per task), yet most of each request is the same system prompt and tool list, which Groq serves from cache (82% of the prompt in a sample call). Results report both raw and billable (uncached) tokens. To stay safe, pass a budget in billable tokens:
 
 ```powershell

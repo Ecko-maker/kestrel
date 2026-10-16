@@ -1,0 +1,88 @@
+# Arithmetic (distill set): every answer goes through the calculator. The baseline's habit of
+# working numbers out "in its head" is what these teach away (baseline-failures.md, cause 2).
+category: arithmetic
+tasks:
+  - id: dst-arith-member-discount
+    tags: [distill, beh-calc]
+    prompt: "A bike trailer costs $268 and co-op members get 15% off. What's the member price?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '227\.80?\b'}
+
+  - id: dst-arith-lumber-per-bed
+    tags: [distill, beh-calc]
+    prompt: "We spent $1,147.50 on lumber for 9 raised beds. How much is that per bed?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '127\.50?\b'}
+
+  - id: dst-arith-fourth-power
+    tags: [distill, beh-calc]
+    prompt: "What is 37 raised to the fourth power?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '1[, ]?874[, ]?161'}
+
+  - id: dst-arith-cube-root
+    tags: [distill, beh-calc]
+    prompt: "Find the cube root of 91,125."
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b45\b'}
+
+  - id: dst-arith-reserve-growth
+    tags: [distill, beh-calc]
+    prompt: "Our reserve fund of $2,000 grows 3.2% each year. What will it be worth in 5 years?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '2[, ]?341\.1[45]'}
+
+  - id: dst-arith-seed-packets
+    tags: [distill, beh-calc]
+    prompt: "We have 487 seed packets to hand out evenly to 23 gardeners. How many does each gardener get, and how many are left over?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b21\b'}
+      - {type: answer_matches, pattern: '\b4\b'}
+
+  - id: dst-arith-litres-to-gallons
+    tags: [distill, beh-calc]
+    prompt: "A rain barrel holds 208 litres. One US gallon is 3.785 litres. How many gallons is the barrel, to two decimals?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '54\.95'}
+
+  - id: dst-arith-donation-average
+    tags: [distill, beh-calc]
+    prompt: "Our last five repair cafes raised $212.50, $187.25, $240.10, $198.00 and $226.65. What did one cafe raise on average?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '212\.90?\b'}
+
+  - id: dst-arith-member-growth
+    tags: [distill, beh-calc]
+    prompt: "The co-op grew from 64 members last year to 83 this year. By what percentage did membership grow?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '29\.69|29\.7\b'}
+
+  - id: dst-arith-mixed-expression
+    tags: [distill, beh-calc]
+    prompt: "What is 2,604 divided by 31, plus 19 squared?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b445\b'}
+
+  - id: dst-arith-volunteer-value
+    tags: [distill, beh-calc]
+    prompt: "Volunteers gave 175 hours this quarter. If a volunteer hour is valued at $31.80, what is their time worth in total?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '5[, ]?565'}
+
+  - id: dst-arith-herb-bed-area
+    tags: [distill, beh-calc]
+    prompt: "A round herb bed has a radius of 1.8 metres. What is its area in square metres, rounded to two decimals?"
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '10\.18'}
