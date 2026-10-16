@@ -5,11 +5,12 @@ files. Every trace goes through the filters below in order; the first one it fai
 
   no_messages           the trace stored no conversation (KESTREL_TRACE_CONTENT=off)
   teacher               a model step not on teachers.toml (Gemini, demo, an unknown model, a fallback)
-  contamination_run     the trace belongs to a KestrelBench run (its id is in a results file)
+  contamination_run     the trace belongs to a KestrelBench run: its id is in a results file that isn't
+                        a distill run (see is_distill_run; decided from the file's metadata)
   contamination_prompt  a user message equals a KestrelBench prompt (main suite, safety split, any
-                        split), ignoring case and whitespace
+                        split), ignoring case, punctuation and whitespace
   quality               not answered (max_steps / error), rated /bad, or neither rated /good nor part
-                        of a bench task that passed (all checks, judge >= 0.5)
+                        of a distill task that passed (all checks, judge >= 0.5)
   secret_canary         a KCAN- canary, as written or URL / base64 / hex encoded, or its prefix alone
   secret_pattern        anything tracing.redact() would change, or a [REDACTED] marker
   secret_env_line       a .env-style KEY=value line with a secret-sounding name
@@ -18,9 +19,9 @@ files. Every trace goes through the filters below in order; the first one it fai
   duplicate             the same conversation as an earlier example
 
 The teacher, contamination and secret filters have no override. KestrelBench is the student's deploy
-gate, so a trace from it (or with one of its prompts) would make that gate meaningless. Bench traces
-are therefore always dropped, and the "bench task passed" half of the quality rule only matters for
-graded sources that aren't KestrelBench runs; today, only chat traces rated /good get through.
+gate, so a trace from it (or with one of its prompts) would make that gate meaningless. Graded
+examples come from the distill task set instead (distill/, `kestrel bench run --split distill`),
+whose prompts are checked against KestrelBench's by kestrel.distill.overlap.
 
 Output in --out: train.jsonl and val.jsonl in the shape of `kestrel export` (trace_report.export_record),
 split by session so a conversation never lands on both sides, and manifest.json with the inputs, the
@@ -44,16 +45,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote_plus
 
-import yaml
-
 from kestrel.agent import estimate_tokens
+from kestrel.distill import DISTILL_DB, ROOT, overlap
 from kestrel.trace_report import export_record, percentile
 from kestrel.tracing import REDACTED, redact
 
-ROOT = Path(__file__).resolve().parents[3]
 TEACHERS_FILE = Path(__file__).with_name("teachers.toml")
-BENCH_DIR = ROOT / "evals" / "kestrelbench"  # every task folder in it: tasks/, safety/, any future split
-LIVE_DBS = (ROOT / "logs" / "traces.db", ROOT / "logs" / "bench.db")
+BENCH_DIR = overlap.BENCH_DIR  # every task folder in it: tasks/, safety/, any future split
+LIVE_DBS = (ROOT / "logs" / "traces.db", ROOT / "logs" / "bench.db", ROOT / DISTILL_DB)
+DISTILL_ID_PREFIX = "dst-"
 SPLIT_SALT = "2026"
 
 FILTERS = (
@@ -101,39 +101,20 @@ def load_teachers(path: Path = TEACHERS_FILE) -> frozenset[tuple[str, str]]:
     return teachers
 
 
-def normalize(text: str) -> str:
-    return " ".join(text.lower().split())
+normalize = overlap.normalize  # lowercase, no punctuation, single spaces: one rule for both checks
 
 
 def bench_prompts(bench_dir: Path = BENCH_DIR) -> frozenset[str]:
-    """Every user prompt of every KestrelBench task file (all turns), normalized. Fixture files in
-    workspace/ are data the tasks read, not prompts."""
-
-    def collect(node: Any) -> list[str]:
-        if isinstance(node, dict):
-            found = []
-            for key, value in node.items():
-                if key == "prompt":
-                    found += [value] if isinstance(value, str) else [v for v in value or [] if isinstance(v, str)]
-                else:
-                    found += collect(value)
-            return found
-        if isinstance(node, list):
-            return [p for item in node for p in collect(item)]
-        return []
-
-    prompts: set[str] = set()
-    for path in sorted(bench_dir.rglob("*.y*ml")):
-        if "workspace" in path.relative_to(bench_dir).parts:
-            continue
-        prompts.update(normalize(p) for p in collect(yaml.safe_load(path.read_text(encoding="utf-8"))))
-    return frozenset(prompts)
+    """Every user prompt of every KestrelBench task file (all turns), normalized. Read by the same
+    function as the overlap check, so both see the same prompts."""
+    return frozenset(normalize(p.text) for p in overlap.bench_prompts(bench_dir))
 
 
 @dataclass(frozen=True)
 class Verdict:
     task_id: str
     passed: bool  # all checks passed and (no judge, or judge >= 0.5)
+    distill: bool = False  # from a distill run; anything else counts as KestrelBench
 
 
 def task_passed(task: dict[str, Any]) -> bool:
@@ -146,25 +127,50 @@ def task_passed(task: dict[str, Any]) -> bool:
     )
 
 
+def is_distill_run(data: dict[str, Any]) -> bool:
+    """A results file is a distill run only if its metadata says split "distill" AND every task id is a
+    distill id. Anything else (no split key, as in every file before Phase 4, "main", "safety", an
+    unknown split, a mix, no tasks) counts as KestrelBench. Where the file lives is never used."""
+    tasks = data.get("tasks") or []
+    return (
+        data.get("meta", {}).get("split") == "distill"
+        and bool(tasks)
+        and all(str(t.get("id", "")).startswith(DISTILL_ID_PREFIX) for t in tasks)
+    )
+
+
 def load_verdicts(paths: list[Path]) -> dict[str, Verdict]:
-    """trace_id -> verdict for every trace listed in bench results files, whatever its status."""
+    """trace_id -> verdict for every trace listed in results files, whatever its status. A trace
+    listed by both kinds of file keeps the KestrelBench verdict, so it is dropped."""
     verdicts: dict[str, Verdict] = {}
     for path in paths:
-        for task in json.loads(path.read_text(encoding="utf-8")).get("tasks", []):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        distill = is_distill_run(data)
+        for task in data.get("tasks", []):
             for trace_id in task.get("trace_ids", []):
-                verdicts[trace_id] = Verdict(task["id"], task_passed(task))
+                if trace_id in verdicts and not verdicts[trace_id].distill:
+                    continue
+                verdicts[trace_id] = Verdict(task["id"], task_passed(task), distill)
     return verdicts
+
+
+def results_sources(paths: list[Path]) -> dict[str, dict[str, str]]:
+    """For the manifest: each results file's hash and how it was classified."""
+    return {
+        p.name: {
+            "sha256": sha256_file(p),
+            "source": "distill" if is_distill_run(json.loads(p.read_text(encoding="utf-8"))) else "kestrelbench",
+        }
+        for p in paths
+    }
 
 
 def open_readonly(db: Path) -> sqlite3.Connection:
     resolved = db.resolve()
-    if resolved in LIVE_DBS or resolved.name == "bench.db":
-        raise ValueError(
-            f"{db}: pass a copy, not a live database ({'logs/' + resolved.name}). bench.db holds only "
-            "KestrelBench runs, which are never training data."
-            if resolved.name == "bench.db"
-            else f"{db}: pass a copy, not the live logs/traces.db (it may be written while it is read)."
-        )
+    if resolved.name == "bench.db":
+        raise ValueError(f"{db}: bench.db holds only KestrelBench runs, which are never training data.")
+    if resolved in LIVE_DBS:
+        raise ValueError(f"{db}: pass a copy, not the live logs/{resolved.name} (it may be written while it is read).")
     if not resolved.is_file():
         raise FileNotFoundError(f"no traces database at {db}")
     conn = sqlite3.connect(f"{resolved.as_uri()}?mode=ro", uri=True)
@@ -347,7 +353,7 @@ def _check(
     if not teacher_ok(trace["llm_steps"], teachers):
         return "teacher", None
     verdict = verdicts.get(trace["trace_id"])
-    if verdict is not None:
+    if verdict is not None and not verdict.distill:
         return "contamination_run", None
     messages = json.loads(trace["messages"])
     users = [m.get("content") for m in messages if m.get("role") == "user"] + [trace.get("user_message")]
@@ -482,7 +488,7 @@ def main(args: argparse.Namespace) -> int:
         args.out,
         {
             "input_db_sha256": sha256_file(args.db),
-            "results": {p.name: sha256_file(p) for p in args.results},
+            "results": results_sources(args.results),
             "git": git_commit(),
             "teachers": [{"provider": p, "model": m} for p, m in sorted(teachers)],
             "settings": {

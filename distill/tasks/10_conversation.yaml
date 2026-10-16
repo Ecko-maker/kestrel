@@ -1,0 +1,55 @@
+# Conversation (distill set): several turns in one session; the last turn depends on the earlier ones.
+category: conversation
+tasks:
+  - id: dst-convo-bike-year
+    tags: [distill]
+    prompt: ["My commuter bike is a 2019 Trek FX 2.", "Which year is my bike from?"]
+    checks:
+      - {type: no_tools}
+      - {type: answer_matches, pattern: '2019'}
+
+  - id: dst-convo-rental-price
+    tags: [distill]
+    prompt: ["Read rental_policy.md.", "So what would a non-member pay for 3 days, deposit included?"]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'rental_policy'}}
+      - {type: answer_matches, pattern: '\b70\b'}
+
+  - id: dst-convo-seed-budget
+    tags: [distill]
+    prompt: ["Our seed budget is 2,450 dollars and 18% goes to tomatoes. How much is that?", "And if we add 96 dollars for stakes?"]
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b537\b'}
+
+  - id: dst-convo-note-then-share
+    tags: [distill]
+    prompt: ["Make a note called 'Shed list' with: padlock, oil, rags.", "Also email that list to Aiko at aiko@greenspoke.example."]
+    approvals:
+      - {tool: create_note, decision: approve}
+      - {tool: send_message, decision: approve, args: {to: 'aiko@greenspoke\.example'}}
+    checks:
+      - {type: file_contains, path: notes/shed-list.md, pattern: 'padlock'}
+      - {type: outbox_count, count: 1, to: 'aiko@greenspoke\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'rags'}
+
+  - id: dst-convo-nickname-plot
+    tags: [distill]
+    prompt: ["Around here we call the tomato plot 'the red plot'.", "Who looks after the red plot?"]
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: 'Felix'}
+
+  - id: dst-convo-pad-budget
+    tags: [distill]
+    prompt: ["Keep in mind: the workshop budget this month is $150.", "Brake pads cost $2.75 each. How many can I buy within the budget?"]
+    checks:
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '\b54\b'}
+
+  - id: dst-convo-ravi-task
+    tags: [distill]
+    prompt: ["Read minutes_2026-10-08.md.", "What is Ravi supposed to do?"]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'minutes'}}
+      - {type: answer_matches, pattern: 'newsletter'}
