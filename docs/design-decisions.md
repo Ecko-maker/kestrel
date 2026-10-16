@@ -388,3 +388,22 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Rewrite the rubric time tasks as check-friendly prompts** instead of adding two tasks: keeps 120 tasks, but loses the judgment examples once a calibrated judge can grade them.
 
 **Why:** coverage of time and safety without weakening what "graded" means: a task enters training on checks alone only if the checks verify everything its rubric asked.
+
+---
+
+## 23. Student Qwen3-4B-Instruct-2507, QLoRA with transformers + peft + trl, trained on Kaggle
+
+**Decision (owner, 2026-10-16):**
+- **Student:** `Qwen/Qwen3-4B-Instruct-2507`, revision `cdbee75f17c01a7cc42f958dc650907174af0554` (4.02B, text-only, Apache-2.0, Hermes-style `<tool_call>` chat template; Ollama `qwen3:4b-instruct-2507`, 2.5 GB at q4_K_M, "tools" capability).
+- **Library:** transformers 5.20.1 + peft 0.21.2 + trl 1.16.0 + bitsandbytes 0.50.2 (+ datasets, accelerate), in an optional `train` extra so Kestrel's normal install and CI never pull in torch.
+- **Format** (`src/kestrel/distill/train_format.py`): the tokenizer's own chat template renders tools, tool calls and tool results; labels come from character spans of the weight-1 assistant turns (rendering message prefixes), through the end-of-turn token. Longer than `max_length` raises; never truncated. trl gets pre-tokenized rows with `max_length=None` and `skip_prepare_dataset`, so it neither re-masks nor truncates (checked in trl 1.16's source).
+- **Training** (`distill/train.py`, `distill/train.ipynb`, `distill/train_config.toml`): 4-bit NF4 with double quantization, float16 compute (T4), LoRA r 16 / alpha 32 on all attention and MLP projections, seed 2026, val loss every epoch, early stopping, best epoch kept. Output: the adapter plus `lineage.json` (dataset manifest hash, traces DB hash, teachers, base model and revision, the whole config, library versions, GPU, loss history). The two files that run on Kaggle use no Kestrel imports and Python 3.11 syntax (ruff `per-file-target-version`, a test parses them).
+- **Smoke test:** a tiny randomly initialized Qwen3 (2 layers) with the real tokenizer, so the template is identical, on CPU without 4-bit, on a synthetic dataset built by `kestrel distill build`.
+
+**Alternatives (research 2026-10-16, sources in the step-5 plan):**
+- **Qwen3.5-4B** (Apache-2.0, 4.66B, image + text, thinking by default): newer, but the multimodal model class and thinking mode add risk to a first pipeline. The upgrade path once this one works.
+- **Gemma 4 E4B-it** (Apache-2.0, 8.0B total): its own tool-call syntax, per-layer embeddings, 6.6-9.5 GB in Ollama (heavy on a laptop CPU).
+- **Phi-4-mini-instruct** (MIT, 3.8B): a less standard tool format.
+- **unsloth** (about 2x faster on T4): GPU-only, so the CPU smoke test couldn't run the same code; pins `transformers<=5.17.0`; its required `unsloth_zoo` is LGPL-3.0. For ~90 examples (under an hour of T4), speed isn't the bottleneck.
+
+**Why:** the simplest correct path to a first adapter: a text-only model whose tool format Kestrel's Ollama provider already speaks, one code path from laptop to GPU, and a lineage file that ties every adapter to the exact data, teacher and code that made it.

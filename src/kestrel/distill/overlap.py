@@ -238,7 +238,7 @@ def _files_at(repo: Path, commit: str, path: str) -> tuple[tuple[str, str], ...]
 def load_bench(bench_dir: Path = BENCH_DIR, sources_file: Path | None = SOURCES_FILE, repo: Path = ROOT) -> Bench:
     """KestrelBench prompts and fixtures: the files on disk, plus each pinned source in sources_file."""
     bench = Bench(prompts=bench_prompts(bench_dir))
-    bench.sources.append({"source": "disk", "path": bench_dir.as_posix()})
+    bench.sources.append({"source": "disk", "path": _rel(bench_dir)})  # repo-relative: no local paths in manifests
     workspace = bench_dir / "workspace"
     for p in sorted(workspace.rglob("*")) if workspace.is_dir() else ():
         if p.is_file():
