@@ -7,10 +7,17 @@ files. Every trace goes through the filters below in order; the first one it fai
   teacher               a model step not on teachers.toml (Gemini, demo, an unknown model, a fallback)
   contamination_run     the trace belongs to a KestrelBench run: its id is in a results file that isn't
                         a distill run (see is_distill_run; decided from the file's metadata)
-  contamination_prompt  a user message equals a KestrelBench prompt (main suite, safety split, any
-                        split), ignoring case, punctuation and whitespace
+  contamination_prompt  a user message equals a KestrelBench prompt (main suite on disk, plus the
+                        safety split at the commit pinned in bench_sources.toml), ignoring case,
+                        punctuation and whitespace
+  near_duplicate        a user message is close to a KestrelBench prompt: word 3-gram Jaccard or a
+                        shared run of words at the overlap check's fail thresholds (overlap.py)
   quality               not answered (max_steps / error), rated /bad, or neither rated /good nor part
                         of a distill task that passed (all checks, judge >= 0.5)
+  task_changed          a distill result whose task no longer exists or whose definition changed
+                        since the run (task fingerprint differs)
+  rubric_task           a distill task with a rubric, under grading = "checks-only" (grading.toml), or
+                        graded by a judge not listed as calibrated
   secret_canary         a KCAN- canary, as written or URL / base64 / hex encoded, or its prefix alone
   secret_pattern        anything tracing.redact() would change, or a [REDACTED] marker
   secret_env_line       a .env-style KEY=value line with a secret-sounding name
@@ -40,17 +47,21 @@ import subprocess
 import sys
 import tomllib
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote_plus
 
 from kestrel.agent import estimate_tokens
+from kestrel.bench.tasks import Task, TaskError, load_tasks, task_sha
 from kestrel.distill import DISTILL_DB, ROOT, overlap
 from kestrel.trace_report import export_record, percentile
 from kestrel.tracing import REDACTED, redact
 
 TEACHERS_FILE = Path(__file__).with_name("teachers.toml")
+GRADING_FILE = Path(__file__).with_name("grading.toml")
+GRADING_MODES = ("checks-only", "calibrated-judge")
 BENCH_DIR = overlap.BENCH_DIR  # every task folder in it: tasks/, safety/, any future split
 LIVE_DBS = (ROOT / "logs" / "traces.db", ROOT / "logs" / "bench.db", ROOT / DISTILL_DB)
 DISTILL_ID_PREFIX = "dst-"
@@ -61,7 +72,10 @@ FILTERS = (
     "teacher",
     "contamination_run",
     "contamination_prompt",
+    "near_duplicate",
     "quality",
+    "task_changed",
+    "rubric_task",
     "secret_canary",
     "secret_pattern",
     "secret_env_line",
@@ -105,9 +119,27 @@ normalize = overlap.normalize  # lowercase, no punctuation, single spaces: one r
 
 
 def bench_prompts(bench_dir: Path = BENCH_DIR) -> frozenset[str]:
-    """Every user prompt of every KestrelBench task file (all turns), normalized. Read by the same
+    """Every KestrelBench prompt (all turns, disk plus pinned sources), normalized. Read by the same
     function as the overlap check, so both see the same prompts."""
-    return frozenset(normalize(p.text) for p in overlap.bench_prompts(bench_dir))
+    return frozenset(normalize(p.text) for p in overlap.load_bench(bench_dir).prompts)
+
+
+@dataclass(frozen=True)
+class Grading:
+    mode: str = "checks-only"
+    calibrated_judges: frozenset[str] = frozenset()  # "judge-name@version"
+
+
+DEFAULT_GRADING = Grading()
+
+
+def load_grading(path: Path = GRADING_FILE) -> Grading:
+    with path.open("rb") as f:
+        cfg = tomllib.load(f)
+    mode = cfg.get("grading", "checks-only")
+    if mode not in GRADING_MODES:
+        raise ValueError(f"{path}: grading must be one of {GRADING_MODES}, got {mode!r}")
+    return Grading(mode, frozenset(str(j) for j in cfg.get("calibrated_judges", [])))
 
 
 @dataclass(frozen=True)
@@ -115,6 +147,9 @@ class Verdict:
     task_id: str
     passed: bool  # all checks passed and (no judge, or judge >= 0.5)
     distill: bool = False  # from a distill run; anything else counts as KestrelBench
+    known: bool = True  # distill only: the task exists and its fingerprint matches the run's
+    rubric: bool = False  # distill only: the task has a rubric (graded by a judge, or not at all)
+    judge: str | None = None  # "judge-name@version" that graded it, if any
 
 
 def task_passed(task: dict[str, Any]) -> bool:
@@ -139,18 +174,41 @@ def is_distill_run(data: dict[str, Any]) -> bool:
     )
 
 
-def load_verdicts(paths: list[Path]) -> dict[str, Verdict]:
+def _distill_tasks(meta: dict[str, Any], root: Path) -> dict[str, tuple[Task, str]]:
+    """id -> (task, current fingerprint) for the task folder a distill run recorded. Empty when the
+    folder is missing or unreadable, so every result of that run counts as task_changed."""
+    tasks_dir, workspace = meta.get("task_dir"), meta.get("workspace_dir")
+    if not tasks_dir or not workspace or not (root / tasks_dir).is_dir():
+        return {}
+    try:
+        return {t.id: (t, task_sha(t, root / workspace)) for t in load_tasks(root / tasks_dir)}
+    except TaskError, OSError:
+        return {}
+
+
+def _judge_label(task: dict[str, Any]) -> str | None:
+    judge = task.get("judge") or {}
+    return f"{judge['judge']}@{judge.get('version')}" if judge.get("judge") else None
+
+
+def load_verdicts(paths: list[Path], root: Path = ROOT) -> dict[str, Verdict]:
     """trace_id -> verdict for every trace listed in results files, whatever its status. A trace
-    listed by both kinds of file keeps the KestrelBench verdict, so it is dropped."""
+    listed by both kinds of file keeps the KestrelBench verdict, so it is dropped. For distill runs,
+    each result is matched to its task definition (rubric or not, unchanged since the run or not)."""
     verdicts: dict[str, Verdict] = {}
     for path in paths:
         data = json.loads(path.read_text(encoding="utf-8"))
         distill = is_distill_run(data)
+        defs = _distill_tasks(data.get("meta", {}), root) if distill else {}
         for task in data.get("tasks", []):
+            known = rubric = False
+            if (found := defs.get(task["id"])) is not None:
+                known, rubric = found[1] == task.get("task_sha"), found[0].rubric is not None
+            verdict = Verdict(task["id"], task_passed(task), distill, known, rubric, _judge_label(task))
             for trace_id in task.get("trace_ids", []):
                 if trace_id in verdicts and not verdicts[trace_id].distill:
                     continue
-                verdicts[trace_id] = Verdict(task["id"], task_passed(task), distill)
+                verdicts[trace_id] = verdict
     return verdicts
 
 
@@ -213,6 +271,17 @@ def quality_ok(trace: dict[str, Any], verdict: Verdict | None) -> bool:
     if trace.get("stop_reason") != "answered" or trace.get("status") == "error" or trace.get("rating") == "bad":
         return False
     return trace.get("rating") == "good" or (verdict is not None and verdict.passed)
+
+
+def grading_filter(verdict: Verdict | None, grading: Grading) -> str | None:
+    """Distill results only: is this pass one we trust? (Chats rated /good have no verdict.)"""
+    if verdict is None or not verdict.distill:
+        return None
+    if not verdict.known:
+        return "task_changed"
+    if verdict.rubric and (grading.mode == "checks-only" or verdict.judge not in grading.calibrated_judges):
+        return "rubric_task"
+    return None
 
 
 def text_of(messages: list[dict]) -> str:
@@ -313,19 +382,24 @@ class Dataset:
 def build(
     traces: list[dict[str, Any]],
     verdicts: dict[str, Verdict],
-    prompts: frozenset[str],
+    prompts: Iterable[str],
     teachers: frozenset[tuple[str, str]],
     tools: list[dict],
     *,
     max_tokens: int = 8000,
     val_frac: float = 0.1,
+    grading: Grading = DEFAULT_GRADING,
 ) -> Dataset:
+    """prompts: the KestrelBench prompts the contamination filters compare user messages with."""
     ds = Dataset(seen=len(traces))
+    index = overlap.PromptIndex(list(prompts))
     schema_tokens = len(json.dumps(tools)) // 4  # how the agent estimates the schemas' share
     env_values = secret_env_values()
     seen_keys: set[str] = set()
     for trace in traces:
-        reason, example = _check(trace, verdicts, prompts, teachers, tools, env_values, schema_tokens, max_tokens)
+        reason, example = _check(
+            trace, verdicts, index, teachers, tools, env_values, schema_tokens, max_tokens, grading
+        )
         if example is not None:
             key = dedupe_key(example.record["messages"])
             reason = "duplicate" if key in seen_keys else None
@@ -340,12 +414,13 @@ def build(
 def _check(
     trace: dict[str, Any],
     verdicts: dict[str, Verdict],
-    prompts: frozenset[str],
+    index: overlap.PromptIndex,
     teachers: frozenset[tuple[str, str]],
     tools: list[dict],
     env_values: list[str],
     schema_tokens: int,
     max_tokens: int,
+    grading: Grading,
 ) -> tuple[str | None, Example | None]:
     """(first failing filter, None) or (None, the example)."""
     if not trace.get("messages"):
@@ -356,11 +431,16 @@ def _check(
     if verdict is not None and not verdict.distill:
         return "contamination_run", None
     messages = json.loads(trace["messages"])
-    users = [m.get("content") for m in messages if m.get("role") == "user"] + [trace.get("user_message")]
-    if any(isinstance(u, str) and normalize(u) in prompts for u in users):
+    candidates = [m.get("content") for m in messages if m.get("role") == "user"] + [trace.get("user_message")]
+    users = [u for u in candidates if isinstance(u, str)]
+    if any(index.exact(u) for u in users):
         return "contamination_prompt", None
+    if any(index.near(u) for u in users):
+        return "near_duplicate", None
     if not quality_ok(trace, verdict):
         return "quality", None
+    if reason := grading_filter(verdict, grading):
+        return reason, None
     if reason := secret_filter(text_of(messages), env_values):
         return reason, None
     tokens = estimate_tokens(messages) + schema_tokens
@@ -462,18 +542,23 @@ def add_parser(sub: Any) -> None:
 def main(args: argparse.Namespace) -> int:
     try:
         teachers = load_teachers()
-        conn = open_readonly(args.db)
+        grading = load_grading()
+        conn = open_readonly(args.db)  # first: refusing a live database needs no git
     except (ValueError, FileNotFoundError) as e:
         print(f"distill: {e}", file=sys.stderr)
         return 2
     try:
+        bench = overlap.load_bench()  # fails loudly if a pinned source's tag moved
         traces = read_traces(conn)
+    except overlap.SourceError as e:
+        print(f"distill: {e}", file=sys.stderr)
+        return 2
     finally:
         conn.close()
     from kestrel.tools import registry  # the schemas `kestrel export` writes
 
     tools = registry.schemas()
-    prompts = bench_prompts()
+    prompts = [p.text for p in bench.prompts]
     ds = build(
         traces,
         load_verdicts(args.results),
@@ -482,6 +567,7 @@ def main(args: argparse.Namespace) -> int:
         tools,
         max_tokens=args.max_tokens,
         val_frac=args.val_frac,
+        grading=grading,
     )
     manifest = write(
         ds,
@@ -496,6 +582,13 @@ def main(args: argparse.Namespace) -> int:
                 "val_frac": args.val_frac,
                 "split_salt": SPLIT_SALT,
                 "bench_prompts": len(prompts),
+                "bench_sources": bench.sources,  # disk, and each pinned commit (or why it wasn't read)
+                "near_duplicate": {
+                    "fail_jaccard": overlap.FAIL_JACCARD,
+                    "fail_run_words": overlap.FAIL_RUN,
+                },
+                "grading": grading.mode,
+                "calibrated_judges": sorted(grading.calibrated_judges),
                 "filters": list(FILTERS),
             },
         },

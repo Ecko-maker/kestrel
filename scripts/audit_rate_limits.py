@@ -1,6 +1,7 @@
 """Which benchmark results were touched by rate limits, timeouts or step limits? (read-only)
 
 Usage: uv run python scripts/audit_rate_limits.py <results.json>... [--overlap 2026-10-05T17:05 2026-10-05T17:20]
+       [--db logs/distill.db]   # a distill run (--split distill) keeps its traces there
 
 For every task it reads the task's traces in logs/bench.db and reports:
 - retries: model calls that were retried (429 / rate limit / server errors) but then answered;
@@ -65,9 +66,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("files", type=Path, nargs="+")
     parser.add_argument("--overlap", nargs=2, metavar=("START", "END"), help="UTC times, e.g. 2026-10-05T17:05")
+    parser.add_argument("--db", type=Path, default=DB, help=f"traces database (default {DB.as_posix()})")
     args = parser.parse_args()
     window = (ts(args.overlap[0]), ts(args.overlap[1])) if args.overlap else None
-    con = sqlite3.connect(f"file:{DB.as_posix()}?mode=ro", uri=True)
+    con = sqlite3.connect(f"file:{args.db.as_posix()}?mode=ro", uri=True)
     for path in args.files:
         rows = audit(path, con, window)
         graded = [r for r in rows if r["status"] in ("pass", "fail")]

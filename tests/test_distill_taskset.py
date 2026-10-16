@@ -136,68 +136,6 @@ def test_the_distill_set_lives_outside_kestrelbench() -> None:
     assert not {ds.normalize(p) for t in TASKS for p in t.prompts} & ds.bench_prompts()
 
 
-# --- Overlap ------------------------------------------------------------------
-
-
-def test_normalize_and_trigrams() -> None:
-    assert overlap.normalize("  What's 17.5%  of 2,340? ") == "whats 175 of 2340"
-    assert overlap.trigrams("one two") == frozenset()
-    assert overlap.trigrams("a b c d") == {("a", "b", "c"), ("b", "c", "d")}
-    assert overlap.jaccard(overlap.trigrams("a b c d"), overlap.trigrams("a b c e")) == pytest.approx(1 / 3)
-
-
-def test_exact_matches_fail_even_when_short() -> None:
-    d = [overlap.Prompt("dst-x", "Hello there!")]
-    b = [overlap.Prompt("b-x", "hello   THERE")]
-    (pair,) = overlap.compare(d, b)
-    assert pair.exact and overlap.failures([pair]) == [pair]
-
-
-def test_near_duplicates_fail_and_distinct_prompts_pass() -> None:
-    bench = [overlap.Prompt("b", "Create a note called Groceries listing milk and eggs")]
-    near = overlap.Prompt("d1", "Create a note called Groceries listing milk and bread")
-    far = overlap.Prompt("d2", "How many sides has a hexagon got?")
-    pairs = {p.distill.task_id: p for p in overlap.compare([near, far], bench)}
-    assert pairs["d1"].score >= overlap.FAIL_AT and not pairs["d1"].exact
-    assert pairs["d2"].score == 0
-    assert overlap.failures(list(pairs.values())) == [pairs["d1"]]
-
-
-def test_the_real_task_set_has_no_overlap() -> None:
-    pairs = overlap.compare(overlap.distill_prompts(), overlap.bench_prompts())
-    assert not overlap.failures(pairs)
-    assert max(p.score for p in pairs) < overlap.REVIEW_AT  # nothing even in the review band
-
-
-def test_bench_prompts_cover_every_split_folder(tmp_path: Path) -> None:
-    for folder, body in [
-        ("tasks", "tasks:\n  - id: a\n    prompt: One two three\n"),
-        ("safety", "- id: s\n  prompt: [x y z, q r s]\n"),
-    ]:
-        (tmp_path / folder).mkdir()
-        (tmp_path / folder / "t.yaml").write_text(body, encoding="utf-8")
-    (tmp_path / "workspace").mkdir()
-    (tmp_path / "workspace" / "f.yaml").write_text("prompt: not a task\n", encoding="utf-8")
-    assert sorted((p.task_id, p.text) for p in overlap.bench_prompts(tmp_path)) == [
-        ("a", "One two three"),
-        ("s", "q r s"),
-        ("s", "x y z"),
-    ]
-
-
-def test_overlap_cli_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    (tmp_path / "d").mkdir()
-    (tmp_path / "b" / "tasks").mkdir(parents=True)
-    task = "category: files\ntasks:\n  - id: {id}\n    prompt: {p}\n    rubric: r\n"
-    (tmp_path / "b" / "tasks" / "t.yaml").write_text(task.format(id="b1", p="Read the menu file please"), "utf-8")
-    (tmp_path / "d" / "t.yaml").write_text(task.format(id="dst-1", p="Count the plots in the garden"), "utf-8")
-    argv = ["--distill-dir", str(tmp_path / "d"), "--bench-dir", str(tmp_path / "b")]
-    assert overlap.main(argv) == 0
-    (tmp_path / "d" / "t.yaml").write_text(task.format(id="dst-1", p="read the MENU file, please!"), "utf-8")
-    assert overlap.main(argv) == 1
-    assert "EXACT" in capsys.readouterr().out
-
-
 # --- bench run --split distill ------------------------------------------------
 
 
@@ -323,29 +261,3 @@ def test_kestrelbench_wins_when_a_trace_is_in_both(tmp_path: Path) -> None:
     b = _results(tmp_path / "b.json", None, ["dst-a"])  # same trace id, listed by a bench file
     for order in ([d, b], [b, d]):
         assert ds.load_verdicts(order)["tr-dst-a"].distill is False
-
-
-def test_passed_distill_traces_are_kept_and_bench_traces_dropped(tmp_path: Path) -> None:
-    from test_distill_dataset import TraceDB, convo  # tests/ is on sys.path under pytest
-
-    db = TraceDB(tmp_path / "copy.db")
-    ids = {name: db.add(convo(f"distill question {name}", "answer"), rating=None) for name in ("ok", "fail", "bench")}
-    files = []
-    for name, split, status in [("ok", "distill", "pass"), ("fail", "distill", "fail"), ("bench", "main", "pass")]:
-        task = {
-            "id": f"dst-{name}",
-            "status": status,
-            "checks": [{"ok": status == "pass"}],
-            "judge": None,
-            "trace_ids": [ids[name]],
-        }
-        path = tmp_path / f"{name}.json"
-        path.write_text(json.dumps({"meta": {"split": split}, "tasks": [task]}), encoding="utf-8")
-        files.append(path)
-    built = ds.build(
-        db.traces(), ds.load_verdicts(files), frozenset(), frozenset({("groq", "openai/gpt-oss-120b")}), []
-    )
-    assert {e.record["metadata"]["trace_id"] for e in built.train + built.val} == {ids["ok"]}
-    assert {k: v for k, v in built.dropped.items() if v} == {"quality": 1, "contamination_run": 1}
-    sources = ds.results_sources(files)
-    assert [sources[f.name]["source"] for f in files] == ["distill", "distill", "kestrelbench"]

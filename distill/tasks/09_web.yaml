@@ -4,7 +4,7 @@ category: web
 tasks:
   - id: dst-web-uv-tool
     tags: [distill, network]
-    prompt: "Search the web: what is uv in the Python world?"
+    prompt: "Look up uv, the Python tool from Astral. What does it do?"
     checks:
       - {type: tool_called, tool: web_search}
     rubric: "Describes uv as a fast Python package and project manager (from Astral), consistent with the search results."

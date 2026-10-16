@@ -175,3 +175,22 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Paraphrase bench tasks for the set.** Cheap, but it trains the student on the exam's wording; the overlap check exists to catch exactly that.
 
 **Why:** the student needs graded, teacher-written examples of the behaviors the baseline gets wrong, without ever seeing KestrelBench, which stays the deploy gate.
+
+---
+
+## 21. Distill overlap thresholds from the bench's own distribution; checks-only grading
+
+**Decision:**
+- **Overlap thresholds** come from how similar KestrelBench prompts are to *each other*: word 3-gram Jaccard and the longest shared run of words over every pair of bench prompts (main suite on disk plus the safety split at its pinned commit, 155 prompts), leaving out pairs from the same task and identical-text twins (benign/attack pairs share their prompt on purpose). Fail just above that p99.9 (Jaccard >= 0.23, run >= 5 words), review just above the p99 (Jaccard >= 0.08, run >= 4 words). Fixtures fail on a shared file name or a shared content line of 8+ words. A test recomputes the distribution with the same exclusions and fails if the thresholds fall below it. Report: `evals/reports/distill-overlap.md`. At `d1.1`: 0 fail, 38 in review, 0 fixture problems; one task (`dst-web-uv-tool`) failed the new thresholds and was reworded, so `d1.0` became `d1.1`.
+- **The same fail thresholds filter the pipeline** (`near_duplicate`): every user message of every example, chats rated /good included.
+- **The safety split is pinned by commit** in `src/kestrel/distill/bench_sources.toml`, read with git, checked against its tag (a moved tag stops everything), recorded in the report and manifest; without the commit, disk only, and said so.
+- **Grading:** `grading = "checks-only"` keeps only distill tasks graded entirely by checks (78 of 120). Rubric tasks are dropped until a judge@version is listed in `calibrated_judges`. Each distill result is matched to its task definition by the task fingerprint (`task_changed` if it moved). Collection runs with `--judge none`; `rejudge` can grade stored rubric answers later.
+
+**Alternatives:**
+- **A fixed 0.5 Jaccard** (step 2): not grounded in anything; the bench's own pairs show 0.5 is far above where copying starts.
+- **The bench's p99 as the fail line:** a single shared 3-gram ("what time is it") would fail, which is ordinary phrasing, not copying.
+- **Include the twins in the distribution:** they are copies by design and push p99.9 up (0.286 instead of 0.222).
+- **Judge rubric tasks with the teacher:** self-preference bias would choose the training examples (#33).
+- **Read the safety split from the tag or a branch:** both can move; a commit can't.
+
+**Why:** "too similar" should mean "more similar than the benchmark's own distinct tasks ever are", measured, not guessed. And until a judge is shown to agree with humans, only deterministic checks decide what the student learns from.

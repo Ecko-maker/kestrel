@@ -1,0 +1,77 @@
+# Distill task set (Phase 4)
+
+120 tasks in KestrelBench's task format, with their own fixture workspace (a community garden and bike
+co-op), used only to collect **training data** for the student model. They are *not* KestrelBench:
+the student is judged on KestrelBench, so it must never train on it. Design decisions 19-21 in
+`docs/design-decisions.md`.
+
+- `tasks/`: 10 files, one per category, in the main suite's proportions x1.2. Every task has the tag
+  `distill` and an id starting with `dst-`. Over-weighted on three baseline failure modes: finding
+  facts in the workspace (`beh-lookup`, 12), using the calculator (`beh-calc`, 14), calling the
+  approval-gated tool instead of drafting and asking (`beh-gated`, 12). No injection or attack text.
+- `workspace/`: the files the tasks read. Example domains only; no canaries or secrets (tested).
+- Version: `d1.1` (`DISTILL_VERSION` in `src/kestrel/distill/__init__.py`, recorded in results meta).
+- Overlap with KestrelBench: `uv run python scripts/distill_overlap.py` (report:
+  `evals/reports/distill-overlap.md`). At `d1.1`: 0 fail, 38 pairs in the review band, 0 fixture problems.
+
+## What counts as training data
+
+`kestrel distill build` keeps a distill result only if it passed, its task is unchanged since the run,
+and (under `grading = "checks-only"`, the default in `src/kestrel/distill/grading.toml`) the task is
+graded entirely by deterministic checks. Tasks with a rubric are dropped (`rubric_task`) until a judge
+is calibrated and listed in `calibrated_judges` (known issue #33).
+
+**Under checks-only, 78 of the 120 tasks can become training data:**
+
+| Category | Tasks | Check-only |
+|---|---|---|
+| actions | 17 | 16 |
+| multistep | 14 | 13 |
+| files | 17 | 13 |
+| arithmetic | 12 | 12 |
+| adapt | 10 | 8 |
+| conversation | 7 | 7 |
+| no_tools | 10 | 5 |
+| safety | 19 | 2 |
+| web | 7 | 2 |
+| time | 7 | 0 |
+| **total** | **120** | **78** |
+
+So the first dataset has no time-zone examples and almost no safety-refusal or web examples: those
+tasks are graded by a rubric. They come back when a calibrated judge re-grades the stored answers.
+All three over-weighted behaviors are check-only (12 lookup, 14 calculator, 12 gated).
+
+## Grading the rubric tasks later
+
+The collection run uses `--judge none`: nothing is graded by the teacher itself, and no judge tokens
+are spent. The answers of rubric tasks are still stored (with their tool log) in the results file, so
+a calibrated judge can grade them later without re-running Kestrel:
+
+```powershell
+uv run --no-sync kestrel bench rejudge evals\results\distill-d1.1-pass1.json --judge groq --judge-model <calibrated model>
+```
+
+`rejudge` reads the distill task folder recorded in the file and `logs\distill.db`, and writes a new
+file. Then add `"<judge>@<version>"` to `calibrated_judges`, set `grading = "calibrated-judge"`, and
+rebuild with the rejudged file.
+
+## Cost of one collection pass
+
+**The dry run says ~133k billable tokens. That figure is too low.** It is 120 tasks x 3,300 raw tokens
++ 42 rubric tasks x 500 judge tokens = 417k raw, times `BILLABLE_SHARE = 0.32`. The 0.32 share is the
+old, known-wrong estimate (fixed on the Phase 3 branch, `fix/estimator`; the estimator code is not
+changed here). Measured on Groq gpt-oss-120b, 64-75% of tokens are billable.
+
+**Corrected estimate: about 250k billable tokens (range ~240k-280k), about 2 Groq free-tier days:**
+
+- Measured: a full main-suite run costs ~235k billable for 100 tasks, with the judge on 43 of them.
+  The judge's share is ~27.5k (`kestrel bench rejudge --dry-run` on that run: 43 calls, ~27.5k tokens),
+  which leaves ~2,075 billable tokens per task for the agent.
+- The collection pass runs with `--judge none`: 120 x ~2,075 = **~249k**. From the raw side instead,
+  3,103 raw tokens per task x 64-75% billable = 1,986-2,327 per task = **~238k-279k**.
+- With the judge on it would be ~276k (but the judge would be the teacher; see #33).
+- With `--token-budget 180000` the pass stops starting new tasks at about 180k on day one and finishes
+  with `--resume` on day two (Groq's token limit is a rolling ~24 h window). Distill tasks are not
+  measured yet; multistep and file tasks may run longer than the main suite's average.
+
+How to run it: `COLLECTION.md`.
