@@ -7,7 +7,7 @@
 
 Also required before starting:
 
-- The owner's OK for the quota: about **250k billable Groq tokens, 2 days** (`README.md`, "Cost").
+- The owner's OK for the quota: about **253k billable Groq tokens, 2 days** (`README.md`, "Cost").
 - No other eval running (the Phase 3 safety runs share the same Groq daily budget).
 - The overlap check passes and the tests are green on the commit you collect from.
 
@@ -48,14 +48,14 @@ git rev-parse HEAD                              # the same $commit
 uv run --no-sync kestrel bench run --split distill --judge none --dry-run
 ```
 
-It should list 120 tasks from `distill/tasks` (version d1.1). Its token estimate is too low (it uses the
-old 0.32 billable share); expect ~250k billable, not ~133k.
+It should list 122 tasks from `distill/tasks` (version d1.2). Its token estimate is too low (it uses the
+old 0.32 billable share); expect ~253k billable, not ~133k.
 
 ## 5. Day 1
 
 ```powershell
 uv run --no-sync kestrel bench run --split distill --judge none --token-budget 180000 --wait-for-quota `
-    --out evals\results\distill-d1.1-pass1.json
+    --out evals\results\distill-d1.2-pass1.json
 ```
 
 - `--judge none`: no rubric grading now (the teacher would grade itself; see README "Grading the rubric
@@ -69,7 +69,7 @@ Wait until the budget has freed (a rolling ~24 h window), check step 2 again, th
 
 ```powershell
 uv run --no-sync kestrel bench run --split distill --judge none --token-budget 180000 --wait-for-quota `
-    --resume evals\results\distill-d1.1-pass1.json
+    --resume evals\results\distill-d1.2-pass1.json
 ```
 
 Repeat until the run reports 0 skipped and 0 errored.
@@ -79,28 +79,28 @@ Repeat until the run reports 0 skipped and 0 errored.
 Still in `..\kestrel-runs`, after the run has finished (no process from step 2):
 
 ```powershell
-uv run --no-sync python scripts\check_results.py evals\results\distill-d1.1-pass1.json
-$copy = "$env:TEMP\distill-d1.1-pass1.db"
+uv run --no-sync python scripts\check_results.py evals\results\distill-d1.2-pass1.json
+$copy = "$env:TEMP\distill-d1.2-pass1.db"
 Copy-Item logs\distill.db $copy                 # work on a copy, never the live database
-uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.1-pass1.json --db $copy
+uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-pass1.json --db $copy
 ```
 
-`check_results.py` must say OK (all 120 distill tasks, suite d1.1, no judge). The audit must show no
+`check_results.py` must say OK (all 122 distill tasks, suite d1.2, no judge). The audit must show no
 graded task touched by a rate limit; resolve any it lists before building.
 
 ## 8. Build the dataset
 
 ```powershell
-uv run --no-sync kestrel distill build --db $copy --results evals\results\distill-d1.1-pass1.json --out data\distill\d1.1-pass1
+uv run --no-sync kestrel distill build --db $copy --results evals\results\distill-d1.2-pass1.json --out data\distill\d1.2-pass1
 ```
 
-Read the printed counts and `data\distill\d1.1-pass1\manifest.json`:
+Read the printed counts and `data\distill\d1.2-pass1\manifest.json`:
 
 - `results` must list the file as `"source": "distill"`.
 - `settings.bench_sources` must show the safety split at commit `6f58ee5...` as available (after the
   merge it is also on disk).
-- Expected: roughly 70-80 examples from the 78 check-only tasks (more for two-turn conversation tasks,
-  fewer for failed ones); `rubric_task` drops the 42 rubric tasks; `contamination_*` and
+- Expected: roughly 85-95 examples from the 93 check-only tasks (more for two-turn conversation tasks,
+  fewer for failed ones); `rubric_task` drops the 29 rubric tasks; `contamination_*` and
   `near_duplicate` should be 0 for distill traces.
 
 `data\` is git-ignored: keep the manifest's numbers in the Phase 4 notes, not the data.

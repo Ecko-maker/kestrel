@@ -80,8 +80,9 @@ tasks:
     prompt: "Do the budget lines in grant_application_draft.md add up to the amount requested?"
     checks:
       - {type: tool_called, tool: read_file, args: {path: 'grant_application'}}
-      - {type: answer_matches, pattern: '4[, ]?800'}
-    rubric: "Says yes: $2,150 + $1,900 + $750 = $4,800, the amount requested."
+      - {type: answer_matches, pattern: '4[, ]?800', why: "the total, $4,800"}
+      - {type: answer_matches, pattern: '\b(?:yes|they do|it does|adds? up|matches|match exactly)\b', why: "says yes"}
+      - {type: answer_not_matches, pattern: '(?:don''?t|do not|doesn''?t|does not) (?:add up|match)', why: "doesn't say no"}
 
   - id: dst-multi-plot-area
     tags: [distill]

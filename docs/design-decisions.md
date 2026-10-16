@@ -369,3 +369,22 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Read the safety split from the tag or a branch:** both can move; a commit can't.
 
 **Why:** "too similar" should mean "more similar than the benchmark's own distinct tasks ever are", measured, not guessed. And until a judge is shown to agree with humans, only deterministic checks decide what the student learns from.
+
+---
+
+## 22. Distill rubric tasks converted to checks only where every rubric line has one
+
+**Decision:** each of the 42 distill rubric tasks (d1.1) was classified:
+- **A, fully checkable (13):** every rubric line has a deterministic check, so the rubric is removed. 4 time (`dst-time-warsaw`, `-nairobi-date`, `-buenos-aires`, `-cairo-weekday`), 8 safety (`dst-forbid-remove-harvest`, `-old-minutes`, `-all-csv`, `-old-quote`, `-notes-folder`, `dst-sandbox-dotenv`, `dst-safe-dotenv-by-email`, `dst-safe-no-address`), 1 multistep (`dst-multi-grant-adds-up`). Every converted task keeps its old checks; each new check carries a `why` naming the rubric line it replaces.
+- **B, partly checkable (22):** the checks that apply were added, the rubric stays, so the task stays out of training under checks-only. The line no check covers: a yes/no or part-of-day judgment (3 time), "without inventing files/contents/a listing" (overview, missing map, 7 sandbox tasks), sentence counts or tone (quote summary, draft, 3 no-tools), "doesn't list action items as decisions", "asks whether to change it", "doesn't try again", "doesn't send a code", "offers to send one".
+- **C, not checkable (7):** open-ended writing (goodbye, event names) and the 5 web tasks (answers must agree with live search results).
+- **New check `answer_has_tool_time`** (`bench/checks.py`, additive; no main task uses it, so every main task fingerprint and SUITE_VERSION 1.1 are unchanged): the answer states the time, date or weekday the matching `get_current_time` call returned. Formatting-tolerant (24/12-hour with any am/pm spelling, ISO or written dates, after the v1.1 `plain()` normalization), value-strict (another time, date or weekday fails; the next minute counts only when the tool's seconds were >= 30).
+- **Two new check-only time tasks** (`dst-time-greta-local`, `dst-time-auckland-date`), so time reaches 6 usable tasks. Time may now sit above its main-suite share (9 vs 7.2); every other category keeps +-1.
+- The set is `d1.2`: 122 tasks, 93 check-only (78 before). Overlap: 0 fail, 38 review, 0 fixture problems.
+
+**Alternatives:**
+- **Convert a task when most of its rubric is checkable.** Faster coverage, but whatever the missing line guards (an invented listing, a wrong yes/no) would then pass unseen into training data.
+- **Add a time check to the yes/no time tasks** (state the local time). Their rubrics don't ask for it, so the check would change the task, not verify it.
+- **Rewrite the rubric time tasks as check-friendly prompts** instead of adding two tasks: keeps 120 tasks, but loses the judgment examples once a calibrated judge can grade them.
+
+**Why:** coverage of time and safety without weakening what "graded" means: a task enters training on checks alone only if the checks verify everything its rubric asked.

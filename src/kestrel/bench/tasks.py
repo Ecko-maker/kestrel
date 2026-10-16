@@ -48,6 +48,7 @@ CHECK_TYPES = {
     "outbox_count": {"count"},
     "stop_reason": {"is"},
     "max_steps": {"steps"},
+    "answer_has_tool_time": {"show"},  # time | date | weekday from the get_current_time result
 }
 OPTIONAL_CHECK_FIELDS = {"args", "to", "why"}
 

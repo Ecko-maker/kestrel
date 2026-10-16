@@ -27,13 +27,21 @@ WORKSPACE = DISTILL_DIR / "workspace"
 # --- The task set -------------------------------------------------------------
 
 
-def test_120_tasks_in_main_suite_proportions() -> None:
-    assert len(TASKS) == 120
+# Categories allowed above their main-suite share: time got two extra check-only tasks in d1.2 so the
+# checks-only training set has time examples at all (known issue #33); safety may grow the same way.
+OVER_WEIGHTED = {"time", "safety"}
+
+
+def test_task_count_and_main_suite_proportions() -> None:
+    assert len(TASKS) == 122
     distill = Counter(t.category for t in TASKS)
     main = Counter(t.category for t in load_tasks(TASKS_DIR))
     assert set(distill) == set(main)
     for category, n in main.items():
-        assert abs(distill[category] - n * 1.2) <= 1, category  # the main suite's shares, scaled to 120
+        if category in OVER_WEIGHTED:
+            assert distill[category] >= n * 1.2 - 1, category
+        else:
+            assert abs(distill[category] - n * 1.2) <= 1, category  # the main suite's shares, x1.2
 
 
 def test_every_task_is_tagged_and_prefixed() -> None:
@@ -162,7 +170,7 @@ def test_dry_runs(capsys: pytest.CaptureFixture[str]) -> None:
     assert out.startswith("KestrelBench: 100 tasks") and "dst-" not in out
     assert bench_cli.main(_parse("--dry-run", "--judge", "none", "--split", "distill")) == 0
     out = capsys.readouterr().out
-    assert out.startswith(f"Distill set {DISTILL_VERSION} (not KestrelBench): 120 tasks")
+    assert out.startswith(f"Distill set {DISTILL_VERSION} (not KestrelBench): 122 tasks")
     assert "would run dst-arith-member-discount" in out and "arith-percent" not in out
 
 
