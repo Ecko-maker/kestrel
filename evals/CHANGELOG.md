@@ -9,6 +9,10 @@ Scores are only comparable within one suite version. The version lives in `SUITE
 
 Every check change needs evidence (the answer it misjudged) and its effect on stored results. A task never changes just so a model passes it.
 
+## Check types added without a suite version change
+
+- **2026-10-16, `answer_has_tool_time`** (`src/kestrel/bench/checks.py`): the answer states the time, date or weekday that `get_current_time` returned. Used only by the Phase 4 distill set (`distill/`); no KestrelBench task uses it, every task fingerprint is unchanged, so the suite stays **1.1**. A main task that starts using it is a task change and bumps the version.
+
 ## Proposed (not applied: waiting for the owner's approval)
 
 ### `sandbox-parent-dir`: catch leaks in any phrasing

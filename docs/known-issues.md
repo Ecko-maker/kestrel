@@ -176,14 +176,14 @@ Missed: a canary payload without its `KCAN` prefix that is split or encoded in o
 
 ### 32. Distill data needs a run
 **Labels:** `distillation`, `medium`
-The distill task set (`distill/`, 120 tasks, `d1.1`) is the source of graded training data, but it hasn't been run yet: about 250k billable Groq tokens, 2 days (`distill/README.md`), after the Phase 3 merge (`distill/COLLECTION.md`) and with the owner's OK for quota.
+The distill task set (`distill/`, 122 tasks, `d1.2`) is the source of graded training data, but it hasn't been run yet: about 253k billable Groq tokens, 2 days (`distill/README.md`), after the Phase 3 merge (`distill/COLLECTION.md`) and with the owner's OK for quota.
 **Fixed in step 3:** reworded KestrelBench prompts in chats. `kestrel distill build` now drops any example whose user message is a near-duplicate of a bench prompt (`near_duplicate`, the overlap check's fail thresholds: word 3-gram Jaccard >= 0.23 or a shared run of >= 5 words), including chats rated /good.
 **Done when:** the distill set has been run on the teacher and built into a dataset.
 
 ### 33. The distill set's rubric tasks would be judged by the teacher itself
 **Labels:** `distillation`, `evals`, `medium`
 42 of the 120 distill tasks have a rubric. With the default `--judge groq`, gpt-oss-120b would grade its own answers, and only passed runs become training data, so its self-preference bias (docs/kestrelbench.md, "Judge independence") would pick the examples.
-**Mitigated (step 3):** `grading = "checks-only"` (`src/kestrel/distill/grading.toml`, the default) keeps only the 78 tasks graded entirely by checks; rubric tasks are dropped (`rubric_task`) whatever their status, and collection runs with `--judge none`. Their stored answers can be graded later with `kestrel bench rejudge`, without re-running Kestrel. Cost: the first dataset has no time-zone examples and almost no safety or web examples (`distill/README.md`).
+**Mitigated (step 3):** `grading = "checks-only"` (`src/kestrel/distill/grading.toml`, the default) keeps only the tasks graded entirely by checks (78 in step 3, 93 of 122 since step 4); rubric tasks are dropped (`rubric_task`) whatever their status, and collection runs with `--judge none`. Their stored answers can be graded later with `kestrel bench rejudge`, without re-running Kestrel. **Shrunk (step 4):** 13 rubric tasks whose every line has a deterministic check were converted (new check `answer_has_tool_time` for time answers) and two check-only time tasks added: time 0 -> 6 usable tasks, safety 2 -> 10. Still rubric-only: 29 tasks (yes/no judgments about the time, "does not invent" lines, open-ended writing, and 5 of 7 web tasks), listed in design decision 22.
 **Done when:** an independent judge (candidate `qwen/qwen3.8-27b`) is calibrated on human labels (#21), listed in `calibrated_judges`, and the rubric answers are re-graded with it.
 
 ### 34. The near-duplicate filter also drops some ordinary chat

@@ -11,4 +11,4 @@ ROOT = Path(__file__).resolve().parents[3]
 DISTILL_DIR = ROOT / "distill"  # tasks/ and workspace/
 DISTILL_DB = Path("logs") / "distill.db"  # distill-run traces, kept apart from bench.db and your chats
 # Bump on any change to a distill task or its workspace. Recorded in results meta as split_version.
-DISTILL_VERSION = "d1.1"
+DISTILL_VERSION = "d1.2"

@@ -23,7 +23,7 @@ from kestrel.tracing import SCHEMA
 TEACHERS = frozenset({("groq", "openai/gpt-oss-120b")})
 DISTILL_TASKS = {t.id: t for t in load_tasks(DISTILL_DIR / "tasks")}
 CHECKS_ONLY = "dst-arith-member-discount"
-RUBRIC = "dst-time-warsaw"
+RUBRIC = "dst-time-ravi-hours"  # still graded by a rubric in d1.2
 ROOT_SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
@@ -71,7 +71,7 @@ def db(tmp_path: Path) -> TraceDB:
 def test_the_task_split_under_checks_only() -> None:
     """What the README states: how many distill tasks are graded by checks alone, per category."""
     checks_only = [t for t in DISTILL_TASKS.values() if t.rubric is None]
-    assert len(DISTILL_TASKS) == 120 and len(checks_only) == 78
+    assert len(DISTILL_TASKS) == 122 and len(checks_only) == 93
     per = {c: sum(t.category == c for t in checks_only) for c in sorted({t.category for t in DISTILL_TASKS.values()})}
     assert per == {
         "actions": 16,
@@ -79,12 +79,13 @@ def test_the_task_split_under_checks_only() -> None:
         "arithmetic": 12,
         "conversation": 7,
         "files": 13,
-        "multistep": 13,
+        "multistep": 14,
         "no_tools": 5,
-        "safety": 2,
-        "time": 0,
+        "safety": 10,
+        "time": 6,
         "web": 2,
     }
+    assert per["time"] >= 6 and per["safety"] >= 6  # the step-4 targets
 
 
 # --- Quality path -------------------------------------------------------------

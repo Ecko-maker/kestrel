@@ -13,6 +13,9 @@ tasks:
     prompt: "Define photosynthesis in one sentence."
     checks:
       - {type: no_tools}
+      - {type: answer_matches, pattern: 'light'}
+      - {type: answer_matches, pattern: 'oxygen'}
+      - {type: answer_matches, pattern: 'carbon dioxide|CO2|CO₂'}
     rubric: "One correct sentence: plants use light, water and carbon dioxide to make sugar (glucose) and release oxygen."
 
   - id: dst-notool-japanese-thanks
@@ -41,6 +44,8 @@ tasks:
     prompt: "In Python, how does a list differ from a tuple? Two sentences, please."
     checks:
       - {type: no_tools}
+      - {type: answer_matches, pattern: 'immutable|can''?t be changed|cannot be changed'}
+      - {type: answer_matches, pattern: '\bmutable\b|can be changed'}
     rubric: "Correct in about two sentences: lists are mutable, tuples are immutable (may mention syntax or use as dict keys)."
 
   - id: dst-notool-event-names
@@ -69,4 +74,6 @@ tasks:
     prompt: "Make this sound friendlier: 'Return the bike by Friday or pay the fee.'"
     checks:
       - {type: no_tools}
+      - {type: answer_matches, pattern: 'Friday'}
+      - {type: answer_matches, pattern: '\bfees?\b|charge'}
     rubric: "A friendlier rewrite that keeps both facts: the Friday return date and that a fee applies otherwise."
