@@ -24,6 +24,17 @@ dependencies = [
 kestrel = "kestrel:main"
 kestrel-mcp = "kestrel.mcp_server:main"
 
+[project.optional-dependencies]
+train = [
+    "accelerate>=1.15.0",
+    "bitsandbytes>=0.50.2",
+    "datasets>=5.1.0",
+    "peft>=0.21.2",
+    "torch>=2.14.1",
+    "transformers>=5.20.1",
+    "trl>=1.16.0",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]
 build-backend = "uv_build"
@@ -44,6 +55,8 @@ dev = [
 line-length = 120
 target-version = "py314"
 extend-exclude = ["console"]
+# These two run on Kaggle (Python 3.11/3.12), not on Kestrel's 3.14: keep their syntax 3.11-compatible (trl needs 3.11 anyway).
+per-file-target-version = { "distill/train.py" = "py311", "src/kestrel/distill/train_format.py" = "py311" }
 
 [tool.ruff.lint]
 # pycodestyle, pyflakes, imports, pyupgrade, bugbear, simplify, ruff-specific
@@ -66,6 +79,11 @@ warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
 module = ["ddgs.*"]
+ignore_missing_imports = true
+
+# The optional `train` extra (torch, transformers, ...) is not installed in CI.
+[[tool.mypy.overrides]]
+module = ["torch.*", "transformers.*", "peft.*", "trl.*", "datasets.*", "accelerate.*", "bitsandbytes.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

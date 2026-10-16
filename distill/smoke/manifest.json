@@ -1,0 +1,92 @@
+{
+  "input_db_sha256": "ef6eac1c35105727661af6af4854cb186a293c3722f3ba878c3d1824c51aa885",
+  "results": {},
+  "git": {
+    "commit": "9f58d152ff5562c12b0ead4583991f9d16120f2d",
+    "dirty": true
+  },
+  "teachers": [
+    {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b"
+    }
+  ],
+  "settings": {
+    "max_tokens": 8000,
+    "val_frac": 0.3,
+    "split_salt": "2026",
+    "bench_prompts": 155,
+    "bench_sources": [
+      {
+        "source": "disk",
+        "path": "evals/kestrelbench"
+      },
+      {
+        "source": "git:evals/kestrelbench/safety",
+        "commit": "6f58ee528ce53bc011653c9b783973e0da077eba",
+        "tag": "safety-before",
+        "available": true,
+        "files": 9
+      }
+    ],
+    "near_duplicate": {
+      "fail_jaccard": 0.23,
+      "fail_run_words": 5
+    },
+    "grading": "checks-only",
+    "calibrated_judges": [],
+    "filters": [
+      "no_messages",
+      "teacher",
+      "contamination_run",
+      "contamination_prompt",
+      "near_duplicate",
+      "quality",
+      "task_changed",
+      "rubric_task",
+      "secret_canary",
+      "secret_pattern",
+      "secret_env_line",
+      "secret_env_value",
+      "too_long",
+      "duplicate"
+    ]
+  },
+  "stats": {
+    "traces_seen": 9,
+    "kept": 9,
+    "train": 5,
+    "val": 4,
+    "dropped": {
+      "no_messages": 0,
+      "teacher": 0,
+      "contamination_run": 0,
+      "contamination_prompt": 0,
+      "near_duplicate": 0,
+      "quality": 0,
+      "task_changed": 0,
+      "rubric_task": 0,
+      "secret_canary": 0,
+      "secret_pattern": 0,
+      "secret_env_line": 0,
+      "secret_env_value": 0,
+      "too_long": 0,
+      "duplicate": 0
+    },
+    "sessions": {
+      "total": 9,
+      "train": 5,
+      "val": 4
+    },
+    "tokens": {
+      "p50": 1126.0,
+      "p90": 1144.0,
+      "max": 1144.0
+    },
+    "examples_per_tool": {
+      "read_file": 9
+    },
+    "with_approval": 0,
+    "with_rejection": 0
+  }
+}

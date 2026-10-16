@@ -191,6 +191,16 @@ The distill task set (`distill/`, 122 tasks, `d1.2`) is the source of graded tra
 The pipeline's near-duplicate filter compares every user message with every KestrelBench prompt. Generic requests that share a bench prompt's wording are lost from training: of 12 everyday requests in `evals/reports/distill-overlap.md`, 4 are dropped (2 exact matches such as "What time is it in Tokyo?", 2 near-duplicates), and any "What time is it in <city>?" is dropped by its 5-word run. Intended: KestrelBench stays a fair test, and the distill set covers the same behaviors in other words.
 **Done when:** a review of a real chat export shows how much is lost; if it matters, the filter could ignore runs made only of very common words.
 
+### 35. The training script has only run on CPU, without 4-bit
+**Labels:** `distillation`, `medium`
+`distill/train.py --smoke` runs end to end on CPU (tiny random Qwen3, real tokenizer, no 4-bit), and the formatter is tested on the real tokenizer. The GPU path (bitsandbytes 4-bit loading, `prepare_model_for_kbit_training`, float16 on a T4) has not run yet, and Kaggle's preinstalled torch may not match the pinned transformers/trl. The P100 may not support bitsandbytes' 4-bit kernels (use a T4).
+**Done when:** the first Kaggle run on a real dataset finishes, its `lineage.json` is checked (`distill/TRAINING.md`, step 5), and any version fix is pinned.
+
+### 36. Groq's Services Agreement §6.3(e): confirm before the collection pass
+**Labels:** `distillation`, `process`, `medium`
+Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no output restrictions, but §6.3(e) bars using the Cloud Services to "develop or improve products, services, or other offerings that are similar or compete" with them (agreement last modified 2026-06-22). Reading: a small locally served student for a personal agent is neither similar to nor competing with Groq's inference platform. The owner accepted the step-5 plan on 2026-10-16, which listed this reading as option (a), alongside asking Groq support (b) or collecting elsewhere (c).
+**Done when:** the owner confirms (a) explicitly, or Groq confirms in writing, before `distill/COLLECTION.md` is run.
+
 ---
 
 ## Process
