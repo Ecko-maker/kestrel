@@ -764,13 +764,23 @@ def cmd_unlock(args: argparse.Namespace) -> int:
     return 0
 
 
+def _rejudge_sources(meta: dict[str, Any]) -> tuple[Path, Path]:
+    """(task folder, trace database) of the run a results file came from. KestrelBench files are
+    exactly as before; a distill run uses the task folder it recorded and logs/distill.db, so its
+    stored rubric answers can be graded later without re-running Kestrel."""
+    if meta.get("split") == "distill" and meta.get("task_dir"):
+        return RESULTS_DIR.parents[1] / meta["task_dir"], DISTILL_DB
+    return TASKS_DIR, BENCH_DB
+
+
 def _rejudge(args: argparse.Namespace, out: Path) -> int:
     """Grade the stored answers again (new judge prompt or model) and write a NEW results file.
     Kestrel is never re-run; checks keep their stored outcome; only the judge's part changes."""
     data = _load(args.results)
     if out.resolve() == args.results.resolve():
         sys.exit("rejudge writes a new file; it never overwrites the original results.")
-    by_id = {t.id: t for t in load_tasks()}
+    tasks_dir, trace_db = _rejudge_sources(data.get("meta", {}))
+    by_id = {t.id: t for t in load_tasks(tasks_dir)}
 
     def wanted(d: dict[str, Any]) -> bool:
         task = by_id.get(d["id"])
@@ -783,11 +793,11 @@ def _rejudge(args: argparse.Namespace, out: Path) -> int:
         return not (args.only_missing and current)
 
     todo = [d for d in data["tasks"] if wanted(d)]
-    sources = Counter(cal.tool_log_for(d, BENCH_DB)[1] for d in todo)
+    sources = Counter(cal.tool_log_for(d, trace_db)[1] for d in todo)
     request_tokens = sum(
         sum(
             len(m["content"])
-            for m in build_request(list(t.prompts), t.rubric, cal.tool_log_for(d, BENCH_DB)[0], d["answer"])
+            for m in build_request(list(t.prompts), t.rubric, cal.tool_log_for(d, trace_db)[0], d["answer"])
         )
         // 4
         for d in todo
@@ -814,7 +824,7 @@ def _rejudge(args: argparse.Namespace, out: Path) -> int:
             assert task is not None and task.rubric
             if graded and args.pause:
                 time.sleep(args.pause)
-            log, _ = cal.tool_log_for(d, BENCH_DB)
+            log, _ = cal.tool_log_for(d, trace_db)
             before = (r.status, (r.judge or {}).get("score"), (r.judge or {}).get("version") or "v1")
             v = judge.grade(list(task.prompts), task.rubric, log, r.answer)
             graded += 1

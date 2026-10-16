@@ -337,26 +337,32 @@ requests per hour); only timing fields moved.
 
 (Numbered after the Phase 3 branches' issues, which reach 29.)
 
-### 30. The safety split's prompts aren't checked on main yet
-**Labels:** `distillation`, `evals`, `medium`
-`kestrel distill build` drops traces whose user message equals any KestrelBench prompt, read from every task folder under `evals/kestrelbench/`. On main that is only the main suite: the safety split lives on the Phase 3 branches. Until it merges, a safety-split trace is dropped only through its trace id in a results file, or because it sits in a `bench.db` (refused). It is picked up automatically once `evals/kestrelbench/safety/` exists.
-**Done when:** Phase 3 is merged and a test asserts the safety prompts are in `bench_prompts()`.
+### 30. The safety split's prompts are read from a pinned commit until Phase 3 merges
+**Labels:** `distillation`, `evals`, `low`
+The safety split isn't on main yet. Since step 3, the overlap check and `kestrel distill build` read its prompts and fixtures with git from the commit pinned in `src/kestrel/distill/bench_sources.toml` (`6f58ee5…`, tag `safety-before`), and fail loudly if the tag no longer resolves to it. Remaining gap: a clone without that commit (e.g. a shallow CI checkout) uses the files on disk only; the report and the manifest then say so.
+**Done when:** Phase 3 is merged (the safety split is on disk everywhere) and the pin is either kept as a second source or removed on purpose.
 
 ### 31. The secret scrub only finds what it can recognize
 **Labels:** `security`, `distillation`, `medium`
 Missed: a canary payload without its `KCAN` prefix that is split or encoded in other ways (ROT13, reversed, spelled out), secrets with no known key pattern that aren't in the environment at build time, and personal data that isn't a secret (names, email addresses, phone numbers). The canary decoder is a small copy of `bench/canaries.py` from the Phase 3 branches, which main doesn't have yet.
 **Done when:** after the Phase 3 merge, the scrub uses `bench/canaries.py` (one decoder) with the safety split's canary payloads, and a sample of kept examples is read by hand before the first fine-tune.
 
-### 32. Distill data needs a run, and reworded bench prompts in chats get through
+### 32. Distill data needs a run
 **Labels:** `distillation`, `medium`
-Bench traces are always dropped, so before step 2 the only examples were chat turns rated `/good` that ran entirely on Groq gpt-oss-120b. Step 2 added the source: the distill task set (`distill/`, 120 tasks, design decision 20), whose passed runs feed the quality rule. It hasn't been run yet (about 133k billable tokens for one pass, by `--dry-run`; it needs the owner's OK for quota).
-Still open: the pipeline's prompt match is exact after normalizing case, punctuation and whitespace, so a reworded KestrelBench prompt typed into a *chat* is not caught. The task set itself is checked for near-duplicates by `scripts/distill_overlap.py`.
-**Done when:** the distill set has been run on the teacher and built into a dataset, and the pipeline also applies the 3-gram near-duplicate check to chat prompts.
+The distill task set (`distill/`, 120 tasks, `d1.1`) is the source of graded training data, but it hasn't been run yet: about 250k billable Groq tokens, 2 days (`distill/README.md`), after the Phase 3 merge (`distill/COLLECTION.md`) and with the owner's OK for quota.
+**Fixed in step 3:** reworded KestrelBench prompts in chats. `kestrel distill build` now drops any example whose user message is a near-duplicate of a bench prompt (`near_duplicate`, the overlap check's fail thresholds: word 3-gram Jaccard >= 0.23 or a shared run of >= 5 words), including chats rated /good.
+**Done when:** the distill set has been run on the teacher and built into a dataset.
 
 ### 33. The distill set's rubric tasks would be judged by the teacher itself
 **Labels:** `distillation`, `evals`, `medium`
-42 of the 120 distill tasks have a rubric. With the default `--judge groq`, gpt-oss-120b grades its own answers, and only passed runs become training data, so its self-preference bias (docs/kestrelbench.md, "Judge independence") would pick the examples. Deterministic checks are unaffected.
-**Done when:** distill runs use an independent judge (the candidate is `qwen/qwen3.8-27b`, pending calibration, #21), or the rubric tasks are dropped from training until then.
+42 of the 120 distill tasks have a rubric. With the default `--judge groq`, gpt-oss-120b would grade its own answers, and only passed runs become training data, so its self-preference bias (docs/kestrelbench.md, "Judge independence") would pick the examples.
+**Mitigated (step 3):** `grading = "checks-only"` (`src/kestrel/distill/grading.toml`, the default) keeps only the 78 tasks graded entirely by checks; rubric tasks are dropped (`rubric_task`) whatever their status, and collection runs with `--judge none`. Their stored answers can be graded later with `kestrel bench rejudge`, without re-running Kestrel. Cost: the first dataset has no time-zone examples and almost no safety or web examples (`distill/README.md`).
+**Done when:** an independent judge (candidate `qwen/qwen3.8-27b`) is calibrated on human labels (#21), listed in `calibrated_judges`, and the rubric answers are re-graded with it.
+
+### 34. The near-duplicate filter also drops some ordinary chat
+**Labels:** `distillation`, `low`
+The pipeline's near-duplicate filter compares every user message with every KestrelBench prompt. Generic requests that share a bench prompt's wording are lost from training: of 12 everyday requests in `evals/reports/distill-overlap.md`, 4 are dropped (2 exact matches such as "What time is it in Tokyo?", 2 near-duplicates), and any "What time is it in <city>?" is dropped by its 5-word run. Intended: KestrelBench stays a fair test, and the distill set covers the same behaviors in other words.
+**Done when:** a review of a real chat export shows how much is lost; if it matters, the filter could ignore runs made only of very common words.
 
 ---
 

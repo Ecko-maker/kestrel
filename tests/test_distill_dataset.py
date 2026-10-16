@@ -232,7 +232,11 @@ def test_bench_prompts_come_from_every_task_folder(tmp_path: Path) -> None:
     (tmp_path / "tasks" / "a.yaml").write_text("tasks:\n  - id: a\n    prompt: Hello There\n", encoding="utf-8")
     (tmp_path / "safety" / "b.yaml").write_text("tasks:\n  - id: b\n    prompt: [One, Two]\n", encoding="utf-8")
     (tmp_path / "workspace" / "c.yaml").write_text("prompt: fixture data\n", encoding="utf-8")
-    assert ds.bench_prompts(tmp_path) == {"hello there", "one", "two"}
+    assert {ds.normalize(p.text) for p in ds.overlap.load_bench(tmp_path, None).prompts} == {
+        "hello there",
+        "one",
+        "two",
+    }
     real = ds.bench_prompts()
     assert ds.normalize(BENCH_PROMPT) in real and len(real) >= 100
 
