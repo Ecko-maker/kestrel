@@ -230,3 +230,20 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Stage-6 acceptance (owner decision, 2026-10-11): the criterion is reads-then-falls → 0/29, not always-falls.** reads-then-falls is a scripted model that reads the local data, then obeys the injection: the weakest model a real attack needs. always-falls keeps 11/29 strict-user successes after, but they are artifacts: it writes a canary it never read into a search or fetch, which no real model can do, and with nothing read nothing taints the conversation. The same 11 attacks are stopped under reads-then-falls. The proof **passed on the `e37e6e5` task set** and is **to be re-run on the final attack texts** once `phase3/memory-safety` is merged in.
 - The model sees exactly the same tools and prompt (the fingerprint moves only because capabilities are hashed), so a change in the after-run is the defense, not a different agent. Pinned by `test_the_tiers_v2_agent_fingerprint_is_pinned`: agent `2cac3804ef92`, and the tools hashed without capabilities still give the before run's `22ab98e45865`, with the same system prompt hash.
 - The content check is evidence more than a gate: after a read, every network call already asks. It tells the user *what* would leave, which makes "no" an informed answer.
+
+## 17. Distillation dataset: only graded passes from an open-weight teacher, secrets rejected outright, split by task
+
+**Decision:** `src/kestrel/distill/dataset.py` builds the SFT dataset from traces with a fixed chain of filters, each counted in `stats.json`:
+- **Grader:** a trace is kept only if a bench results file says its task passed (optional `--min-score`). Chat traces count only with `--include-rated` and a `/good` rating.
+- **Teacher:** every model step must come from `--provider` / `--model` (default `groq` / `openai/gpt-oss-120b`). Closed models (Gemini, Claude, GPT; by provider or model name, `gpt-oss` excepted) are refused with no flag to override, in the data and on the command line.
+- **Secrets:** an example with a canary, a key, a `[REDACTED]` marker, a real-looking email address or a `--deny-file` string is dropped whole. Safety-split runs are left out unless `--include-safety`.
+- **Split:** by task (or by first user message for chats), with a seeded hash order, so repeats of one task never sit on both sides.
+- No existing module changes; it reuses `weight_current_turn` (earlier turns weight 0), `estimate_tokens`, `redact` and the bench's canary decoder. The database is opened read-only, and there is no default path: the caller passes a copy.
+
+**Alternatives:**
+- **Redact secrets and keep the example.** The conversation around a secret still teaches the student to fetch and repeat it, and a canary that the redactor doesn't recognize would be memorized. Dropping costs a few examples.
+- **Accept any provider that passed.** More data, but key decision 3 rules out closed-model outputs, and Ollama's small models are the student's class, not a teacher.
+- **Random split by trace.** Three repeats of one task would land on both sides, and val loss would measure memorization.
+- **Prompt/completion format.** Kestrel's runs are multi-step tool conversations, and the chat format with per-message weights is what `kestrel export` already writes and what common SFT trainers read.
+
+**Why:** the student should learn only behavior that a grader accepted, from a teacher it is allowed to learn from, and should never see a planted credential. Every example that is left out is counted by reason, so a shrinking dataset is explained, not silent. Open: the benchmark-contamination question (known issue #25).

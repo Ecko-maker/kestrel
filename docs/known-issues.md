@@ -205,6 +205,20 @@ MCP servers are separate processes, which in-process blocking can't reach at all
 
 ---
 
+## Distillation (Phase 4)
+
+### 25. Training on KestrelBench traces turns the benchmark into training data
+**Labels:** `evals`, `distillation`, `high`
+Most graded teacher traces today come from KestrelBench runs (`logs/bench.db`), because the grader verdict lives in the results files. A student fine-tuned on them has seen the exact prompts it will be scored on, so its KestrelBench score would overstate it. The dataset builder (`src/kestrel/distill/dataset.py`) keeps each task on one side of its train/val split, which stops leakage *inside* the dataset, but not between the dataset and the benchmark.
+**Done when:** the Phase 4 comparison is scored on tasks the student never trained on: a held-out part of the suite (e.g. the proposed hard split, `evals/reports/hard-split-proposal.md`) or a list of KestrelBench tasks excluded from training. The choice is the owner's.
+
+### 26. The secret scrub only finds secrets it can recognize
+**Labels:** `security`, `distillation`, `medium`
+The scrub rejects an example that contains a `KCAN-` canary (as written, URL, base64 or hex, or the `KCAN` prefix alone), anything `tracing.redact()` would change, a `[REDACTED]` marker, an email address outside the reserved example domains, or a `--deny-file` string. It misses: a canary payload written without its prefix and split or encoded another way (the forms of #23), secrets with no known key pattern that were never in this process's environment, and personal data other than email addresses (names, phone numbers, street addresses) unless they are listed in `--deny-file`.
+**Done when:** the dataset is built from a fresh copy of the database with the safety split's canary payloads in `--deny-file`, and a sample of the kept examples is read by hand before the first fine-tune.
+
+---
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
