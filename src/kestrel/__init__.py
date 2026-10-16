@@ -13,6 +13,7 @@ from kestrel.agent import MAX_CONTEXT_TOKENS, Agent
 from kestrel.approval import ApprovalGate, TerminalApprover
 from kestrel.bench import cli as bench_cli
 from kestrel.demo import DEMO_NOTICE, DEMO_PROMPTS
+from kestrel.distill import dataset as distill
 from kestrel.llm import PROVIDERS, LLMError, build_llm
 from kestrel.mcp_client import MCPManager, load_config
 from kestrel.tools import registry
@@ -135,7 +136,7 @@ def main() -> None:
     parser.add_argument("--list-models", action="store_true", help="show available model IDs")
     parser.add_argument("--debug", action="store_true", help="print full JSON of each tool call and result")
     parser.add_argument("--no-mcp", action="store_true", help="don't start the MCP servers in kestrel.mcp.json")
-    sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,bench}")
+    sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,bench,distill}")
     p = sub.add_parser("traces", help="list recent traces")
     p.add_argument("-n", type=int, default=20, help="how many (default 20)")
     p = sub.add_parser("trace", help="show one trace as a tree")
@@ -148,12 +149,15 @@ def main() -> None:
     p.add_argument("--rated", choices=["good", "bad", "any"], default="good")
     p.add_argument("--out", default="data/traces.jsonl")
     bench_cli.add_parser(sub)
+    distill.add_parser(sub)
     args = parser.parse_args()
     if os.getenv("KESTREL_MCP", "on").strip().lower() in ("off", "0", "false", "no"):
         args.no_mcp = True
 
     if args.command == "bench":
         sys.exit(bench_cli.main(args))
+    if args.command == "distill":
+        sys.exit(distill.main(args))
 
     tracer = Tracer()
     if args.command == "web":

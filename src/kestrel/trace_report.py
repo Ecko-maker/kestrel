@@ -307,6 +307,24 @@ def weight_current_turn(messages: list[dict]) -> list[dict]:
     ]
 
 
+def export_record(t: sqlite3.Row | dict, tools: list[dict]) -> dict:
+    """One row of the traces table as a chat-format training record. Shared with
+    `kestrel distill build`, so both commands write the same shape."""
+    return {
+        "messages": weight_current_turn(json.loads(t["messages"])),
+        "tools": tools,
+        "metadata": {
+            "trace_id": t["trace_id"],
+            "time": datetime.fromtimestamp(t["start_time"]).isoformat(timespec="seconds"),
+            "rating": t["rating"],
+            "rating_note": t["rating_note"],
+            "providers": json.loads(t["providers"] or "[]"),
+            "steps": t["steps"],
+            "stop_reason": t["stop_reason"],
+        },
+    }
+
+
 def export(conn: sqlite3.Connection, rated: str, out_path: Path, tools: list[dict]) -> tuple[int, int]:
     """Write traces as chat-format JSONL: {"messages": [...], "tools": [...], "metadata": {...}}.
     Returns (written, skipped). Skipped: no stored messages (content off), errored runs, demo mode."""
@@ -323,19 +341,6 @@ def export(conn: sqlite3.Connection, rated: str, out_path: Path, tools: list[dic
             if not t["messages"] or t["status"] == "error" or "demo" in json.loads(t["providers"] or "[]"):
                 skipped += 1  # no stored text, a failed run, or scripted demo replies (never training data)
                 continue
-            record = {
-                "messages": weight_current_turn(json.loads(t["messages"])),
-                "tools": tools,
-                "metadata": {
-                    "trace_id": t["trace_id"],
-                    "time": datetime.fromtimestamp(t["start_time"]).isoformat(timespec="seconds"),
-                    "rating": t["rating"],
-                    "rating_note": t["rating_note"],
-                    "providers": json.loads(t["providers"] or "[]"),
-                    "steps": t["steps"],
-                    "stop_reason": t["stop_reason"],
-                },
-            }
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.write(json.dumps(export_record(t, tools), ensure_ascii=False) + "\n")
             written += 1
     return written, skipped

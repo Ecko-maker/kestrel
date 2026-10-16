@@ -135,3 +135,25 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Hand-made markdown/SVG over libraries where it's small.** Fewer dependencies to audit; `react-markdown` is the exception because markdown parsing is not small.
 - **oxlint for the console.** typescript-eslint doesn't yet support TypeScript 7; oxlint parses TypeScript itself and includes the React hooks rules.
 - **gitleaks as a tool, not the GitHub Action.** The tool is MIT; the action is commercially licensed for organizations.
+
+---
+
+## 19. Distillation data: open-weight teacher only, no KestrelBench tasks, drop on any secret
+
+(Numbered after the Phase 3 branches' decisions, which reach 18, so the merge doesn't collide.)
+
+**Decision:** `kestrel distill build` (`src/kestrel/distill/dataset.py`) turns a copy of a traces database into `train.jsonl`, `val.jsonl` and `manifest.json`. Filters run in a fixed order and each drop is counted: no stored messages, teacher, contamination (bench run, bench prompt), quality, secrets (canary, redaction pattern, `.env` line, env value), length, duplicate.
+- **Teacher (hard):** every model step's (provider, model) must be listed in `src/kestrel/distill/teachers.toml` (default `groq` + `openai/gpt-oss-120b`). There is no flag for other providers, and the loader refuses Gemini, Claude, GPT and demo entries, so editing the file can't admit them either.
+- **Contamination (hard):** any trace listed in a bench results file is dropped, and so is any trace whose user message equals a KestrelBench prompt from any task folder under `evals/kestrelbench/` (case and whitespace ignored). The command refuses the live `logs/traces.db` and any `bench.db`.
+- **Quality:** answered (not `max_steps` or error), not rated `/bad`, and either rated `/good` or part of a bench task that passed (all checks, judge >= 0.5). Since bench traces are always dropped, the second path only serves future graded sources that aren't KestrelBench runs.
+- **Secrets (hard):** drop, never redact, if any part of the example (system prompt, user turns, tool arguments, tool results, answer) holds a `KCAN-` canary (also URL, base64 or hex encoded, or its prefix alone), a `tracing.redact()` match or `[REDACTED]` marker, a `.env`-style secret line, or a secret environment variable's value.
+- **Format:** records come from `trace_report.export_record`, the function `kestrel export` uses, so there is one formatter. Over-long examples are dropped, not truncated. The split hashes the session id (salt 2026), so a conversation is never on both sides. The manifest holds the input SHA-256, the git commit, the teachers, the settings, the drops and the stats; no timestamps, so a rebuild is byte-identical.
+
+**Alternatives:**
+- **Allow other teachers by flag.** Convenient, but one mistaken run would put closed-model outputs into training data (key decision 3). A config file the loader validates keeps the choice reviewable in git.
+- **Train on passing KestrelBench runs.** The most graded data we have, but KestrelBench is the student's deploy gate: a student that has seen its tasks passes the gate for the wrong reason.
+- **Redact secrets and keep the example.** The conversation around the secret still teaches the model to fetch and repeat it, and a canary the redactor misses would be memorized.
+- **Truncate long examples.** A cut-off tool call or tool result teaches a broken trajectory.
+- **Split by trace.** Turns of one conversation share context, so val would partly measure memorization.
+
+**Why:** the student should learn only behavior that a teacher it may learn from produced, that passed a check other than the benchmark it will be judged on, and that contains no planted or real secret. Every dropped example is counted by reason, so a small dataset is explained, not silent. Open items: known issues #30-#32.

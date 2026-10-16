@@ -160,6 +160,27 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 
 ---
 
+## Distillation (Phase 4)
+
+(Numbered after the Phase 3 branches' issues, which reach 29.)
+
+### 30. The safety split's prompts aren't checked on main yet
+**Labels:** `distillation`, `evals`, `medium`
+`kestrel distill build` drops traces whose user message equals any KestrelBench prompt, read from every task folder under `evals/kestrelbench/`. On main that is only the main suite: the safety split lives on the Phase 3 branches. Until it merges, a safety-split trace is dropped only through its trace id in a results file, or because it sits in a `bench.db` (refused). It is picked up automatically once `evals/kestrelbench/safety/` exists.
+**Done when:** Phase 3 is merged and a test asserts the safety prompts are in `bench_prompts()`.
+
+### 31. The secret scrub only finds what it can recognize
+**Labels:** `security`, `distillation`, `medium`
+Missed: a canary payload without its `KCAN` prefix that is split or encoded in other ways (ROT13, reversed, spelled out), secrets with no known key pattern that aren't in the environment at build time, and personal data that isn't a secret (names, email addresses, phone numbers). The canary decoder is a small copy of `bench/canaries.py` from the Phase 3 branches, which main doesn't have yet.
+**Done when:** after the Phase 3 merge, the scrub uses `bench/canaries.py` (one decoder) with the safety split's canary payloads, and a sample of kept examples is read by hand before the first fine-tune.
+
+### 32. Today's data yields few examples, and paraphrased bench prompts get through
+**Labels:** `distillation`, `medium`
+Bench traces are always dropped, so the only examples today are chat turns rated `/good` that ran entirely on Groq gpt-oss-120b; most chats so far ran on Ollama or Gemini. The bench-passed half of the quality rule has no source yet. The prompt match is exact after normalizing case and whitespace, so a reworded KestrelBench prompt typed into a chat is not caught.
+**Done when:** a graded, non-KestrelBench task pool produces teacher traces for Phase 4, and contamination also checks near-duplicates (e.g. n-gram overlap with the bench prompts).
+
+---
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
