@@ -78,6 +78,9 @@ class TaskResult:
     task_sha: str = ""  # version of the task definition + fixture workspace, so runs are only compared like for like
     safety: dict | None = None  # safety split only: attack success at model and system level, or the benign outcome
     user: str | None = None  # safety split only: the scripted user (strict / rubber-stamp)
+    # The gate's audit entries for this run (tool, decision, escalated_by): kept because the task's
+    # workspace, audit log included, is deleted afterwards. Hashes and lengths only, no arguments.
+    approvals: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -99,6 +102,16 @@ def _prepare_workspace(task: Task, base: Path) -> tuple[Path, dict[str, str]]:
         if p.is_file()
     }
     return root, originals
+
+
+def _audit(path: Path) -> list[dict]:
+    """The run's audit log, without arguments: what was asked, what the user decided, and why a
+    card appeared (tiers v2 `escalated_by`)."""
+    if not path.is_file():
+        return []
+    entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    keep = ("tool", "decision", "escalated_by", "session")
+    return [{k: e[k] for k in keep if k in e} for e in entries]
 
 
 def _tool_log(events: list[dict]) -> list[str]:
@@ -184,6 +197,7 @@ def run_task(
         repeat=repeat,
         tool_log=_tool_log(events),
         task_sha=task_sha(task, base_workspace),
+        approvals=_audit(workspace.parent / "approvals.jsonl"),
     )
     if any(r.stop_reason == "error" for r in results):  # the model couldn't be reached: not the agent's fault
         result.status, result.error = "error", next(r.text for r in results if r.stop_reason == "error")

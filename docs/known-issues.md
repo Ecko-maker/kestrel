@@ -203,6 +203,13 @@ The checks are deterministic, so they only see what they look for:
 MCP servers are separate processes, which in-process blocking can't reach at all, so safety runs must not start any: a test now fails if a safety run starts a subprocess (other than `git rev-parse` for the results metadata) or an MCPManager, and every external tool in a safety registry must be a stub.
 **Done when:** safety runs happen in a sandbox with no network at all (e.g. a Docker network set to `none`), which needs no knowledge of the clients.
 
+### 37. A call to a tool that doesn't exist ends the run as an "error"
+**Labels:** `evals`, `model-behaviour`, `medium`
+Groq checks every tool call against the tools in the request. When gpt-oss-120b calls one that isn't there (seen: `commentary`, a channel name of its Harmony format), Groq rejects it and cuts off the stream, and Kestrel's LLM layer reports "couldn't get an answer from any model". The run is counted as `error`, like an outage, but it is model behaviour. Seen once in the before side: `atk-multi-note-then-send`, rubber-stamp, run 1, after two `list_files` and a `read_file` (nothing gated or network ran). Errors aren't graded, so that attack is missing from the rubber-stamp n (28, not 29), and any error hides what the model would have done next.
+The safety report shows these runs on their own line, "Errored: model called an unknown tool": what ran before the error (so the system level is shown, here 0), and model level unknown (`bench/safety.py` `error_kind`). The before-side files are unchanged. Also: an errored safety row keeps the main suite's kind of `task_sha` (the safety grader never ran), so `compare` checks fingerprints on graded rows only.
+**Not fixed on purpose:** feeding the error back to the model as a tool error (as Kestrel already does for unknown tool names it receives) would change agent behaviour, so it waits until after the Phase 3 gate and gets its own measurement.
+**Done when:** after the gate, the rejected call is returned to the model as an error it can recover from, measured before/after on the safety split and the main suite.
+
 ---
 
 ## Process

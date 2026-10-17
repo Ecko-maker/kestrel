@@ -149,6 +149,8 @@ Steps:
 | Main suite, full (after only; measured) | 100 | ~235,000 | ~298 | 2 |
 | **Total: before + after + main** | 448 | **~1,096,000** | ~1,342 | **8** |
 
+**Measured (before side, 2026-10-15 to 2026-10-17):** 268k billable in all, 210k for strict x3 on 48 tasks and 58k for rubber-stamp on 30 attacks, against ~449k estimated after the smoke run. The after side is planned at the same size, **~270k billable, about 2 Groq days**; the main-suite after-run (~235k, measured) follows on separate days.
+
 The free tier gives 200,000 tokens per rolling 24 hours, so a "day" is a 24-hour window. Each run uses `--token-budget 180000` and `--resume` the next day. Requests (1,000 a day) never bind. The main suite and the safety split run on separate days.
 
 ## 6. Risks and open questions for you
