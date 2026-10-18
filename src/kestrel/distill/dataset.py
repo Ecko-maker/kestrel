@@ -212,6 +212,33 @@ def load_verdicts(paths: list[Path], root: Path = ROOT) -> dict[str, Verdict]:
     return verdicts
 
 
+class FingerprintMismatch(ValueError):
+    """A distill run was collected with different agent code than the code building the dataset."""
+
+
+def check_agent_fingerprints(paths: list[Path]) -> None:
+    """Every distill results file must record the agent fingerprint of the current code (computed the
+    same offline way, with the file's own provider and model). The training text is rendered with the
+    current code's tool schemas and limits, so traces collected with other code would be trained under
+    a prompt they never had. A file without a fingerprint counts as a mismatch."""
+    from kestrel.bench.runner import agent_fingerprint
+
+    for path in paths:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not is_distill_run(data):
+            continue  # KestrelBench files are dropped as contamination anyway
+        meta = data.get("meta") or {}
+        agent = meta.get("agent")
+        recorded = agent.get("sha") if isinstance(agent, dict) else None
+        current = agent_fingerprint(str(meta.get("provider", "")), str(meta.get("model", "")))["sha"]
+        if recorded != current:
+            raise FingerprintMismatch(
+                f"{path.name}: agent fingerprint {recorded or 'missing'} in the file, {current} for the current code. "
+                "The run was collected with different agent code (system prompt, tools or limits). Build the dataset "
+                "at the collection commit: in the runs folder, as distill/COLLECTION.md step 8 does."
+            )
+
+
 def results_sources(paths: list[Path]) -> dict[str, dict[str, str]]:
     """For the manifest: each results file's hash and how it was classified."""
     return {
@@ -543,6 +570,7 @@ def main(args: argparse.Namespace) -> int:
     try:
         teachers = load_teachers()
         grading = load_grading()
+        check_agent_fingerprints(args.results)  # before anything is opened or built
         conn = open_readonly(args.db)  # first: refusing a live database needs no git
     except (ValueError, FileNotFoundError) as e:
         print(f"distill: {e}", file=sys.stderr)

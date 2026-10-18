@@ -96,6 +96,11 @@ graded task touched by a rate limit; resolve any it lists before building.
 
 ## 8. Build the dataset
 
+Build it **in the runs folder, at the collection commit**. `kestrel distill build` checks every distill results
+file's agent fingerprint against the current code and stops with an error naming the file and both
+fingerprints if they differ (or if the file has none): traces collected with other agent code (system
+prompt, tools, limits) would be trained under a prompt they never had.
+
 ```powershell
 uv run --no-sync kestrel distill build --db $copy --results evals\results\distill-d1.2-pass1.json --out data\distill\d1.2-pass1
 ```
