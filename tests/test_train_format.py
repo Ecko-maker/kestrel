@@ -146,6 +146,8 @@ def test_smoke_training_run(tok: Any, tmp_path: Path) -> None:
     assert lineage["dataset"]["traces_db_sha256"] == json.loads(manifest)["input_db_sha256"]
     assert lineage["dataset"]["teachers"] == [{"provider": "groq", "model": "openai/gpt-oss-120b"}]
     assert lineage["config"] == CONFIG and lineage["libraries"]["transformers"]
+    assert lineage["distinct_tool_sets"] == 1 and len(lineage["tool_schemas"]["sha256"]) == 64
+    assert lineage["tool_schemas"]["names"][:2] == ["get_current_time", "calculator"]
     for loss in (lineage["results"]["train_loss"], lineage["results"]["final_eval_loss"]):
         assert math.isfinite(loss)
     assert any("eval_loss" in row for row in lineage["results"]["history"])

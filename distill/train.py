@@ -72,6 +72,16 @@ def versions() -> dict[str, Any]:
     return found
 
 
+def dataset_tool_sets(fmt: ModuleType, data: Path) -> list[dict[str, Any]]:
+    """The distinct tool lists (as tools_fingerprint) of train.jsonl and val.jsonl, in first-seen order."""
+    seen: dict[str, dict[str, Any]] = {}
+    for name in ("train.jsonl", "val.jsonl"):
+        for record in fmt.load_jsonl(data / name):
+            fp = fmt.tools_fingerprint(record.get("tools") or [])
+            seen.setdefault(fp["sha256"], fp)
+    return list(seen.values())
+
+
 def version_report(found: dict[str, Any], pins: dict[str, str]) -> tuple[list[str], list[str]]:
     """(lines to print, names whose installed version differs from the pin). torch isn't pinned: Kaggle's
     preinstalled CUDA build is used, and reported as such."""
@@ -256,6 +266,9 @@ def run(data: Path, out: Path, config_path: Path, smoke: bool) -> dict[str, Any]
 
     tokenizer = AutoTokenizer.from_pretrained(base["id"], revision=base["revision"])
     max_length = cfg["data"]["max_length"]
+    tool_sets = dataset_tool_sets(fmt, data)
+    if len(tool_sets) > 1:
+        print(f"WARNING: the dataset uses {len(tool_sets)} different tool lists; lineage records the first")
     train_rows = fmt.encode_file(tokenizer, data / "train.jsonl", max_length)
     val_rows = fmt.encode_file(tokenizer, data / "val.jsonl", max_length)
     if not train_rows or not val_rows:
@@ -346,6 +359,10 @@ def run(data: Path, out: Path, config_path: Path, smoke: bool) -> dict[str, Any]
             "train_examples": len(train_rows),
             "val_examples": len(val_rows),
         },
+        # The exact tool schemas the training text holds (they come from the code that built the dataset,
+        # not from the traces). export.py --verify compares them with what Kestrel sends at serve time.
+        "tool_schemas": tool_sets[0] if tool_sets else None,
+        "distinct_tool_sets": len(tool_sets),
         "base_model": {"id": base["id"], "revision": base["revision"], "random_tiny": smoke},
         "config": cfg,
         "libraries": versions(),

@@ -84,4 +84,12 @@ changed here). Measured on Groq gpt-oss-120b, 64-75% of tokens are billable.
   with `--resume` on day two (Groq's token limit is a rolling ~24 h window). Distill tasks are not
   measured yet; multistep and file tasks may run longer than the main suite's average.
 
+## Comparing base and student
+
+Serve both through the same Kestrel Modelfile: `python distill/export.py --base ... --create --verify` builds the
+untrained base exactly like the student (same template, stops, sampling, `num_ctx`; only the GGUF differs).
+Never compare against Ollama's packaged `qwen3:4b-instruct-2507`: its template garbles tool schemas (known
+issue #38), which would handicap the base. Serve both with `KESTREL_MCP=off` (the tools they were trained and
+compared on).
+
 How to run it: `COLLECTION.md`. Training the student on the result: `TRAINING.md`; serving it: `EXPORT.md`.
