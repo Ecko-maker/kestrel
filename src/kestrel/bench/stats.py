@@ -154,6 +154,48 @@ def repeat_spread(results: list[dict[str, Any]]) -> dict[str, Any] | None:
     return {"repeats": repeats, "pass_rates": rates, "flaky": flaky}
 
 
+def extended_passes(results: list[dict[str, Any]]) -> list[str]:
+    """Ids of routed runs that passed only by going past the task's step limit (the router gives the
+    teacher a fresh budget after max_steps; the teacher alone never gets one)."""
+    return sorted(
+        {r["id"] for r in results if r["status"] == "pass" and (r.get("routing") or {}).get("over_max_steps")}
+    )
+
+
+def without_extended_passes(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The same runs, with every pass that needed more than max_steps counted as a fail."""
+    return [
+        r | {"status": "fail"} if r["status"] == "pass" and (r.get("routing") or {}).get("over_max_steps") else r
+        for r in results
+    ]
+
+
+def ratio_ci(
+    a: Sequence[float], b: Sequence[float], resamples: int = RESAMPLES, seed: int = SEED, level: float = LEVEL
+) -> Estimate | None:
+    """Paired bootstrap of mean(b) / mean(a) over tasks (a[i] and b[i] are the same task)."""
+    n = len(a)
+    if n == 0 or n != len(b) or sum(a) == 0:
+        return None
+    rng = random.Random(seed)
+    ratios = []
+    for _ in range(resamples):
+        idx = rng.choices(range(n), k=n)
+        sa = sum(a[i] for i in idx)
+        ratios.append(sum(b[i] for i in idx) / sa if sa else 0.0)
+    ratios.sort()
+    tail = (1 - level) / 2
+    low, high = ratios[int(tail * resamples)], ratios[min(resamples - 1, int((1 - tail) * resamples))]
+    return Estimate(round(sum(b) / sum(a), 4), round(low, 4), round(high, 4), n)
+
+
+def quality_ratio(teacher: dict[str, Any], routed: dict[str, Any], **kw: Any) -> Estimate | None:
+    """Routed / teacher pass rate on the tasks graded in both (decision 25: the claim needs low >= 0.95)."""
+    pa, pb = per_task_pass(teacher["tasks"]), per_task_pass(routed["tasks"])
+    shared = sorted(set(pa) & set(pb))
+    return ratio_ci([pa[t] for t in shared], [pb[t] for t in shared], **kw)
+
+
 @dataclass
 class Comparison:
     a_rate: Estimate | None

@@ -130,7 +130,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="kestrel", description="Chat with Kestrel, or inspect its traces.")
     parser.add_argument(
         "--provider",
-        choices=list(PROVIDERS),
+        choices=[*PROVIDERS, "routed"],  # routed: the Phase 4 router (kestrel/router.py), off by default
         help="use only this provider (default: the KESTREL_PROVIDERS chain from .env)",
     )
     parser.add_argument("--model", help="override the first provider's default model")

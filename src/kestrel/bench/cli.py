@@ -20,8 +20,8 @@ from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
 from kestrel.bench.preview import preview
 from kestrel.bench.quota import QuotaWait
-from kestrel.bench.report import markdown, pct, summarize, write_results
-from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
+from kestrel.bench.report import markdown, pct, routing_lines, summarize, write_results
+from kestrel.bench.runner import ROUTER_STOP, TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.safety import (
     SAFETY_DIR,
     SAFETY_VERSION,
@@ -35,7 +35,16 @@ from kestrel.bench.safety import (
 )
 from kestrel.bench.safety_report import markdown_safety
 from kestrel.bench.scripted import MODELS, ScriptedSafetyModel
-from kestrel.bench.stats import SEED, compare, judge_label, merge_references, stratified_sample
+from kestrel.bench.stats import (
+    SEED,
+    compare,
+    extended_passes,
+    judge_label,
+    merge_references,
+    quality_ratio,
+    stratified_sample,
+    without_extended_passes,
+)
 from kestrel.bench.stubs import USERS, build_registry, make_setup
 from kestrel.bench.tasks import (
     SUITE_VERSION,
@@ -412,10 +421,17 @@ def _run(args: argparse.Namespace) -> int:
         sys.exit("No tasks match.")
     if args.repeat < 1:
         sys.exit("--repeat must be at least 1")
-    for name in (args.provider, args.judge):
+    routed = args.provider == "routed"  # the Phase 4 router (kestrel/router.py), configured by KESTREL_ROUTER_*
+    for name in (args.judge,) if routed else (args.provider, args.judge):
         if name not in ("none", "scripted") and name not in PROVIDERS:
-            sys.exit(f"Unknown provider {name!r}. Choose from: {', '.join(PROVIDERS)}")
-    model = args.scripted or args.model or PROVIDERS[args.provider].default_model
+            sys.exit(f"Unknown provider {name!r}. Choose from: {', '.join(PROVIDERS)} (or routed)")
+    if routed:
+        from kestrel.router import RouterConfig
+
+        router_config = RouterConfig.from_env()
+        model = router_config.label()
+    else:
+        model = args.scripted or args.model or PROVIDERS[args.provider].default_model
     judge_model = (args.judge_model or PROVIDERS[args.judge].default_model) if args.judge != "none" else None
     judge_name = f"{args.judge}/{judge_model}" if judge_model else None
 
@@ -519,7 +535,8 @@ def _run(args: argparse.Namespace) -> int:
             model = llm.model
         else:
             llm, _ = build_llm([args.provider], args.model)
-            model = llm.llms[0].model
+            if not routed:  # a routed run keeps the router's label (RoutedLLM has no .llms)
+                model = llm.llms[0].model
         judge = _judge(args.judge, args.judge_model) if args.judge != "none" else None
     except LLMError as e:
         sys.exit(f"Can't start the benchmark: {e}")
@@ -603,6 +620,7 @@ def _run(args: argparse.Namespace) -> int:
             token_budget=None if args.token_budget is None else max(0, args.token_budget - spent),
             repeats=[k for _, k in jobs],
             stop_after_errors=args.stop_after_errors or None,
+            student_health_limit=router_config.max_student_health if routed else None,
             quota=QuotaWait(
                 total=len(all_jobs),
                 done_before=len(previous) + len(fresh),
@@ -638,10 +656,16 @@ def _run(args: argparse.Namespace) -> int:
         f"{s['tokens_total'] + s['judge_tokens_total']:,} tokens ({s['billable_tokens_total']:,} billable)"
         f"\nResults: {out}\nReport:  {out.with_suffix('.md')}"
     )
+    if routing := s.get("routing"):
+        print("\n".join(routing_lines(routing, s["pass_rate"])))
 
     failed = []
     if args.min_pass_rate is not None and (s["pass_rate"] or 0) < args.min_pass_rate:
         failed.append(f"pass rate {pct(s['pass_rate'])} is below the minimum {pct(args.min_pass_rate)}")
+    router_stop = next((r.error for r in results if r.status == "skipped" and ROUTER_STOP in (r.error or "")), None)
+    if router_stop:
+        failed.append(router_stop)
+        print(f"ROUTER STOPPED: {router_stop}")
     stopped = sum(r.status == "skipped" and "errors in a row" in (r.error or "") for r in results)
     if args.max_errors is not None and s["errors"] + stopped > args.max_errors:
         failed.append(f"{s['errors']} runs errored and {stopped} were skipped after errors (max {args.max_errors})")
@@ -887,6 +911,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
     for label, ids in (("better in B", c.better_in_b), ("worse in B", c.worse_in_b)):
         if ids:
             print(f"  {label}: {', '.join(ids)}")
+    if any(r.get("routing") for r in b["tasks"]):  # B is a routed run: the Phase 4 quality verdict
+        print(quality_verdict(a, b))
     within = c.within(args.margin)
     print(
         f"Within {args.margin * 100:.0f} points of A (95% confidence): "
@@ -1021,6 +1047,28 @@ def cmd_show(args: argparse.Namespace) -> int:
         sys.exit(f"No safety task {args.task_id!r}. Run `kestrel bench validate --split safety` for the list.")
     print(preview(split, args.task_id), end="")
     return 0
+
+
+def quality_verdict(teacher: dict[str, Any], routed: dict[str, Any], threshold: float = 0.95) -> str:
+    """Decision 25: routed / teacher, lower end of the 95% paired interval >= threshold. Stated twice:
+    as measured, and with every pass that needed more than max_steps counted as a fail. The claim must
+    hold without them."""
+    lines = []
+    extended = extended_passes(routed["tasks"])
+    without = {**routed, "tasks": without_extended_passes(routed["tasks"])}
+    for label, data in (("as measured", routed), (f"without the {len(extended)} passes past max_steps", without)):
+        ratio = quality_ratio(teacher, data)
+        if ratio is None:
+            lines.append(f"Quality B/A {label}: no shared graded tasks")
+            continue
+        verdict = "HOLDS" if ratio.low >= threshold else "NOT SHOWN"
+        lines.append(
+            f"Quality B/A {label}: {ratio.value:.3f} (95% CI {ratio.low:.3f}-{ratio.high:.3f}, n={ratio.n}): "
+            f">= {threshold:.2f} {verdict}"
+        )
+    if extended:
+        lines.append(f"Passed only past max_steps: {', '.join(extended)} (the claim must hold without them)")
+    return "\n".join(lines)
 
 
 def cmd_report(args: argparse.Namespace) -> int:

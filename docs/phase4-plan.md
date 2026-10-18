@@ -23,7 +23,7 @@ the student with escalation to the teacher (section 1).
 | 2 | Quality metric | **Accepted:** routed/teacher on the main-suite pass rate; lower end of the 95% paired-bootstrap interval >= 0.95 (about -4.6 points at 92%); the difference interval reported too |
 | 3 | Repeats | **Accepted:** R=3 per system, estimate h, then decide on R=5; say so if the claim is out of reach with 100 tasks |
 | 4 | Judge = teacher | **Accepted:** the claim must also hold on the 57 check-only tasks; switch judges only after calibration (#21) |
-| 5 | Teacher references | **Changed:** the primary reference is Phase 3's main-suite after-run (same tiers-v2 code as the routed system); the pinned baselines are secondary. If the after-run differs from a baseline by more than the measured run-to-run noise (+-6 points), fresh teacher repeats on the current code are required before any claim (rule in section 5) |
+| 5 | Teacher references | **Changed, then refined:** the primary reference is Phase 3's main-suite after-run (same tiers-v2 code as the routed system); the pinned baselines are secondary. The verdict is computed against the after-run alone (a) and against all three (b); if (a) and (b) differ, fresh teacher repeats on the current code before any claim (noise figure +-6 points; rule in section 5) |
 | 6 | Hard split | **Accepted:** after the Phase 3 gate, as a separate stress split (v1.2), not part of the claim |
 | 7 | Hardware | **Accepted:** quality runs wherever cheapest (laptop overnight or Kaggle T4); the latency claim on the laptop CPU, hardware named |
 | 8 | Price references | **Accepted:** Groq's paid gpt-oss-120b and Gemini 3.6 Flash list prices; a Claude/GPT line only with a sourced, dated entry |
@@ -55,6 +55,13 @@ apply unchanged, and the audit log records which model proposed each call.
 Why cascade: it needs no training data, every signal is deterministic and already logged, and it fails safe. The cost is that wrong-but-valid answers stay with the student, and the quality claim measures exactly that.
 
 c and d are later versions, once the distill set has student and teacher results to learn from.
+
+**Built (step 8, 2026-10-18): router v1** (`src/kestrel/router.py`, off by default: only `KESTREL_PROVIDERS=routed` or `--provider routed` builds it).
+- Settings: `KESTREL_ROUTER_STUDENT`/`_STUDENT_MODEL`, `KESTREL_ROUTER_TEACHER`/`_TEACHER_MODEL`, `KESTREL_ROUTER_LINEAGE` (required), `KESTREL_ROUTER_STUDENT_CTX` (16384), `KESTREL_ROUTER_CTX_MARGIN` (0.8: pre-route above 80% of the context, since `estimate_tokens` is approximate, #11, and Ollama silently cuts an over-long prompt), `KESTREL_ROUTER_MAX_STUDENT_HEALTH` (0.10).
+- Reasons come in three kinds: `pre_route` (tool_set, context), `quality` (invalid_tool_call, empty_reply, max_steps) and `student_health` (student_error, student_timeout). A routed bench run stops with `ROUTER STOPPED` when student-health escalations exceed the setting's share of turns after the first 10 tasks (the run would measure the teacher, not the routed system).
+- `max_steps` hands the turn to the teacher with a fresh budget (cap 2 x max_steps). Each task records its steps per turn; the routed report lists tasks that passed only by going past max_steps and gives the pass rate with and without them, and `kestrel bench compare <teacher> <routed>` states the quality verdict (routed/teacher, lower 95% bound >= 0.95) both ways. **The claim must hold without them.**
+- Routed reports show the escalation rate (share of turns and of task runs) and a count per reason and per kind.
+- The student's reply is buffered until it passes the checks; a discarded reply is never shown or added to the transcript, and its tokens are recorded on the next span (`kestrel.route.discarded_tokens`).
 
 **Escalation hand-over (decision 10).** On escalation the teacher continues the same turn from a transcript that keeps every tool call that actually ran, with its result (including results the user approved), and **drops the student's malformed tool call** (and the error message it produced), so the teacher doesn't imitate it. Nothing that already ran runs again: no tool call is re-executed and no approval card is asked twice. A rejected approval is the user's decision and **never escalates**; the model that proposed the call must adapt. Both properties are tested with scripted models (step 8).
 
@@ -157,7 +164,7 @@ All runs at the merged code (Phase 3 + Phase 4), from the runs folder, with `--w
 | Routed | safety | strict x3 + rubber x1 | escalated turns | ~80k at 30% escalation (0.3 x the measured 268k before side) | 174 task runs |
 | (Optional, after the gate) hard split | hard | 1 per system | teacher agent + judge | ~64-75k per teacher run + ~10k judge per local run | 25 per system |
 
-**Teacher reference rule (decision 5).** The primary teacher reference is Phase 3's main-suite after-run: the same tiers-v2 code as the routed system. The two pinned baselines (`cc5c16377662`, suite v1.1, judge v2) are secondary references. Before any claim, `kestrel bench compare` pairs the after-run with each baseline. If either paired difference lies outside **+-6 points** (the 95% interval measured between two identical teacher runs, -5 to +7, `evals/reports/run-to-run.md`, rounded symmetric), the code change has moved the teacher's score: **fresh teacher repeats on the current code are required before any claim**, and the baselines are not used as repeats. If both differences are inside, the baselines count as teacher repeats 2 and 3 next to the after-run.
+**Teacher reference rule (decision 5, refined 2026-10-18).** The primary teacher reference is Phase 3's main-suite after-run: the same tiers-v2 code as the routed system. The two pinned baselines (`cc5c16377662`, suite v1.1, judge v2) are secondary. The quality verdict (decision 2) is computed **twice**: (a) against the after-run alone, and (b) against all three references (the after-run plus the two baselines as teacher repeats 2 and 3). The noise figure for comparing references is **+-6 points** (the 95% interval measured between two identical teacher runs, -5 to +7, `evals/reports/run-to-run.md`). **If (a) and (b) give different verdicts, fresh teacher repeats on the current code are required before any claim.**
 
 **Groq total (teacher rule holds, 30% escalation): ~515k billable, about 3 Groq days** at `--token-budget 180000` (rolling 24 h window; requests never bind). With fresh teacher references: ~985k, about 6 days. The collection pass (~253k, 2 days, `distill/README.md`) comes before all of this. Estimates use the corrected estimator and measured sizes. Recompute after the first local day, when the student's real token counts and the escalation rate exist.
 
@@ -178,7 +185,7 @@ All runs at the merged code (Phase 3 + Phase 4), from the runs folder, with `--w
 | 5 | Kaggle GPU smoke test (`train.py --gpu-smoke`) | nothing: it uses the synthetic smoke data | **can run now**; clears known issue #40's first half early |
 | 6 | Kaggle training | 4, 5 | <1 GPU-hour |
 | 7 | Export: student and base (`export.py`, `--base`; the ~8 GB base download needs the owner's OK) | 6 (student); base needs only the download | `--verify` 20/20 and the tool-schema check |
-| 8 | Router v1 (code, tests with scripted models) | design approval (this document), 1 | can be built and tested offline in parallel with 3-7 |
+| 8 | Router v1 (code, tests with scripted models): **built 2026-10-18**; tiers-v2 tests after the rebase (#42) | design approval (this document), 1 | can be built and tested offline in parallel with 3-7 |
 | 9 | Local timing smoke run (10 tasks) | 7 | sets the laptop-hours estimate and the timeout |
 | 10 | Section 5 runs | 7, 8, 9, owner's quota OK per run | main suite and safety split on separate days |
 | 11 | Phase 4 gate: quality (section 2), cost and latency (section 3), safety (section 4) | 10 | |

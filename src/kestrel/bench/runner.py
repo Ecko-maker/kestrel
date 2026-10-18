@@ -82,9 +82,13 @@ class TaskResult:
     # The gate's audit entries for this run (tool, decision, escalated_by): kept because the task's
     # workspace, audit log included, is deleted afterwards. Hashes and lengths only, no arguments.
     approvals: list[dict] = field(default_factory=list)
+    routing: dict[str, Any] | None = None  # routed runs only (kestrel/router.py): turns, escalations, steps per turn
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        if d["routing"] is None:  # unrouted runs keep exactly the fields they always had
+            del d["routing"]
+        return d
 
 
 def _prepare_workspace(task: Task, base: Path) -> tuple[Path, dict[str, str]]:
@@ -167,6 +171,11 @@ def run_task(
             gate=ApprovalGate(approver, log_path=workspace.parent / "approvals.jsonl"),
         )
         results = [agent.run(prompt) for prompt in task.prompts]
+        routing = None
+        if take_turns := getattr(llm, "take_turns", None):  # a routed run: who answered each turn, and why
+            from kestrel.router import summarize_turns
+
+            routing = summarize_turns(take_turns(), [r.steps for r in results], task.max_steps)
     finally:
         tools.WORKSPACE = previous_workspace
     latency = (time.perf_counter() - started) * 1000
@@ -199,6 +208,7 @@ def run_task(
         tool_log=_tool_log(events),
         task_sha=task_sha(task, base_workspace),
         approvals=_audit(workspace.parent / "approvals.jsonl"),
+        routing=routing,
     )
     if any(r.stop_reason == "error" for r in results):  # the model couldn't be reached: not the agent's fault
         result.status, result.error = "error", next(r.text for r in results if r.stop_reason == "error")
@@ -268,8 +278,20 @@ def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None =
         "sampling": "provider default (no temperature or seed sent)",
         "approval_rules": RULES_VERSION,
     }
+    if provider == "routed":  # only routed runs: an unrouted fingerprint is exactly what it always was
+        from kestrel.router import RouterConfig
+
+        parts["router"] = RouterConfig.from_env().describe()
     parts["sha"] = hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     return parts
+
+
+HEALTH_MIN_TASKS = 10  # the student-health guard waits this many routed tasks before judging
+ROUTER_STOP = "router stopped the run"
+
+
+def student_unhealthy(tasks: int, turns: int, health: int, limit: float | None) -> bool:
+    return limit is not None and tasks >= HEALTH_MIN_TASKS and turns > 0 and health / turns > limit
 
 
 def billable_tokens(result: TaskResult) -> int:
@@ -292,19 +314,24 @@ def run_suite(
     setup: Setup | None = None,
     grader: Grader | None = None,
     quota: QuotaWait | None = None,
+    student_health_limit: float | None = None,
 ) -> list[TaskResult]:
     """Run tasks in order (repeats[i] is task i's repeat number). The rest are marked "skipped", to
     resume later, once either:
     - token_budget: the agent + judge tokens spent (excluding cached input, which Groq doesn't
       rate-limit) reach it, since free tiers cap tokens per day;
     - stop_after_errors: that many tasks in a row errored, which almost always means the provider's
-      rate limit or an outage; carrying on would only turn the rest into errors too.
+      rate limit or an outage; carrying on would only turn the rest into errors too;
+    - student_health_limit (routed runs): after HEALTH_MIN_TASKS tasks, the share of turns the router
+      escalated because the student failed or timed out exceeds it. The run would be measuring the teacher,
+      not the routed system.
     quota (wait-for-quota mode): a run that errored on a provider's daily limit is dropped, not
     counted toward stop_after_errors; the runner waits until the limit should free, then runs the same
     (task, repeat) again. Its tokens still count toward token_budget: they were spent."""
     results: list[TaskResult] = []
     spent = 0
     errors_in_a_row = 0
+    routed_tasks = routed_turns = health_turns = 0
     for i, task in enumerate(tasks):
         repeat = repeats[i] if repeats else 1
         stop = None
@@ -312,6 +339,13 @@ def run_suite(
             stop = f"token budget reached ({spent:,} of {token_budget:,})"
         elif stop_after_errors and errors_in_a_row >= stop_after_errors:
             stop = f"stopped after {errors_in_a_row} errors in a row (likely a rate limit)"
+        elif student_unhealthy(routed_tasks, routed_turns, health_turns, student_health_limit):
+            stop = (
+                f"{ROUTER_STOP}: the student failed or timed out in {health_turns} of {routed_turns} turns "
+                f"({health_turns / routed_turns:.0%}), above KESTREL_ROUTER_MAX_STUDENT_HEALTH "
+                f"({student_health_limit:.0%}). Check the student (Ollama running? model loaded? "
+                "KESTREL_REQUEST_TIMEOUT long enough?), then resume"
+            )
         if stop:
             result = TaskResult(
                 id=task.id, category=task.category, status="skipped", score=0.0, error=stop, repeat=repeat
@@ -329,6 +363,10 @@ def run_suite(
                     quota.checkpoint(results)  # resumable if the process dies while it sleeps
                 quota.wait(wait, len(results), task.id, repeat)
             errors_in_a_row = errors_in_a_row + 1 if result.status == "error" else 0
+            if result.routing:
+                routed_tasks += 1
+                routed_turns += result.routing["turns"]
+                health_turns += result.routing["categories"].get("student_health", 0)
         results.append(result)
         if on_result:
             on_result(result)
