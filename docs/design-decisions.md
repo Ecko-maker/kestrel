@@ -431,3 +431,20 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Ollama's safetensors import (`FROM ./merged`, `--quantize`):** in 0.40.6 it needs the MLX engine, not available on Windows, and offers only int4/int8/nvfp4/mxfp4/mxfp8.
 
 **Why:** a fine-tuned model is only as good as the match between the prompts it learned and the prompts it gets. Checking that match against the server's own code, not a re-implementation, makes it a fact instead of an assumption.
+
+---
+
+## 25. Phase 4 measurement and router v1 (owner decisions, 2026-10-18)
+
+**Decision** (`docs/phase4-plan.md`, decisions table):
+- **Router v1:** a cascade in the model layer. The student answers first. Two exact pre-route rules send a request to the teacher: the tool set Kestrel would send differs from the student's training fingerprint (#41), or the prompt is longer than the student's context. Escalation mid-turn on an invalid tool call, `max_steps`, an empty answer, or a provider error or timeout. No refusal signal. The approval gate and tiers v2 apply unchanged to whichever model answers.
+- **Hand-over:** the teacher continues from the transcript with the tools that actually ran and their results, without the student's malformed call. Nothing runs twice (no tool, no approval card). A rejected approval never escalates.
+- **Quality claim:** routed/teacher main-suite pass rate (v1.1, frozen), lower end of the 95% paired-bootstrap interval >= 0.95; also on the 57 check-only tasks (the judge is the teacher, uncalibrated). R=3 per system first, then decide on 5 from the measured per-task disagreement.
+- **Teacher reference:** Phase 3's main-suite after-run (same tiers-v2 code). The pinned baselines are secondary, and count as repeats only if the after-run is within +-6 points of each (the measured identical-run interval); otherwise fresh teacher repeats on the current code before any claim.
+- **Safety:** 0 system-level attack successes under the strict user (student alone and routed), plus rubber-stamp system level not above the teacher's; if that fails, tainted turns go to the teacher.
+- **Cost and latency:** reported separately against Groq's free-tier budget and against paid list prices (Groq gpt-oss-120b, Gemini 3.6 Flash); latency on the laptop CPU, named; no claim before measurement.
+- **Also:** the hard split after the Phase 3 gate as a separate stress test; `KESTREL_REQUEST_TIMEOUT` raised for local runs only; the Kaggle GPU smoke test may run now.
+
+**Alternatives:** in `docs/phase4-plan.md`, sections 1-3 (router options a-d, the power table, the hard split's cost).
+
+**Why:** a claim the noise can't support is worse than none. Tying the teacher reference to the same code as the routed system, and refusing to reuse old runs when they disagree beyond measured noise, keeps the comparison like for like. Making the router fail safe (deterministic signals, no repeated actions, user rejections respected) means routing can never weaken the approval model.
