@@ -1,6 +1,7 @@
 """distill/export.py's Modelfile and train.py's GPU-smoke checks: the parts that need no GPU, torch or Ollama."""
 
 import importlib.util
+import json
 import math
 import sys
 import tomllib
@@ -48,9 +49,11 @@ def test_kaggle_and_export_scripts_parse_as_python_311() -> None:
     import ast
 
     for path in (ROOT / "distill" / "export.py", ROOT / "distill" / "train.py"):
-        source = path.read_text(encoding="utf-8")
-        ast.parse(source, feature_version=(3, 11))
-        assert "from kestrel" not in source and "import kestrel" not in source
+        ast.parse(path.read_text(encoding="utf-8"), feature_version=(3, 11))
+    train_source = (ROOT / "distill" / "train.py").read_text(encoding="utf-8")
+    assert "from kestrel" not in train_source and "import kestrel" not in train_source  # runs on Kaggle
+    export_source = (ROOT / "distill" / "export.py").read_text(encoding="utf-8")  # runs locally: one lazy import
+    assert export_source.count("from kestrel") == 1 and "    from kestrel.tools import registry" in export_source
 
 
 # --- GPU smoke checks ------------------------------------------------------------
@@ -104,3 +107,68 @@ def test_the_smoke_data_has_a_tool_prompt() -> None:
 def test_gpu_smoke_settings() -> None:
     s = CONFIG["gpu_smoke"]
     assert s["steps"] >= 20 and 0 < s["min_loss_drop"] < 1 and s["batch_examples"] >= 2
+
+
+# --- Tool-schema pinning ------------------------------------------------------------
+
+
+def served() -> list[dict]:
+    return export.served_tool_schemas()
+
+
+def test_served_schemas_are_the_agents() -> None:
+    from kestrel.tools import registry
+
+    assert served() == registry.schemas() and len(served()) >= 5
+
+
+def test_identical_tools_pass() -> None:
+    lineage = {"tool_schemas": tf.tools_fingerprint(served())}
+    assert export.check_tools(lineage, served()) == []
+
+
+def test_a_changed_tool_description_fails_and_names_the_tool() -> None:
+    lineage = {"tool_schemas": tf.tools_fingerprint(served())}
+    changed = json.loads(json.dumps(served()))
+    target = changed[1]["function"]
+    target["description"] += " (now also reads PDFs)"
+    problems = export.check_tools(lineage, changed)
+    assert problems == [f"{target['name']}: schema differs (description, parameters or type)"]
+
+
+def test_added_removed_and_reordered_tools() -> None:
+    tools = served()
+    lineage = {"tool_schemas": tf.tools_fingerprint(tools)}
+    extra = {"type": "function", "function": {"name": "new_tool", "description": "x", "parameters": {"type": "object"}}}
+    assert export.check_tools(lineage, [*tools, extra]) == ["new_tool: sent at serve time, never seen in training"]
+    gone = tools[0]["function"]["name"]
+    assert export.check_tools(lineage, tools[1:]) == [f"{gone}: seen in training, not sent at serve time"]
+    assert export.check_tools(lineage, list(reversed(tools)))[0].startswith("same tools, different order")
+    assert "no tool_schemas" in export.check_tools({}, tools)[0]
+
+
+def test_a_dropped_key_is_not_a_difference() -> None:
+    """Ollama never sends keys it doesn't know (#39), so they can't make training and serving differ."""
+    tools = json.loads(json.dumps(served()))
+    lineage = {"tool_schemas": tf.tools_fingerprint(tools)}
+    tools[0]["function"]["parameters"]["properties"] = {
+        k: v | {"default": "ignored"} for k, v in tools[0]["function"]["parameters"]["properties"].items()
+    }
+    assert export.check_tools(lineage, tools) == []
+
+
+def test_the_smoke_dataset_uses_todays_tools() -> None:
+    """A changed tool schema makes every dataset built before it stale: the training text would show the old
+    one. If this fails, rebuild distill/smoke with `kestrel distill build` (and any real dataset)."""
+    sets = train.dataset_tool_sets(tf, ROOT / "distill" / "smoke")
+    assert len(sets) == 1
+    assert tf.compare_tools(sets[0], tf.tools_fingerprint(served())) == []
+
+
+def test_base_and_student_get_the_same_modelfile() -> None:
+    """--base and the student both go through modelfile(): only the GGUF they point to differs."""
+    assert export.modelfile(tf.OLLAMA_TEMPLATE, "model-q4_K_M.gguf") == export.modelfile(
+        tf.OLLAMA_TEMPLATE, "model-q4_K_M.gguf"
+    )
+    source = (ROOT / "distill" / "export.py").read_text(encoding="utf-8")
+    assert source.count("modelfile(template, gguf.name)") == 1  # one call, used for --base and the student

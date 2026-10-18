@@ -216,6 +216,11 @@ Ollama's tool types keep only anyOf, type, items, description, enum, properties 
 Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). Not run: `train.py --gpu-smoke` and a real training on Kaggle (4-bit, float16 on a T4, Kaggle's preinstalled torch), and an export of the real 4B adapter (needs the ~8 GB base download).
 **Done when:** the GPU smoke test passes on Kaggle and a real adapter is exported with `--verify` 20/20.
 
+### 41. With MCP on, Kestrel sends the student tools it never saw
+**Labels:** `distillation`, `serving`, `low`
+The training text holds Kestrel's built-in tools only (`kestrel distill build` doesn't start MCP servers). When Kestrel runs with MCP on, the agent also sends the tools of the servers in `kestrel.mcp.json` (`fetch`, `time`), which the student was never trained with. `export.py --verify` compares against the built-in registry and prints a note naming those servers.
+**Done when:** the student is served with `KESTREL_MCP=off`, or MCP tools are part of collection and training (and of the fingerprint).
+
 ---
 
 ## Process

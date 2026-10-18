@@ -20,6 +20,7 @@ Kestrel can't be installed: standard library only (plus a tokenizer passed in), 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -202,6 +203,32 @@ def tool_json(tool: dict[str, Any]) -> str:
     ]
     fields.append(("function", _ordered(fn_fields)))
     return _ordered(fields)
+
+
+def tools_fingerprint(tools: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the model sees of a tool list, hashed: the exact text of each tool in the prompt (after
+    Ollama's dropping of unknown keys) and of the whole block, in order. lineage.json records it for the
+    training data; export.py --verify compares it with what Kestrel sends at serve time."""
+    texts = [tool_json(t) for t in tools]
+    names = [str((t.get("function") or {}).get("name", "")) for t in tools]
+    return {
+        "sha256": hashlib.sha256("\n".join(texts).encode("utf-8")).hexdigest(),
+        "names": names,
+        "per_tool": {n: hashlib.sha256(t.encode("utf-8")).hexdigest() for n, t in zip(names, texts, strict=True)},
+    }
+
+
+def compare_tools(trained: dict[str, Any], served: dict[str, Any]) -> list[str]:
+    """Differences between two tools_fingerprint() results, one line each; empty if identical."""
+    if trained["sha256"] == served["sha256"]:
+        return []
+    a, b = trained["per_tool"], served["per_tool"]
+    problems = [f"{n}: sent at serve time, never seen in training" for n in b if n not in a]
+    problems += [f"{n}: seen in training, not sent at serve time" for n in a if n not in b]
+    problems += [f"{n}: schema differs (description, parameters or type)" for n in a if n in b and a[n] != b[n]]
+    if not problems:
+        problems.append(f"same tools, different order: trained {trained['names']}, served {served['names']}")
+    return problems
 
 
 def arguments_json(arguments: Any) -> str:

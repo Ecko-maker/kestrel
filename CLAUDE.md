@@ -30,6 +30,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 - The Bash tool turns `\n` escapes inside heredocs into real line breaks: write multi-line edit scripts with the Write tool.
 - Never open, print, or edit `.env`. It holds the user's API keys. If a key is missing, say exactly what line to add. To diagnose a key, print only yes/no facts (set, length, right prefix), never characters of it.
 - Free tools only unless the user says otherwise.
+- Ask before any download over 100 MB (models, tools and their caches included), with the estimated size; afterwards report the actual size and where it went.
 - After each step: run it, fix any errors, then give a suggested git commit message and one sentence on what the step shows an interviewer.
 - Free-tier limits shape testing: Gemini `gemini-3.6-flash` allows 5 requests/min and **20/day**; Groq `gpt-oss-120b` 8,000 tokens/min (~1,000 requests/day). Heavy runs (evals) go to Groq.
 - While Claude Code runs the `kestrel` MCP server, Windows locks `.venv/Scripts/kestrel-mcp.exe` and `uv sync` fails to replace it: use `uv run --no-sync`, and `uv add --no-sync <pkg>` then `uv sync --inexact --no-install-project` for new dependencies.

@@ -2,6 +2,7 @@
 
     python distill/export.py --adapter RUN/adapter --out EXPORT --name kestrel-student --create --verify
     python distill/export.py --smoke --adapter RUN/adapter --out EXPORT --name kestrel-smoke --create --verify
+    python distill/export.py --base --out EXPORT-BASE --name kestrel-base --create --verify   # the untrained base
 
 1. Merge: the base model (the pinned revision from train_config.toml, or RUN/base for a --smoke run) plus
    the adapter, merged in float16 on CPU (peft merge_and_unload), saved as safetensors (EXPORT/merged).
@@ -12,10 +13,19 @@
    student was trained on, checked by scripts/template_parity.py), Qwen's stop tokens and sampling
    defaults, and num_ctx (Ollama drops the oldest messages of longer prompts).
 4. --create: `ollama create NAME -f Modelfile`.
-5. --verify: every fixed conversation of distill/parity/cases.json goes to the created model through
+5. --verify, first the tool schemas: the student's lineage.json records a hash of the exact tool schemas in
+   its training text (from the code that built the dataset); they must equal what Kestrel's agent sends now
+   (its tool registry, after Ollama's dropping of unknown keys, known issue #39). A mismatch fails and lists
+   the tools that differ. MCP tools (kestrel.mcp.json) aren't in the registry until Kestrel starts them and
+   weren't in training: serve the student with KESTREL_MCP=off.
+   Then every fixed conversation of distill/parity/cases.json goes to the created model through
    Ollama's OpenAI-compatible endpoint (the way Kestrel's Ollama provider calls it, 1 token), and
    Ollama's prompt token count must equal the training tokenizer's count for train_format.render(). That
    checks the running server: a wrong TEMPLATE, a missing num_ctx or extra tokens all change the count.
+
+--base exports the untrained base model through the same GGUF path and the same Modelfile (only the
+GGUF differs), so a base-vs-student comparison is like for like: never compare against Ollama's packaged
+template (known issue #38).
 
 Needs the optional extras `train` and `export`, the pinned llama.cpp build (distill/EXPORT.md says where
 to get it) and Ollama. No model calls beyond the local Ollama server.
@@ -90,6 +100,41 @@ def merge(adapter: Path, out: Path, cfg: dict[str, Any], smoke: bool) -> Path:
     return target
 
 
+def base_source(cfg: dict[str, Any], adapter: Path | None, smoke: bool) -> Path:
+    """A local folder with the base model's safetensors and tokenizer, for --base: RUN/base of a --smoke
+    run, or the pinned revision from the Hugging Face cache (downloaded the first time: ~8 GB)."""
+    if smoke:
+        if adapter is None:
+            raise SystemExit("--smoke --base needs --adapter RUN/adapter (the base is RUN/base)")
+        return adapter.parent / "base"
+    from huggingface_hub import snapshot_download
+
+    base = cfg["base_model"]
+    return Path(snapshot_download(base["id"], revision=base["revision"]))
+
+
+def served_tool_schemas() -> list[dict[str, Any]]:
+    """The tool schemas Kestrel's agent sends (Agent: registry.schemas()), as built without MCP."""
+    from kestrel.tools import registry  # this script runs where Kestrel is installed (not on Kaggle)
+
+    return registry.schemas()
+
+
+def check_tools(lineage: dict[str, Any], served: list[dict[str, Any]]) -> list[str]:
+    """Differences between the tool schemas in the training text and the ones served now."""
+    fmt = load_train_format()
+    trained = lineage.get("tool_schemas")
+    if not trained:
+        return ["lineage.json has no tool_schemas: retrain with the current train.py"]
+    return fmt.compare_tools(trained, fmt.tools_fingerprint(served))
+
+
+def mcp_servers(path: Path = HERE.parent / "kestrel.mcp.json") -> list[str]:
+    if not path.is_file():
+        return []
+    return sorted((json.loads(path.read_text(encoding="utf-8")).get("mcpServers") or {}).keys())
+
+
 def run(cmd: list[str], **kwargs: Any) -> None:
     print("$ " + " ".join(cmd))
     done = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **kwargs)
@@ -124,10 +169,25 @@ def prompt_tokens(name: str, messages: list[dict], tools: list[dict], host: str)
         return int(json.load(resp)["usage"]["prompt_tokens"])
 
 
-def verify(name: str, tokenizer_dir: Path, host: str) -> int:
+def verify(name: str, tokenizer_dir: Path, host: str, lineage: Path | None) -> int:
     from transformers import AutoTokenizer
 
     fmt = load_train_format()
+    if lineage is not None:
+        if not lineage.is_file():
+            print(f"TOOL SCHEMAS: no lineage.json at {lineage}: can't check what the student was trained with")
+            return 1
+        problems = check_tools(json.loads(lineage.read_text(encoding="utf-8")), served_tool_schemas())
+        for line in problems:
+            print(f"TOOL SCHEMA MISMATCH {line}")
+        if problems:
+            print("The student would be served tool schemas it wasn't trained on. Retrain, or serve the old schemas.")
+            return 1
+        print("Tool schemas: identical to the training text.")
+        if servers := mcp_servers():
+            print(
+                f"Note: with MCP on, Kestrel also sends the tools of {servers}, never seen in training: KESTREL_MCP=off"
+            )
     tok = AutoTokenizer.from_pretrained(tokenizer_dir)
     cases = json.loads((HERE / "parity" / "cases.json").read_text(encoding="utf-8"))
     bad = total = 0
@@ -149,7 +209,9 @@ def verify(name: str, tokenizer_dir: Path, host: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--adapter", type=Path, required=True, help="the trained adapter folder (RUN/adapter)")
+    parser.add_argument("--adapter", type=Path, help="the trained adapter folder (RUN/adapter)")
+    parser.add_argument("--base", action="store_true", help="export the untrained base, same template (comparisons)")
+    parser.add_argument("--lineage", type=Path, help="the run's lineage.json (default: next to the adapter folder)")
     parser.add_argument("--out", type=Path, required=True, help="export folder (merged/, GGUF, Modelfile)")
     parser.add_argument("--name", default="kestrel-student", help="Ollama model name (default kestrel-student)")
     parser.add_argument("--config", type=Path, default=HERE / "train_config.toml")
@@ -162,8 +224,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     with args.config.open("rb") as f:
         cfg = tomllib.load(f)
+    if not args.base and args.adapter is None:
+        parser.error("--adapter is required (or --base for the untrained base model)")
     args.out.mkdir(parents=True, exist_ok=True)
-    merged = merge(args.adapter, args.out, cfg, args.smoke)
+    merged = base_source(cfg, args.adapter, args.smoke) if args.base else merge(args.adapter, args.out, cfg, args.smoke)
     gguf = to_gguf(merged, args.out, args.llama_cpp, args.quantize)
     template = load_train_format().OLLAMA_TEMPLATE
     (args.out / "Modelfile").write_text(modelfile(template, gguf.name), encoding="utf-8", newline="\n")
@@ -171,7 +235,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.create:
         run(["ollama", "create", args.name, "-f", str(args.out / "Modelfile")], cwd=args.out)
     if args.verify:
-        return verify(args.name, merged, args.host)
+        lineage = None if args.base else (args.lineage or args.adapter.parent / "lineage.json")
+        return verify(args.name, merged, args.host, lineage)
     return 0
 
 

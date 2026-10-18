@@ -44,6 +44,10 @@ uv run --no-sync python distill/export.py --adapter $env:TEMP\kestrel-adapter\ad
 ```
 
 It merges, converts, quantizes to Q4_K_M (~2.5 GB), writes the Modelfile, runs `ollama create`, then
+checks **the tool schemas**: `lineage.json` (next to the adapter folder) records a fingerprint of the exact
+tool schemas in the training text; they must equal what Kestrel's agent sends now, or the export fails and
+names the tools that differ (`TOOL SCHEMA MISMATCH read_file: schema differs ...`). A tool changed since the
+dataset was built means the student would be served schemas it never saw: retrain. Then it
 **verifies the running server**: the 20 fixed conversations of `distill/parity/cases.json` go to
 `kestrel-student` through Ollama's OpenAI-compatible endpoint (as Kestrel sends them, 1 token each), and
 Ollama's prompt token count must equal the training tokenizer's count for the training text. Expected:
@@ -64,6 +68,7 @@ The student runs as Kestrel's existing Ollama provider. In `.env` (names only; y
 | `KESTREL_PROVIDERS` | `ollama` for the student alone, or a chain such as `ollama,groq` |
 | `OLLAMA_MODEL` | the name you created, e.g. `kestrel-student` |
 | `OLLAMA_BASE_URL` | only if Ollama isn't on the default local address |
+| `KESTREL_MCP` | `off`: the student was trained without the MCP tools (`fetch`, `time`); with MCP on, Kestrel would send it tools it never saw |
 
 Then `uv run --no-sync kestrel` (or `kestrel web`). Before trusting it, run KestrelBench on it like any
 provider (`kestrel bench run --provider ollama`; no Groq quota for the agent, but the judge's would).
@@ -71,6 +76,16 @@ provider (`kestrel bench run --provider ollama`; no Groq quota for the agent, bu
 **Laptop RAM at Q4_K_M:** ~2.5 GB of weights + ~2.4 GB of KV cache at 16k context (36 layers x 8 KV heads
 x 128 dims x 2 x 2 bytes = 147 KB per token) + Ollama's overhead: **about 5.5-6 GB**, so fine on 16 GB.
 CPU-only generation speed: expect a few tokens per second; measure it.
+
+## The base model, for comparisons
+
+```powershell
+uv run --no-sync python distill/export.py --base --out $env:TEMP\kestrel-base-export --name kestrel-base --create --verify
+```
+
+Same GGUF path and **byte-identical Modelfile** as the student (only the GGUF differs), so a base-vs-student
+comparison is like for like. Uses the same ~8 GB base download as the student's merge. Never compare against
+Ollama's packaged `qwen3:4b-instruct-2507` (known issue #38).
 
 ## Template parity: the student sees exactly what it was trained on
 
@@ -113,7 +128,9 @@ is served with Kestrel's template instead.
 uv run --no-sync python distill/train.py --smoke --data distill/smoke --out $env:TEMP\smoke-run
 uv run --no-sync python distill/export.py --smoke --adapter $env:TEMP\smoke-run\adapter --out $env:TEMP\smoke-export `
     --name kestrel-smoke --create --verify
-ollama rm kestrel-smoke
+uv run --no-sync python distill/export.py --smoke --base --adapter $env:TEMP\smoke-run\adapter --out $env:TEMP\smoke-base `
+    --name kestrel-smoke-base --create --verify
+ollama rm kestrel-smoke kestrel-smoke-base
 ```
 
 A tiny random Qwen3 (2 layers, width 64) with the real tokenizer: the merge, GGUF conversion, Q4_K_M
