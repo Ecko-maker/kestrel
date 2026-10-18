@@ -252,3 +252,52 @@ def test_audit_reads_the_given_database(
     monkeypatch.chdir(tmp_path)  # the default logs/bench.db doesn't exist here
     assert _run_script("audit_rate_limits.py", [str(path), "--db", str(db)], monkeypatch) == 0
     assert "trace_missing" in capsys.readouterr().out
+
+
+# --- Agent fingerprint guard ---------------------------------------------------
+
+
+def _fingerprinted(tmp_path: Path, name: str, agent: Any) -> Path:
+    meta: dict[str, Any] = {"provider": "groq", "model": "openai/gpt-oss-120b"}
+    if agent is not None:
+        meta["agent"] = agent
+    return distill_file(tmp_path / name, [result(CHECKS_ONLY, "t-x")], **meta)
+
+
+def _build(db: TraceDB, out: Path, results: Path) -> int:
+    parser = argparse.ArgumentParser()
+    ds.add_parser(parser.add_subparsers(dest="command"))
+    return ds.main(
+        parser.parse_args(["distill", "build", "--db", str(db.path), "--results", str(results), "--out", str(out)])
+    )
+
+
+def test_a_file_with_the_current_fingerprint_builds(tmp_path: Path, db: TraceDB) -> None:
+    from kestrel.bench.runner import agent_fingerprint
+
+    db.add(convo("q", "a"))
+    results = _fingerprinted(tmp_path, "ok.json", agent_fingerprint("groq", "openai/gpt-oss-120b"))
+    assert _build(db, tmp_path / "out", results) == 0
+    assert (tmp_path / "out" / "manifest.json").is_file()
+
+
+@pytest.mark.parametrize(("agent", "shown"), [({"sha": "0123456789ab"}, "0123456789ab"), (None, "missing")])
+def test_a_different_or_missing_fingerprint_stops_the_build(
+    tmp_path: Path, db: TraceDB, capsys: pytest.CaptureFixture[str], agent: Any, shown: str
+) -> None:
+    from kestrel.bench.runner import agent_fingerprint
+
+    db.add(convo("q", "a"))
+    results = _fingerprinted(tmp_path, "old.json", agent)
+    assert _build(db, tmp_path / "out", results) == 2
+    err = capsys.readouterr().err
+    current = agent_fingerprint("groq", "openai/gpt-oss-120b")["sha"]
+    assert "old.json" in err and f"agent fingerprint {shown} in the file, {current} for the current code" in err
+    assert "Build the dataset at the collection commit" in err
+    assert not (tmp_path / "out").exists()
+
+
+def test_kestrelbench_files_are_not_fingerprint_checked(tmp_path: Path) -> None:
+    path = tmp_path / "bench.json"
+    path.write_text(json.dumps({"meta": {"split": "main"}, "tasks": [{"id": "arith-percent"}]}), encoding="utf-8")
+    ds.check_agent_fingerprints([path])  # no error: its traces are dropped as contamination anyway
