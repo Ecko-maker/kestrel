@@ -84,4 +84,4 @@ changed here). Measured on Groq gpt-oss-120b, 64-75% of tokens are billable.
   with `--resume` on day two (Groq's token limit is a rolling ~24 h window). Distill tasks are not
   measured yet; multistep and file tasks may run longer than the main suite's average.
 
-How to run it: `COLLECTION.md`. Training the student on the result: `TRAINING.md`.
+How to run it: `COLLECTION.md`. Training the student on the result: `TRAINING.md`; serving it: `EXPORT.md`.

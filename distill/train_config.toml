@@ -49,3 +49,23 @@ num_hidden_layers = 2
 num_attention_heads = 4
 num_key_value_heads = 2
 head_dim = 16
+
+[gpu_smoke]
+# `train.py --gpu-smoke` (Kaggle, before a real run): the real base model in 4-bit overfits a fixed batch
+# of the synthetic smoke examples. Passes if the loss falls by min_loss_drop, every example has trainable
+# tokens, and a greedy generation afterwards makes a tool call train_format can parse.
+batch_examples = 4
+steps = 30
+learning_rate = 5e-4
+min_loss_drop = 0.5
+max_new_tokens = 128
+
+[pins]
+# The versions uv.lock resolved and the notebook installs (a test keeps the three equal). torch isn't
+# pinned: Kaggle's preinstalled CUDA build is used and reported.
+transformers = "5.20.1"
+peft = "0.21.2"
+trl = "1.16.0"
+datasets = "5.1.0"
+accelerate = "1.15.0"
+bitsandbytes = "0.50.2"

@@ -83,13 +83,13 @@ def test_tool_calls_round_trip(tok: Any) -> None:
     assert calls == [{"name": "read_file", "arguments": {"path": "a.txt"}}]
     full = tok.decode(encoded["input_ids"])
     assert "<tool_response>\nTOOL-RESULT\n</tool_response>" in full  # the result is there, as context
-    assert '"name": "read_file", "description"' in full.split("<|im_end|>")[0]  # the schema, in the system turn
+    assert '{"name":"read_file","description"' in full.split("<|im_end|>")[0]  # the schema (Go JSON), system turn
 
 
 def test_only_weight_one_assistant_turns_are_learned(tok: Any) -> None:
     text = learned(tok, tf.encode(tok, record(), 4096))
     assert "FINAL-ANSWER" in text and "<tool_call>" in text
-    for context in ("SYSTEM-TEXT", "USER-ONE", "USER-TWO", "TOOL-RESULT", "OLD-ANSWER", 'read_file", "description'):
+    for context in ("SYSTEM-TEXT", "USER-ONE", "USER-TWO", "TOOL-RESULT", "OLD-ANSWER", '"description":"Read a file."'):
         assert context not in text, context
     assert text.count("<|im_end|>") == 2  # each learned turn includes its end-of-turn token
     assert "<|im_start|>" not in text  # but never the role header
