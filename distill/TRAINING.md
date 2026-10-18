@@ -17,6 +17,7 @@ New-Item -ItemType Directory -Force "$up\data", "$up\code" | Out-Null
 Copy-Item ..\kestrel-runs\data\distill\d1.2-pass1\train.jsonl, ..\kestrel-runs\data\distill\d1.2-pass1\val.jsonl, `
           ..\kestrel-runs\data\distill\d1.2-pass1\manifest.json "$up\data\"
 Copy-Item distill\train.py, distill\train_config.toml, src\kestrel\distill\train_format.py "$up\code\"
+Copy-Item -Recurse distill\smoke "$up\code\smoke"   # the synthetic examples of the GPU smoke test
 Get-FileHash "$up\data\manifest.json"     # note it: lineage.json will repeat it
 ```
 
@@ -47,7 +48,24 @@ a read token at huggingface.co > Settings > Access Tokens, then in Kaggle **Add-
 Add a secret named `HF_TOKEN` and tick it for this notebook. The notebook reads it from there; never
 paste a token into a cell or a file.
 
-## 4. Run
+## 4. Run the GPU smoke test first
+
+The notebook's first training cell is `train.py --gpu-smoke`. It takes a few minutes and spends almost
+nothing, and it tells you whether a real run can work:
+
+- prints Kaggle's preinstalled torch and CUDA, the GPU, and each library next to its pin in
+  `train_config.toml` (`[pins]`, equal to `uv.lock`): `ok` or `MISMATCH`;
+- loads the real base model at the pinned revision in 4-bit and trains it for 30 steps on a fixed batch of
+  4 synthetic examples (`smoke/`): an overfitting test. **Passes only if** the loss is finite and falls by
+  at least 50% (gradients flow, the masking leaves trainable tokens), every example has trainable tokens
+  (printed per example), and afterwards a greedy generation on a synthetic tool prompt makes a tool call
+  that `train_format` parses;
+- writes `/kaggle/working/gpu-smoke/gpu_smoke.json` and ends with `GPU smoke test PASSED` or `FAILED`.
+
+If it fails, stop and look at the printed reason before spending GPU time on the real run. A version
+`MISMATCH` alone is a warning (the pip cell installs the pins; torch is Kaggle's own).
+
+## 5. Run the training
 
 **Run All** for an interactive run, or **Save Version** > **Save & Run All (Commit)** to run in the
 background (it keeps going if you close the tab; sessions stop after about 12 h).
@@ -65,7 +83,7 @@ the quota shown in your account; it varies).
 If the log shows `loss is not finite` (float16 overflow on T4): lower `learning_rate` in
 `train_config.toml`, re-upload the code dataset, and run again.
 
-## 5. Download and check
+## 6. Download and check
 
 **Output** tab > `kestrel-adapter.zip` > Download. It holds `adapter/` (the LoRA adapter and tokenizer)
 and `lineage.json`. Check before using it:
@@ -79,7 +97,7 @@ Get-Content kestrel-adapter\lineage.json | ConvertFrom-Json | Select-Object -Exp
 from the manifest. `base_model.revision` must be the pinned revision, and `results.best_eval_loss` is
 the val loss of the epoch that was kept.
 
-Serving the adapter with Ollama and routing to it are the next Phase 4 steps.
+Next: `EXPORT.md` (merge, GGUF, Ollama, and the check that Ollama serves the trained prompt format).
 
 ## Local smoke test (no GPU)
 

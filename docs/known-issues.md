@@ -364,15 +364,30 @@ The distill task set (`distill/`, 122 tasks, `d1.2`) is the source of graded tra
 The pipeline's near-duplicate filter compares every user message with every KestrelBench prompt. Generic requests that share a bench prompt's wording are lost from training: of 12 everyday requests in `evals/reports/distill-overlap.md`, 4 are dropped (2 exact matches such as "What time is it in Tokyo?", 2 near-duplicates), and any "What time is it in <city>?" is dropped by its 5-word run. Intended: KestrelBench stays a fair test, and the distill set covers the same behaviors in other words.
 **Done when:** a review of a real chat export shows how much is lost; if it matters, the filter could ignore runs made only of very common words.
 
-### 35. The training script has only run on CPU, without 4-bit
+### 35. ~~The training script has only run on CPU, without 4-bit~~ (superseded by #40, 2026-10-18)
 **Labels:** `distillation`, `medium`
 `distill/train.py --smoke` runs end to end on CPU (tiny random Qwen3, real tokenizer, no 4-bit), and the formatter is tested on the real tokenizer. The GPU path (bitsandbytes 4-bit loading, `prepare_model_for_kbit_training`, float16 on a T4) has not run yet, and Kaggle's preinstalled torch may not match the pinned transformers/trl. The P100 may not support bitsandbytes' 4-bit kernels (use a T4).
 **Done when:** the first Kaggle run on a real dataset finishes, its `lineage.json` is checked (`distill/TRAINING.md`, step 5), and any version fix is pinned.
 
-### 36. Groq's Services Agreement §6.3(e): confirm before the collection pass
+### 36. Groq's Services Agreement §6.3(e): provisional reading (a), waiting for Groq
 **Labels:** `distillation`, `process`, `medium`
-Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no output restrictions, but §6.3(e) bars using the Cloud Services to "develop or improve products, services, or other offerings that are similar or compete" with them (agreement last modified 2026-06-22). Reading: a small locally served student for a personal agent is neither similar to nor competing with Groq's inference platform. The owner accepted the step-5 plan on 2026-10-16, which listed this reading as option (a), alongside asking Groq support (b) or collecting elsewhere (c).
-**Done when:** the owner confirms (a) explicitly, or Groq confirms in writing, before `distill/COLLECTION.md` is run.
+Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no output restrictions, but §6.3(e) bars using the Cloud Services to "develop or improve products, services, or other offerings that are similar or compete" with them (agreement last modified 2026-06-22). **Provisional reading (a):** a small locally served student for a personal agent is neither similar to nor competing with Groq's inference platform. The owner emailed Groq support on 2026-10-18 for written confirmation and is waiting for the reply. `distill/COLLECTION.md` is blocked until the owner confirms, and its first lines say so. Fallback if the answer is no: gpt-oss-20b served locally by Ollama as the teacher (design decision 19).
+**Done when:** the owner confirms (with Groq's written reply, or by accepting (a) explicitly), or switches to the fallback teacher.
+
+### 38. Ollama's own qwen3:4b-instruct-2507 template garbles tool schemas
+**Labels:** `distillation`, `serving`, `medium`
+Found by the template parity check (distill/EXPORT.md): with Ollama 0.40.6, the template in Ollama's own `qwen3:4b-instruct-2507` package prints each tool as a Go struct dump (`{read_file Read a file. {object <nil> <nil> [path] {...}}}`) instead of JSON, because `{{ .Function }}` has no JSON form in that version. It also adds a newline before `<tool_call>` and gives each tool result its own turn. Any comparison that serves the **base** model through that package (e.g. "base vs student" in Phase 4) would handicap the base model. The student is served with Kestrel's template, which is checked byte for byte.
+**Done when:** the base model is served for comparisons with Kestrel's template too (the same Modelfile on the base GGUF), or Ollama fixes its template.
+
+### 39. Ollama drops tool-schema keys it doesn't know (e.g. `default`)
+**Labels:** `serving`, `low`
+Ollama's tool types keep only anyOf, type, items, description, enum, properties and required. Kestrel's schemas use `default` twice (e.g. `web_search` max_results); no model served by Ollama ever sees those defaults. The student is trained on the same reduced schemas, so training and serving agree.
+**Done when:** the defaults that matter are stated in the descriptions, or Ollama keeps the key.
+
+### 40. The GPU path and the export of a real adapter haven't run yet
+**Labels:** `distillation`, `medium`
+Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). Not run: `train.py --gpu-smoke` and a real training on Kaggle (4-bit, float16 on a T4, Kaggle's preinstalled torch), and an export of the real 4B adapter (needs the ~8 GB base download).
+**Done when:** the GPU smoke test passes on Kaggle and a real adapter is exported with `--verify` 20/20.
 
 ---
 

@@ -331,6 +331,8 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Truncate long examples.** A cut-off tool call or tool result teaches a broken trajectory.
 - **Split by trace.** Turns of one conversation share context, so val would partly measure memorization.
 
+**Fallback teacher (added 2026-10-18, known issue #36):** if Groq's terms turn out to forbid this use, the teacher becomes **gpt-oss-20b served locally by Ollama** (`gpt-oss:20b`, Apache-2.0, ~14 GB): no service agreement applies at all. Trade-offs: a much weaker teacher (20B against 120B), so lower-quality traces and a lower ceiling for the student; too large to run next to anything else on the 16 GB laptop, so collection would run in Kaggle GPU sessions (T4, 16 GB), slowly and within the weekly GPU quota; `teachers.toml` would list `ollama` + `gpt-oss:20b`, and the two teachers' traces must not be mixed in one dataset without saying so in the manifest.
+
 **Why:** the student should learn only behavior that a teacher it may learn from produced, that passed a check other than the benchmark it will be judged on, and that contains no planted or real secret. Every dropped example is counted by reason, so a small dataset is explained, not silent. Open items: known issues #30-#32.
 
 ---
@@ -407,3 +409,22 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **unsloth** (about 2x faster on T4): GPU-only, so the CPU smoke test couldn't run the same code; pins `transformers<=5.17.0`; its required `unsloth_zoo` is LGPL-3.0. For ~90 examples (under an hour of T4), speed isn't the bottleneck.
 
 **Why:** the simplest correct path to a first adapter: a text-only model whose tool format Kestrel's Ollama provider already speaks, one code path from laptop to GPU, and a lineage file that ties every adapter to the exact data, teacher and code that made it.
+
+---
+
+## 24. One prompt format, rendered twice and checked against Ollama's own code; export through GGUF
+
+**Decision:**
+- **The format** is defined in `src/kestrel/distill/train_format.py`: Qwen3's structure (tools in the system turn, `<tool_call>` blocks, consecutive tool results in one user turn), with tool schemas and arguments serialized as Go's `json.Marshal` writes them (compact, map keys sorted, Ollama's struct field order, `<>&` escaped, unknown schema keys dropped), and Ollama's `collate()` (system messages joined, consecutive same-role messages merged).
+- **Written twice:** `render()` in Python (training text and label spans; no Hugging Face chat template is used) and `OLLAMA_TEMPLATE` in Go (the Modelfile).
+- **Checked exactly:** `distill/parity/main.go` runs Ollama's own `openai.FromChatRequest` + `template.Execute` at the installed version (v0.40.6, pinned in go.mod) on 20 generation points of 10 fixed conversations (Kestrel's real tool schemas, several calls per turn, consecutive tool results, multi-turn, collate, tricky JSON). `scripts/template_parity.py` requires byte-for-byte equality and prints the first differing line; `golden.json` lets every pytest run (CI included) check the Python side. Proven sensitive: one extra space, or Python's json.dumps instead of Go's encoding, fails it.
+- **Checked at runtime:** `export.py --verify` sends the same conversations to the created model through the OpenAI-compatible endpoint (Kestrel's path) and requires Ollama's prompt token counts to equal training's (20/20 on the smoke export; Ollama's own qwen3 template on the same GGUF: 1/20).
+- **Export:** peft merge (float16, CPU) -> llama.cpp `convert_hf_to_gguf.py` -> `llama-quantize` Q4_K_M (pinned build b11712) -> Modelfile (template, stops, Qwen's sampling defaults, `num_ctx 16384`) -> `ollama create`. Served by Kestrel's existing Ollama provider (`OLLAMA_MODEL`), no code change.
+
+**Alternatives:**
+- **Keep Hugging Face's Qwen template for training** and write a matching Go template: impossible byte for byte, since a Go template can only write JSON through Go's encoder (no spaces), and Jinja can't call it.
+- **Use Ollama's own `qwen3:4b-instruct-2507` template:** checkable the same way, but in 0.40.6 it garbles tool schemas (#38).
+- **A Python port of Go's text/template, or reading prompts from Ollama's logs:** no maintained port; Ollama logs only the prompt length (checked with OLLAMA_DEBUG=2).
+- **Ollama's safetensors import (`FROM ./merged`, `--quantize`):** in 0.40.6 it needs the MLX engine, not available on Windows, and offers only int4/int8/nvfp4/mxfp4/mxfp8.
+
+**Why:** a fine-tuned model is only as good as the match between the prompts it learned and the prompts it gets. Checking that match against the server's own code, not a re-implementation, makes it a fact instead of an assumption.

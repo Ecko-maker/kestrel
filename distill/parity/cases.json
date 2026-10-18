@@ -1,0 +1,2148 @@
+[
+ {
+  "name": "system-tools-user",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What's in notes.txt?"
+   }
+  ]
+ },
+ {
+  "name": "one-tool-call",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "Read notes.txt."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "c1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"notes.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "c1",
+    "content": "<untrusted_data>milk, eggs</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "It lists milk and eggs."
+   }
+  ]
+ },
+ {
+  "name": "content-and-two-calls",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Read both files."
+   },
+   {
+    "role": "assistant",
+    "content": "Reading both.",
+    "tool_calls": [
+     {
+      "id": "c1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"notes.txt\"}"
+      }
+     },
+     {
+      "id": "c2",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"todo.md\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "c1",
+    "content": "first"
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "c2",
+    "content": "second"
+   },
+   {
+    "role": "assistant",
+    "content": "Done."
+   }
+  ]
+ },
+ {
+  "name": "multi-turn",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "Hi!"
+   },
+   {
+    "role": "assistant",
+    "content": "Hello! How can I help?"
+   },
+   {
+    "role": "user",
+    "content": "What time is it in Tokyo?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "t1",
+      "type": "function",
+      "function": {
+       "name": "get_current_time",
+       "arguments": "{\"timezone\": \"Asia/Tokyo\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "t1",
+    "content": "Saturday 2026-10-17 06:05:12 JST (UTC+0900)"
+   },
+   {
+    "role": "assistant",
+    "content": "It's 06:05 in Tokyo."
+   },
+   {
+    "role": "user",
+    "content": "Thanks."
+   }
+  ]
+ },
+ {
+  "name": "no-tools-system",
+  "tools": [],
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "Say hi."
+   }
+  ]
+ },
+ {
+  "name": "tools-no-system",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "List my files."
+   }
+  ]
+ },
+ {
+  "name": "tricky-json",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "plan_trip",
+     "description": "Plan a trip <with> 'quotes' & \"double\" — unicode é",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "zeta": {
+        "type": "string",
+        "enum": [
+         "a",
+         "b"
+        ],
+        "description": "last key, sorted first?"
+       },
+       "alpha": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "description": "two types"
+       },
+       "stops": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "z": {
+           "type": "string"
+          }
+         }
+        }
+       },
+       "mode": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         }
+        ]
+       },
+       "nested": {
+        "type": "object",
+        "properties": {
+         "second": {
+          "type": "integer"
+         },
+         "first": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "first"
+        ]
+       },
+       "limit": {
+        "type": "integer",
+        "default": 5,
+        "minimum": 1
+       }
+      },
+      "required": [
+       "zeta",
+       "alpha"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "system",
+    "content": "S"
+   },
+   {
+    "role": "user",
+    "content": "Plan it."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "p1",
+      "type": "function",
+      "function": {
+       "name": "plan_trip",
+       "arguments": "{\"z\": 2.0, \"a\": 1e-07, \"list\": [1, \"two\", true, null], \"obj\": {\"y\": \"<b>&</b>\", \"x\": \"tab\\there\\nnew\"}, \"\\u00e9\": \"\\u00fc\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "p1",
+    "content": "ok <done> & \"quoted\""
+   },
+   {
+    "role": "assistant",
+    "content": "Planned."
+   }
+  ]
+ },
+ {
+  "name": "collate",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "system",
+    "content": "First system."
+   },
+   {
+    "role": "system",
+    "content": "Second system."
+   },
+   {
+    "role": "user",
+    "content": "Part one."
+   },
+   {
+    "role": "user",
+    "content": "Part two."
+   },
+   {
+    "role": "assistant",
+    "content": "Merged, then answered."
+   },
+   {
+    "role": "user",
+    "content": "Next."
+   }
+  ]
+ },
+ {
+  "name": "empty-arguments",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "List the workspace."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "l1",
+      "type": "function",
+      "function": {
+       "name": "list_files",
+       "arguments": "{}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "l1",
+    "content": "notes.txt\ntodo.md"
+   }
+  ]
+ },
+ {
+  "name": "rejection",
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "get_current_time",
+     "description": "Get the current date and time in a timezone.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "timezone": {
+        "type": "string",
+        "description": "IANA timezone name, e.g. \"Asia/Tokyo\" or \"America/New_York\"."
+       }
+      },
+      "required": [
+       "timezone"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "calculator",
+     "description": "Evaluate a math expression exactly. Supports + - * / // % **, parentheses, sqrt, abs, round, min, max, pi and e. Note: % is the remainder operator, not percent; write \"17.5% of 2340\" as \"0.175 * 2340\".",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "expression": {
+        "type": "string",
+        "description": "The expression, e.g. \"0.175 * 2340\" or \"sqrt(2) ** 2\"."
+       }
+      },
+      "required": [
+       "expression"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_files",
+     "description": "List the files and folders in the user's workspace folder.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Folder inside the workspace, relative to its root. Defaults to the root.",
+        "default": "."
+       }
+      },
+      "required": []
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_file",
+     "description": "Read a text file from the user's workspace folder. Long files are truncated.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, relative to its root, e.g. \"notes.txt\"."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "web_search",
+     "description": "Search the web (DuckDuckGo) and return titles, URLs and snippets.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "query": {
+        "type": "string",
+        "description": "What to search for."
+       },
+       "max_results": {
+        "type": "integer",
+        "description": "How many results to return (1-10).",
+        "default": 5
+       }
+      },
+      "required": [
+       "query"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_file",
+     "description": "Create a text file in the workspace, or overwrite it completely. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"plans/week.md\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The full new content of the file."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "append_to_file",
+     "description": "Add text to the end of a file in the workspace (creates the file if missing). Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace, e.g. \"notes.txt\"."
+       },
+       "content": {
+        "type": "string",
+        "description": "The text to add. It goes on a new line."
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create_note",
+     "description": "Save a new markdown note in the workspace notes/ folder. Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string",
+        "description": "Note title; also used for the file name."
+       },
+       "body": {
+        "type": "string",
+        "description": "The note's content, in markdown."
+       }
+      },
+      "required": [
+       "title",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "send_message",
+     "description": "Send an email on the user's behalf. (Simulated for now: saved to workspace/outbox/.) Requires the user's approval; they may edit or reject it.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "to": {
+        "type": "string",
+        "description": "Recipient email address."
+       },
+       "subject": {
+        "type": "string",
+        "description": "Subject line."
+       },
+       "body": {
+        "type": "string",
+        "description": "The message text."
+       }
+      },
+      "required": [
+       "to",
+       "subject",
+       "body"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "delete_file",
+     "description": "Delete a file from the workspace. Disabled: always refused.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "File path inside the workspace."
+       }
+      },
+      "required": [
+       "path"
+      ]
+     }
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Email sam@example.com that I'm late."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "s1",
+      "type": "function",
+      "function": {
+       "name": "send_message",
+       "arguments": "{\"to\": \"sam@example.com\", \"subject\": \"Late\", \"body\": \"Running late.\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "s1",
+    "content": "Rejected by the user: Too formal."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "s2",
+      "type": "function",
+      "function": {
+       "name": "send_message",
+       "arguments": "{\"to\": \"sam@example.com\", \"subject\": \"Late\", \"body\": \"Hey, running late!\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "s2",
+    "content": "Message sent (simulated)."
+   }
+  ]
+ }
+]
