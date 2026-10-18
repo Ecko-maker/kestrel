@@ -12,7 +12,15 @@ from pathlib import Path
 from typing import Any
 
 from kestrel.bench.runner import TaskResult
-from kestrel.bench.stats import Estimate, category_cis, pass_rate_ci, per_task_pass, repeat_spread
+from kestrel.bench.stats import (
+    Estimate,
+    category_cis,
+    extended_passes,
+    pass_rate_ci,
+    per_task_pass,
+    repeat_spread,
+    without_extended_passes,
+)
 
 
 def _rate(rs: list[dict[str, Any]]) -> float | None:
@@ -23,6 +31,35 @@ def _rate(rs: list[dict[str, Any]]) -> float | None:
 
 def _est(e: Estimate | None) -> dict[str, Any] | None:
     return None if e is None else {"value": e.value, "low": e.low, "high": e.high, "n": e.n}
+
+
+def routing_summary(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Escalations of a routed run (kestrel/router.py), or None for an unrouted one."""
+    routed = [r for r in rows if r.get("routing")]
+    if not routed:
+        return None
+    turns = sum(r["routing"]["turns"] for r in routed)
+    escalated = sum(r["routing"]["escalated_turns"] for r in routed)
+    reasons: dict[str, int] = defaultdict(int)
+    categories: dict[str, int] = defaultdict(int)
+    for r in routed:
+        for k, v in r["routing"]["reasons"].items():
+            reasons[k] += v
+        for k, v in r["routing"]["categories"].items():
+            categories[k] += v
+    escalated_runs = sum(1 for r in routed if r["routing"]["escalated_turns"])
+    return {
+        "turns": turns,
+        "escalated_turns": escalated,
+        "turn_rate": round(escalated / turns, 3) if turns else None,
+        "task_runs": len(routed),
+        "escalated_task_runs": escalated_runs,
+        "task_rate": round(escalated_runs / len(routed), 3),
+        "by_reason": dict(sorted(reasons.items())),
+        "by_category": dict(sorted(categories.items())),
+        "passed_only_over_max_steps": extended_passes(rows),
+        "pass_rate_without_over_max_steps": _rate(without_extended_passes(rows)),
+    }
 
 
 def summarize(results: list[TaskResult] | list[dict[str, Any]]) -> dict[str, Any]:
@@ -38,7 +75,7 @@ def summarize(results: list[TaskResult] | list[dict[str, Any]]) -> dict[str, Any
         return round(statistics.mean(ok), 3) if ok else None
 
     latencies = [r["latency_ms"] for r in graded]
-    return {
+    summary = {
         "tasks": len({r["id"] for r in rows}),
         "runs": len(rows),
         "graded": len(graded),
@@ -67,6 +104,9 @@ def summarize(results: list[TaskResult] | list[dict[str, Any]]) -> dict[str, Any
         "tokens_per_task": round(statistics.mean(r["tokens"] for r in graded)) if graded else None,
         "latency_p50_ms": round(statistics.median(latencies)) if latencies else None,
     }
+    if routing := routing_summary(rows):  # routed runs only: unrouted summaries keep their exact shape
+        summary["routing"] = routing
+    return summary
 
 
 def write_results(path: Path, results: list[TaskResult], meta: dict[str, Any]) -> dict[str, Any]:
@@ -92,6 +132,21 @@ def fmt_ci(ci: dict[str, Any] | None) -> str:
 def suite_label(meta: dict[str, Any]) -> str:
     v = meta.get("suite_version")
     return f"v{v}" if v else "suite version not recorded (see evals/CHANGELOG.md)"
+
+
+def routing_lines(r: dict[str, Any], pass_rate: float | None) -> list[str]:
+    reasons = ", ".join(f"{k} {v}" for k, v in r["by_reason"].items()) or "none"
+    categories = ", ".join(f"{k} {v}" for k, v in r["by_category"].items()) or "none"
+    extended = r["passed_only_over_max_steps"]
+    return [
+        f"**Routing:** the teacher answered {r['escalated_turns']} of {r['turns']} turns ({pct(r['turn_rate'])}) and "
+        f"took part in {r['escalated_task_runs']} of {r['task_runs']} task runs ({pct(r['task_rate'])}). "
+        f"By reason: {reasons}. By kind: {categories}.",
+        f"**Passed only past max_steps** (the teacher's fresh budget): {len(extended)}"
+        + (f" ({', '.join(extended)})" if extended else "")
+        + f". Pass rate with them {pct(pass_rate)}, without them {pct(r['pass_rate_without_over_max_steps'])};"
+        " the quality claim must hold without them.",
+    ]
 
 
 def markdown(data: dict[str, Any]) -> str:
@@ -121,6 +176,8 @@ def markdown(data: dict[str, Any]) -> str:
         ]
     if s["errors"] or s["skipped"]:
         lines += ["", f"**Partial run:** {s['graded']} of {s['runs']} runs were graded; the score covers only those."]
+    if routing := s.get("routing"):
+        lines += ["", *routing_lines(routing, s["pass_rate"])]
     if rep := s["repeats"]:
         rates = ", ".join(f"run {k}: {pct(v)}" for k, v in rep["pass_rates"].items())
         lines += [

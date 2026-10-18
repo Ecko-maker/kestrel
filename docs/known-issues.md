@@ -221,6 +221,11 @@ Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge
 The training text holds Kestrel's built-in tools only (`kestrel distill build` doesn't start MCP servers). When Kestrel runs with MCP on, the agent also sends the tools of the servers in `kestrel.mcp.json` (`fetch`, `time`), which the student was never trained with. `export.py --verify` compares against the built-in registry and prints a note naming those servers.
 **Done when:** the student is served with `KESTREL_MCP=off`, or MCP tools are part of collection and training (and of the fingerprint).
 
+### 42. Router v1 is tested with the risk-tier gate only, not with tiers v2
+**Labels:** `distillation`, `safety`, `medium`
+`phase4/trace-dataset` branches from main, where tiers v2 (capabilities, taint, the content check) isn't merged yet. The router tests show that the approval gate applies unchanged to the teacher's and the student's calls (cards, forbidden tools, one card per action), but not that taint and the content check do: e.g. the student reads a file, escalation hands the turn over, and the teacher's egress call must still get the taint card.
+**Done when:** after Phase 3 merges and this branch is rebased, tests cover taint and the content check across an escalation (student reads, teacher egresses; teacher reads, next turn's student egresses).
+
 ---
 
 ## Process

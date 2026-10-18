@@ -11,10 +11,13 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import openai
 from openai import OpenAI
+
+if TYPE_CHECKING:
+    from kestrel.router import RoutedLLM
 
 REQUEST_TIMEOUT = 60.0  # seconds per request; override with KESTREL_REQUEST_TIMEOUT
 MAX_TRIES = 3  # 1 try + 2 retries, waiting ~1s then ~2s, when we have to guess the wait
@@ -415,9 +418,17 @@ def build_llm(
     model: str | None = None,
     on_retry: RetryCallback | None = None,
     on_fallback: FallbackCallback | None = None,
-) -> tuple[FallbackLLM, list[str]]:
+) -> tuple[FallbackLLM | RoutedLLM, list[str]]:
     """Build the provider chain. `model` applies to the first provider only. Providers that
-    can't be set up (e.g. missing key) are skipped; their reasons are returned as warnings."""
+    can't be set up (e.g. missing key) are skipped; their reasons are returned as warnings.
+
+    "routed" (alone) builds the Phase 4 router instead (kestrel/router.py): off unless asked for."""
+    if "routed" in names:
+        if names != ["routed"]:
+            raise LLMError("setup", "'routed' can't be combined with other providers")
+        from kestrel.router import build_router
+
+        return build_router(model, lambda n, m: build_llm(n, m, on_retry, on_fallback)), []
     llms: list[ChatBackend] = []
     skipped: list[str] = []
     for i, name in enumerate(names):

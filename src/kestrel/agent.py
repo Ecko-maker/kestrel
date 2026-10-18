@@ -150,9 +150,12 @@ class Agent:
         checkpoint = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
         steps, providers, tools_used = 0, [], Counter[str]()
+        if begin_turn := getattr(self.llm, "begin_turn", None):  # the Phase 4 router only
+            begin_turn(self.tools.prepare)
+        limit = self.max_steps
 
         try:
-            while steps < self.max_steps:
+            while steps < limit:
                 self.trim_history()
                 self.emit("step_started", step=steps + 1)
                 reply = self._call_model(root, steps + 1)
@@ -170,6 +173,8 @@ class Agent:
                 for call, result in zip(calls, self._run_tools(calls, root, steps), strict=True):
                     tools_used[call.get("function", {}).get("name", "?")] += 1
                     self.messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
+                if steps == limit == self.max_steps and self._escalate("max_steps"):
+                    limit = 2 * self.max_steps  # the router's teacher takes over the turn with a fresh budget
         except LLMError as e:
             snapshot = list(self.messages)
             del self.messages[checkpoint:]  # roll back the turn so history stays valid for next time
@@ -188,6 +193,11 @@ class Agent:
         )
         self.messages.append({"role": "assistant", "content": text})
         return AgentResult(text, steps, "max_steps", providers), list(self.messages)
+
+    def _escalate(self, reason: str) -> bool:
+        """Hand the rest of the turn to the router's teacher (only a Phase 4 router can)."""
+        escalate = getattr(self.llm, "escalate", None)
+        return bool(escalate and escalate(reason))
 
     def _call_model(self, root: Span, step: int) -> dict:
         """One model call, recorded as an llm_call span with usage, latency and cost.
@@ -256,6 +266,12 @@ class Agent:
         span.set("kestrel.retries", getattr(info, "retries", 0))
         span.set("kestrel.fallback", len(attempts) > 1)
         span.set("kestrel.providers_tried", attempts)
+        if route := getattr(info, "route", None):  # the Phase 4 router: who answered, and why
+            span.set("kestrel.route", route)
+            span.set("kestrel.route_reason", getattr(info, "route_reason", None))
+            span.set("kestrel.route_category", getattr(info, "route_category", None))
+            if discarded := getattr(info, "discarded_tokens", 0):
+                span.set("kestrel.route.discarded_tokens", discarded)
         if reply is None:
             return
 
