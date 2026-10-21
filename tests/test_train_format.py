@@ -164,5 +164,54 @@ def test_notebook_pins_match_the_lock_and_call_the_script() -> None:
     locked = {p["name"]: p["version"] for p in lock["package"]}
     assert set(pins) == {"transformers", "peft", "trl", "datasets", "accelerate", "bitsandbytes"}
     assert all(locked[name] == version for name, version in pins.items()), (pins, locked)
-    assert "train.py --data" in source and "train_config.toml" in source
+    flat = " ".join(source.split())  # ruff may put one argument per line
+    assert '"--gpu-smoke", "--data", CODE,' in flat  # the smoke set sits next to train.py
+    assert '"--data", DATA, "--out", OUT,' in flat and "train_config.toml" in source
+    assert "/smoke" not in source  # Kaggle uploads are flat: the smoke train.jsonl sits next to train.py
     assert "hf_" not in source.lower().replace("hf_token", "")  # no token literal, only the secret's name
+
+
+def notebook_cells() -> list[str]:
+    notebook = json.loads((ROOT / "distill" / "train.ipynb").read_text(encoding="utf-8"))
+    return ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code"]
+
+
+def test_notebook_install_cell_stops_on_a_wrong_version_or_no_internet() -> None:
+    install = next(c for c in notebook_cells() if "REQUIREMENTS = [" in c)
+    assert install.index("socket.getaddrinfo") < install.index('"pip", "install"')  # internet checked first
+    assert "Phone verification" in install and "Internet" in install
+    assert install.index('"pip", "install"') < install.index("metadata.version(name)")  # versions read after pip
+    assert "if wrong:\n    raise RuntimeError" in install
+
+
+def test_notebook_full_training_is_off_unless_asked_and_checks_the_data() -> None:
+    cells = notebook_cells()
+    train = next(c for c in cells if '"--data", DATA' in c)
+    assert train.startswith("RUN_TRAINING = False")
+    assert train.index("if not RUN_TRAINING:") < train.index("missing = [") < train.index('"--data", DATA')
+    package = next(c for c in cells if "make_archive" in c)
+    assert "if not RUN_TRAINING:" in package
+    smoke = next(c for c in cells if '"--gpu-smoke"' in c)
+    assert "RUN_TRAINING" not in smoke and cells.index(smoke) < cells.index(train)
+
+
+@pytest.mark.parametrize("layout", ["kaggle/input/{slug}", "kaggle/input/datasets/someone/{slug}"])
+def test_notebook_finds_the_datasets_in_both_kaggle_layouts(tmp_path: Path, layout: str) -> None:
+    """The paths cell, run against a fake /kaggle/input: the old and the new mount layout, flat files."""
+    paths_cell = next(c for c in notebook_cells() if "def folders_with" in c)
+    code = tmp_path / layout.format(slug="kestrel-distill-code")
+    data = tmp_path / layout.format(slug="kestrel-distill-data")
+    for folder, names in ((code, ["train.py", "train_format.py", "train_config.toml", "train.jsonl"]),
+                          (data, ["train.jsonl", "val.jsonl", "manifest.json"])):  # fmt: skip
+        folder.mkdir(parents=True)
+        for name in names:
+            (folder / name).write_text("x", encoding="utf-8")
+    source = paths_cell.replace('Path("/kaggle/input")', f"Path({str(tmp_path / 'kaggle' / 'input')!r})")
+    namespace: dict[str, Any] = {}
+    exec(compile(source, "paths_cell", "exec"), namespace)
+    assert namespace["CODE"] == str(code) and namespace["DATA"] == str(data)
+    assert namespace["OUT"].startswith("/kaggle/working/") and namespace["SMOKE_OUT"].startswith("/kaggle/working/")
+
+    (data / "val.jsonl").unlink()  # no complete training set: fine for the smoke test
+    exec(compile(source, "paths_cell", "exec"), namespace)
+    assert namespace["CODE"] == str(code) and namespace["DATA"] is None

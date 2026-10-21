@@ -1,7 +1,7 @@
 """QLoRA fine-tuning of the Kestrel student on a `kestrel distill build` dataset (Phase 4).
 
     python train.py --data DIR --out DIR [--config train_config.toml]   # Kaggle GPU: QLoRA
-    python train.py --gpu-smoke --data smoke --out OUT                   # Kaggle GPU: run this first
+    python train.py --gpu-smoke --data CODE --out OUT                    # Kaggle GPU: run this first
     python train.py --smoke --data distill/smoke --out OUT               # CPU: tiny model, a few steps
 
 --gpu-smoke checks the real setup before a real run: the pinned base model in 4-bit learns a fixed batch
@@ -9,7 +9,9 @@ of synthetic examples (an overfitting test: the loss must fall by half), every e
 tokens, and afterwards a greedy generation makes a tool call train_format can parse. It also prints the
 library versions next to the pins in the config.
 
-DIR holds train.jsonl, val.jsonl and manifest.json. Settings come from the config file. Output:
+DIR holds train.jsonl, val.jsonl and manifest.json; for --gpu-smoke, CODE holds the synthetic smoke
+train.jsonl next to this file (Kaggle uploads are flat). OUT must be writable: on Kaggle, under
+/kaggle/working (/kaggle/input is read-only; the script refuses it). Settings come from the config file. Output:
 OUT/adapter (the LoRA adapter and tokenizer), OUT/lineage.json (what was trained on what, with which
 code), OUT/checkpoints (intermediate, deletable). Distill/TRAINING.md has the Kaggle steps.
 
@@ -25,6 +27,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 import platform
 import sys
 import tomllib
@@ -49,6 +52,23 @@ def load_train_format() -> ModuleType:
             spec.loader.exec_module(module)
             return module
     raise FileNotFoundError("train_format.py not found next to train.py or in src/kestrel/distill/")
+
+
+def check_out(out: Path) -> None:
+    """Kaggle mounts inputs read-only under /kaggle/input: fail before loading anything, not after training."""
+    parts = Path(os.path.abspath(out)).parts[1:]  # without the anchor ("/" or "C:\")
+    if [p.lower() for p in parts[:2]] == ["kaggle", "input"]:
+        raise SystemExit(f"--out {out} is under /kaggle/input, which is read-only: use a folder under /kaggle/working")
+
+
+DATA_FILES = ("train.jsonl", "val.jsonl", "manifest.json")
+
+
+def check_data(data: Path) -> None:
+    """A training run needs all three files of a `kestrel distill build` folder: check before loading a model."""
+    missing = [name for name in DATA_FILES if not (data / name).is_file()]
+    if missing:
+        raise SystemExit(f"--data {data} is missing {', '.join(missing)} (a `kestrel distill build` folder has all 3)")
 
 
 def sha256(path: Path) -> str:
@@ -393,6 +413,9 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--smoke", action="store_true", help="CPU, tiny random model, a few steps")
     mode.add_argument("--gpu-smoke", action="store_true", help="GPU: real base model overfits a fixed batch")
     args = parser.parse_args(argv)
+    check_out(args.out)
+    if not args.gpu_smoke:
+        check_data(args.data)
     if args.gpu_smoke:
         with args.config.open("rb") as f:
             return 0 if gpu_smoke(args.data, args.out, tomllib.load(f))["passed"] else 1

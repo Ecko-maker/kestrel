@@ -109,6 +109,24 @@ def test_gpu_smoke_settings() -> None:
     assert s["steps"] >= 20 and 0 < s["min_loss_drop"] < 1 and s["batch_examples"] >= 2
 
 
+@pytest.mark.parametrize("out", ["/kaggle/input/run", "/kaggle/input/datasets/someone/kestrel-distill-code/run"])
+def test_train_refuses_an_output_folder_under_kaggle_input(out: str) -> None:
+    with pytest.raises(SystemExit, match="read-only: use a folder under /kaggle/working"):
+        train.main(["--gpu-smoke", "--data", "anything", "--out", out])  # stops before torch is imported
+
+
+def test_train_accepts_kaggle_working() -> None:
+    train.check_out(Path("/kaggle/working/run"))
+    train.check_out(Path("/kaggle/working/input"))  # only a path that starts /kaggle/input is refused
+
+
+def test_training_checks_its_three_data_files_before_loading_a_model(tmp_path: Path) -> None:
+    (tmp_path / "train.jsonl").write_text("{}\n", encoding="utf-8")  # e.g. only the smoke file
+    with pytest.raises(SystemExit, match=r"missing val\.jsonl, manifest\.json"):
+        train.main(["--data", str(tmp_path), "--out", str(tmp_path / "out")])
+    train.check_data(ROOT / "distill" / "smoke")  # a complete folder passes
+
+
 # --- Tool-schema pinning ------------------------------------------------------------
 
 
