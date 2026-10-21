@@ -74,9 +74,20 @@ pinned).
 **First pass, 2026-10-20: PASSED.** Loss 3.8575 -> 0.0001 in 30 steps, trainable tokens in every
 example, and the greedy generation made a tool call that `train_format` parsed
 (`{"name": "read_file", "arguments": {"path": "a.txt"}}`). Environment: Kaggle, Tesla T4, Python
-3.13.15, torch 2.11.0+cu128, CUDA 12.8; base model download 8.04 GB. Library versions against the
-pins: **not recorded yet** (the run's version table is still to be added here). From now on the install
-cell prints that table and stops on any difference.
+3.13.15, torch 2.11.0+cu128, CUDA 12.8; base model download 8.04 GB. **All six pinned libraries ran at
+their pins**; torch was Kaggle's preinstalled build (not pinned). From the run's own output:
+
+| Library | Ran | Pin |
+|---|---|---|
+| torch | 2.11.0+cu128 | Kaggle's build, not pinned |
+| transformers | 5.20.1 | 5.20.1 ok |
+| peft | 0.21.2 | 0.21.2 ok |
+| trl | 1.16.0 | 1.16.0 ok |
+| datasets | 5.1.0 | 5.1.0 ok |
+| accelerate | 1.15.0 | 1.15.0 ok |
+| bitsandbytes | 0.50.2 | 0.50.2 ok |
+
+From now on the install cell prints this table before any GPU work and stops on any difference.
 
 ## 5. Run the training
 

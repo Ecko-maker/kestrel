@@ -386,7 +386,7 @@ Ollama's tool types keep only anyOf, type, items, description, enum, properties 
 
 ### 40. A real training run and the export of a real adapter haven't run yet
 **Labels:** `distillation`, `medium`
-Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). GPU smoke test: **passed on Kaggle 2026-10-20** (Tesla T4, Python 3.13.15, torch 2.11.0+cu128, CUDA 12.8; the real base in 4-bit, loss 3.8575 -> 0.0001, a parsed tool call; `distill/TRAINING.md`), so 4-bit loading, float16 on a T4 and Kaggle's preinstalled torch work. Not run: a real training on a collected dataset (blocked on #36), and an export of the real 4B adapter (needs the ~8 GB base download on the laptop).
+Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). GPU smoke test: **passed on Kaggle 2026-10-20** (Tesla T4, Python 3.13.15, torch 2.11.0+cu128, CUDA 12.8; the real base in 4-bit, loss 3.8575 -> 0.0001, a parsed tool call; transformers 5.20.1, peft 0.21.2, trl 1.16.0, datasets 5.1.0, accelerate 1.15.0 and bitsandbytes 0.50.2, all six at their pins; `distill/TRAINING.md`), so 4-bit loading, float16 on a T4 and Kaggle's preinstalled torch work. Not run: a real training on a collected dataset (blocked on #36), and an export of the real 4B adapter (needs the ~8 GB base download on the laptop).
 **Done when:** a real adapter is trained on Kaggle and exported with `--verify` 20/20.
 
 ### 41. With MCP on, Kestrel sends the student tools it never saw
