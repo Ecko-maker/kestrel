@@ -35,7 +35,7 @@ from kestrel.bench.safety import (
 )
 from kestrel.bench.safety_report import markdown_safety
 from kestrel.bench.scripted import MODELS, ScriptedSafetyModel
-from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
+from kestrel.bench.stats import SEED, compare, judge_label, merge_references, stratified_sample
 from kestrel.bench.stubs import USERS, build_registry, make_setup
 from kestrel.bench.tasks import SUITE_VERSION, Task, TaskError, load_tasks, select, task_sha
 from kestrel.bench.validate import check_network_rules, concerns, markers_of, validate
@@ -172,6 +172,12 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     comp.add_argument("a", type=Path, help="baseline results (e.g. the frontier model)")
     comp.add_argument("b", type=Path, help="results to compare against it (e.g. the small model)")
     comp.add_argument("--margin", type=float, default=0.05, help="non-inferiority margin, absolute (default 0.05)")
+    comp.add_argument(
+        "--second-reference",
+        type=Path,
+        metavar="A2",
+        help="a second run of the reference agent: A and A2 count as per-task repeats (main split; rule C)",
+    )
 
     val = actions.add_parser(
         "validate", help="check task files before running them (schema, canaries, fixtures, checks)"
@@ -792,14 +798,24 @@ def cmd_compare(args: argparse.Namespace) -> int:
     sa, sb = a.get("meta", {}).get("split", "main"), b.get("meta", {}).get("split", "main")
     if sa != sb:
         sys.exit(f"Can't compare a {sa} split run with a {sb} split run: they contain different tasks.")
+    second = getattr(args, "second_reference", None)
     if sa == "safety":
+        if second:
+            sys.exit("--second-reference is for the main split only.")
         return _compare_safety(args, a, b)
+    a_name = args.a.name
+    if second:
+        try:
+            a = merge_references(a, _load(second))
+        except ValueError as e:
+            sys.exit(f"Can't use {second.name} as a second reference: {e}")
+        a_name = f"{args.a.name} + {second.name} (2 references, per-task mean of their runs)"
     c = compare(a, b)
     if c.diff is None or c.a_rate is None or c.b_rate is None:
         print("No task was graded in both files.")
         return 1
     ma, mb = a["meta"], b["meta"]
-    print(f"A  {args.a.name}: {ma.get('provider')}/{ma.get('model')}  {c.a_rate.fmt()}")
+    print(f"A  {a_name}: {ma.get('provider')}/{ma.get('model')}  {c.a_rate.fmt()}")
     print(f"B  {args.b.name}: {mb.get('provider')}/{mb.get('model')}  {c.b_rate.fmt()}")
     print(f"B - A: {c.diff.fmt(signed=True)}  (paired bootstrap over the {c.diff.n} tasks graded in both)")
     print(f"Flipped: {len(c.better_in_b)} better in B, {len(c.worse_in_b)} worse in B")
