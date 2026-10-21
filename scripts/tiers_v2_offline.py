@@ -10,6 +10,10 @@ b. Main suite impact: replay the stored tool sequences in evals/baselines/*.json
 c. The agent fingerprint, and why it moved.
 
     uv run python scripts/tiers_v2_offline.py --before DIR --after DIR [--out evals/reports/tiers-v2-offline.md]
+        [--replay RESULTS.json ...] [--before-label TEXT]
+
+--replay adds main-suite results files to section b (e.g. a real after-run's tool sequences).
+--before-label says what the before directory holds (default: the phase3/memory-safety runs).
 """
 
 import argparse
@@ -23,7 +27,7 @@ from kestrel import tools
 from kestrel.bench.replay import parse_tool_log
 from kestrel.bench.runner import ScriptedApprover, agent_fingerprint
 from kestrel.bench.tasks import load_tasks
-from kestrel.permissions import Session, required_approval
+from kestrel.permissions import RULES_VERSION, Session, required_approval
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINES = sorted((ROOT / "evals" / "baselines").glob("*.json"))
@@ -147,12 +151,12 @@ def acceptance_section(always_left: list[str], reads_left: list[str], n: int) ->
     ]
 
 
-def main_suite_section() -> list[str]:
+def main_suite_section(files: list[Path]) -> list[str]:
     tasks = {t.id: t for t in load_tasks()}
     covered: set[str] = set()
     cards: list[dict[str, Any]] = []
     calls = 0
-    for path in BASELINES:
+    for path in files:
         for t in json.loads(path.read_text(encoding="utf-8"))["tasks"]:
             steps = parse_tool_log(t.get("tool_log") or [])
             if not steps or t["id"] not in tasks:
@@ -186,8 +190,9 @@ def main_suite_section() -> list[str]:
     out = [
         "## b. Main suite impact, replayed offline",
         "",
-        f"The stored tool sequences of {len(covered)} of {len(tasks)} main-suite tasks (both files in "
-        f"`evals/baselines/`, {calls} calls) went through `required_approval` with each task's prompts as the "
+        f"The stored tool sequences of {len(covered)} of {len(tasks)} main-suite tasks "
+        f"({', '.join(f'`{p.name}`' for p in files)}; {calls} calls) went through `required_approval` "
+        "with each task's prompts as the "
         "user's messages. Turns aren't stored, so every call is replayed as its own step (this can only add cards). "
         "Tasks with no stored log (no tool call in either run, or the baseline file predates `tool_log`) "
         "can't be replayed.",
@@ -196,10 +201,11 @@ def main_suite_section() -> list[str]:
     if not cards:
         out.append(
             "**No call would get a new card.** In no stored log does a web search come after a read_file or "
-            "list_files in the same task, so taint never meets egress, and the content check never runs. On the "
-            "behaviour already observed, tiers v2 changes no tool outcome in the main suite. The residual risk is a "
-            "different order in the after-run (the model reads a file, then searches): that call would get a card, "
-            "and the main suite's scripted user rejects any call its task has no rule for."
+            "list_files that returned local data in the same task, so taint never meets egress, and the content "
+            "check never runs. On the behaviour already observed, the approval rules change no tool outcome in "
+            "the main suite. The residual risk is a different order in a new run (the model reads a file, then "
+            "searches): that call would get a card, and the main suite's scripted user rejects any call its task "
+            "has no rule for."
         )
     else:
         out += ["| File | Task | Tool | Arguments | Scripted user | Why |", "|---|---|---|---|---|---|"]
@@ -222,14 +228,15 @@ def fingerprint_section() -> list[str]:
         "## c. Agent fingerprint (main suite, groq / openai/gpt-oss-120b)",
         "",
         f"- before (phase3/memory-safety, {PROOF_TASK_SET}): `{BEFORE_FINGERPRINT}`",
-        f"- after (phase3/tiers-v2): `{after['sha']}`; system prompt `{after['system_prompt']}`, "
+        f"- after (phase3/tiers-v2, approval rules `{RULES_VERSION}`): `{after['sha']}`; system prompt "
+        f"`{after['system_prompt']}`, "
         f"tools `{after['tools']}`, "
         f"{after['tool_count']} tools",
         f"- Why: stage 1 added each tool's capabilities to the hashed tool list. Hashing the same tools without them "
         f"gives `{tools_without}`, the before run's tools hash, so the names, descriptions, parameters, tiers "
-        "and the system prompt the model sees are byte-identical. The approval behaviour (taint, content check, "
-        "cards) isn't hashed itself; it "
-        "comes with the capabilities.",
+        "and the system prompt the model sees are byte-identical. The approval rules (taint, content check, "
+        f"cards) are hashed as a version, `{RULES_VERSION}`: `2cac3804ef92` was the same agent under the first "
+        "tiers-v2 rules (taint from any reads_local call that ran, the 2026-10-21 main-suite after-run).",
     ]
 
 
@@ -238,18 +245,25 @@ def main() -> int:
     parser.add_argument("--before", type=Path, required=True)
     parser.add_argument("--after", type=Path, required=True)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--replay", type=Path, action="append", default=[], help="extra main-suite results")
+    parser.add_argument("--before-label", help="what the before directory holds")
     args = parser.parse_args()
     lines = [
         "# Permission tiers v2: offline proof",
         "",
         "Generated by `scripts/tiers_v2_offline.py`. No model calls: scripted models and stored logs only. "
         "Commands and settings are in the script's docstring; "
-        f"the before runs come from `phase3/memory-safety` ({PROOF_TASK_SET}) with only "
-        "`bench/scripted.py` taken from this branch (to add reads-then-falls; Kestrel's code is the before code).",
+        + (
+            f"the before runs: {args.before_label}."
+            if args.before_label
+            else f"the before runs come from `phase3/memory-safety` ({PROOF_TASK_SET}) with only "
+            "`bench/scripted.py` taken from this branch (to add reads-then-falls; Kestrel's code is the before "
+            "code)."
+        ),
         "",
         *safety_section(args.before, args.after),
         "",
-        *main_suite_section(),
+        *main_suite_section(BASELINES + args.replay),
         "",
         *fingerprint_section(),
     ]

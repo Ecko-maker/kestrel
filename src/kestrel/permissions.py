@@ -80,6 +80,21 @@ def _norm(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+# Part of the agent fingerprint (bench/runner.py): bump it whenever the approval rules change, so runs made
+# with different rules are never mixed, resumed into one another or paired as the same agent.
+RULES_VERSION = "tiers-v2.1"  # v2.1: taint only from reads that returned local data (known issue #45)
+
+
+def returned_local_data(output: str) -> bool:
+    """Did a reads_local call put local data into the conversation? Not if it failed: every tool failure
+    comes back as "Error: ..." (no such file, a path outside the workspace or a URL used as a path, a
+    refused or timed-out call, an MCP tool reporting a failure). Not if it returned nothing either: an
+    empty folder or an empty file shows no workspace content (the folder's name came from the model)."""
+    if output.startswith("Error:"):
+        return False
+    return egress.strip_wrapper(output).strip() not in ("", "[]")
+
+
 @dataclass
 class Session:
     """What the approval rules know about one conversation. Lives as long as the Agent, so taint
@@ -94,8 +109,9 @@ class Session:
         self.user_texts.append(text)
 
     def note_ran(self, name: str, caps: frozenset[str], args: dict, output: str) -> None:
-        """Record a tool call that ran (successfully or not)."""
-        if "reads_local" in caps:  # taint source = reads_local only (owner decision 2)
+        """Record a tool call that ran (successfully or not). output is the tool's own result, before
+        any note the gate adds. A reads_local call taints only if it returned local data (known issue #45)."""
+        if "reads_local" in caps and returned_local_data(output):  # taint source = reads_local only (decision 2)
             self.taint_sources.append(name)
             self.local_texts.append((name, egress.strip_wrapper(output)))
         if "network_egress" in caps:

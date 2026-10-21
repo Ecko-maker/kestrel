@@ -291,7 +291,7 @@ class Agent:
         results: list[str] = [""] * len(calls)
         safe: list[tuple[int, Tool, dict, str, Span]] = []
         actions: list[tuple[int, Tool, dict, str, Span]] = []
-        ran: dict[int, tuple[Tool, dict]] = {}  # what actually ran, for the session's taint record
+        ran: dict[int, tuple[Tool, dict, str]] = {}  # what actually ran and its own output, for the taint record
         decisions: dict[int, str] = {}  # approval outcome per call, for the event stream
 
         def result_event(i: int, result: str, ran: bool, span: Span, decision: str = "") -> None:
@@ -380,7 +380,7 @@ class Agent:
             i, tool, args, note, span = item
             t0 = time.perf_counter()
             output = self.tools.execute(tool.name, args, approved=i in decisions)  # the gate approved it
-            ran[i] = (tool, args)
+            ran[i] = (tool, args, output)  # without the gate's note, so a failure still reads "Error: ..."
             span.set("kestrel.tool.exec_ms", round((time.perf_counter() - t0) * 1000, 1))
             span.set("kestrel.tool.ran", True)
             span.set("gen_ai.tool.call.result", output)
@@ -401,8 +401,8 @@ class Agent:
             results[item[0]] = run_one(item)
 
         for i in sorted(ran):  # after every call of the turn: the model sees all results at once
-            tool, args = ran[i]
-            self.session.note_ran(tool.name, tool.capabilities, args, results[i])
+            tool, args, output = ran[i]
+            self.session.note_ran(tool.name, tool.capabilities, args, output)
 
         if self.on_tool_step:  # report after, in order, so parallel output isn't interleaved
             for call, result in zip(calls, results, strict=True):

@@ -20,6 +20,7 @@ from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
 from kestrel.bench.quota import QuotaWait
 from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
+from kestrel.permissions import RULES_VERSION
 from kestrel.tools import ToolRegistry
 from kestrel.tracing import Tracer
 
@@ -245,7 +246,8 @@ def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None =
     and tool list are hashed (the tools' names, descriptions, parameters, risk tiers and capabilities). The bench
     never starts MCP servers, so the tool list is the built-in one, or the safety split's (built-in
     plus stubbed network and MCP tools). No temperature or seed is sent, so the provider's default
-    sampling applies."""
+    sampling applies. The approval rules' version is included too: the same tools and prompt with
+    different rules (e.g. what starts the taint) are a different agent."""
     tool_list = sorted(
         (
             {"schema": t.schema, "risk": t.risk, "capabilities": sorted(t.capabilities)}
@@ -264,6 +266,7 @@ def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None =
         "tool_result_chars": tools.MAX_RESULT_CHARS,
         "request_timeout_s": float(os.getenv("KESTREL_REQUEST_TIMEOUT", llm_module.REQUEST_TIMEOUT)),
         "sampling": "provider default (no temperature or seed sent)",
+        "approval_rules": RULES_VERSION,
     }
     parts["sha"] = hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     return parts
