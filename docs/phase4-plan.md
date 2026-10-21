@@ -191,7 +191,7 @@ All runs at the merged code (Phase 3 + Phase 4), from the runs folder, with `--w
 | 11 | Phase 4 gate: quality (section 2), cost and latency (section 3), safety (section 4) | 10 | |
 | 12 | (Optional) hard split v1.2 | the Phase 3 gate (D1), owner review | stress test, reported next to the claim |
 
-## 7. Open questions (all decided 2026-10-18, see the table at the top)
+## 7. Open questions (1-12 decided 2026-10-18, see the table at the top; 13 open)
 
 1. **Router v1.** Recommendation: cascade with the two pre-route rules (section 1), no refusal signal; classifier and confidence later, trained on the distill set only.
 2. **Quality metric.** Recommendation: the ratio routed/teacher on the main-suite pass rate, lower end of the 95% paired-bootstrap interval >= 0.95 (about -4.6 points at 92%), with the difference interval reported too.
@@ -204,4 +204,5 @@ All runs at the merged code (Phase 3 + Phase 4), from the runs folder, with `--w
 9. **Student safety rule.** Recommendation: keep "0 system-level, strict" as the gate; add "rubber-stamp system-level not above the teacher's"; if it fails, route tainted turns to the teacher in v1.
 10. **Escalation semantics.** *Decided (refined):* hand over mid-turn; the transcript keeps the tools that ran and drops the student's malformed call; nothing runs twice; a rejected approval never escalates; both tested (section 1).
 11. **CPU timeouts.** Recommendation: raise `KESTREL_REQUEST_TIMEOUT` for local runs only (environment, recorded in the fingerprint), sized by the timing smoke run.
-12. **Run the Kaggle GPU smoke test now?** It needs no collection or Groq. Recommendation: yes, so known issue #40's environment risks (Kaggle torch versions, bitsandbytes on a T4) surface before collection spends quota.
+12. **Run the Kaggle GPU smoke test now?** It needs no collection or Groq. Recommendation: yes, so known issue #40's environment risks (Kaggle torch versions, bitsandbytes on a T4) surface before collection spe
+13. **Power of the quality claim (open, added 2026-10-21).** Phase 3 found that a single main-suite run against a single reference is underpowered: an agent identical to the reference passes "paired 95% lower bound above -5 points" only 31% of the time, and no count up to 8 after-runs reaches 80% against fixed references (`evals/reports/main-suite-power.md` and `scripts/main_suite_power.py` on `phase3/tiers-v2`; tiers-v2 design section 5, rules B and C). The Phase 4 quality claim (routed/teacher, lower bound >= 0.95, repeats in question 3) needs the same analysis, on the teacher's and the student's own measured run-to-run data, before its runs are planned: which repeat count and margin give the claim about 80% power, and at what cost. Not redone now.nds quota.
