@@ -211,10 +211,10 @@ Found by the template parity check (distill/EXPORT.md): with Ollama 0.40.6, the 
 Ollama's tool types keep only anyOf, type, items, description, enum, properties and required. Kestrel's schemas use `default` twice (e.g. `web_search` max_results); no model served by Ollama ever sees those defaults. The student is trained on the same reduced schemas, so training and serving agree.
 **Done when:** the defaults that matter are stated in the descriptions, or Ollama keeps the key.
 
-### 40. The GPU path and the export of a real adapter haven't run yet
+### 40. A real training run and the export of a real adapter haven't run yet
 **Labels:** `distillation`, `medium`
-Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). Not run: `train.py --gpu-smoke` and a real training on Kaggle (4-bit, float16 on a T4, Kaggle's preinstalled torch), and an export of the real 4B adapter (needs the ~8 GB base download).
-**Done when:** the GPU smoke test passes on Kaggle and a real adapter is exported with `--verify` 20/20.
+Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). GPU smoke test: **passed on Kaggle 2026-10-20** (Tesla T4, Python 3.13.15, torch 2.11.0+cu128, CUDA 12.8; the real base in 4-bit, loss 3.8575 -> 0.0001, a parsed tool call; `distill/TRAINING.md`), so 4-bit loading, float16 on a T4 and Kaggle's preinstalled torch work. Not run: a real training on a collected dataset (blocked on #36), and an export of the real 4B adapter (needs the ~8 GB base download on the laptop).
+**Done when:** a real adapter is trained on Kaggle and exported with `--verify` 20/20.
 
 ### 41. With MCP on, Kestrel sends the student tools it never saw
 **Labels:** `distillation`, `serving`, `low`
