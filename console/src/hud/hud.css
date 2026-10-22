@@ -1,0 +1,167 @@
+/* The HUD look. Everything is scoped under html[data-look="hud"]; the classic look is untouched.
+   The palette works by redefining Tailwind's colour variables, so every existing page and component
+   (approval cards included) is recoloured without being duplicated. Amber, red, emerald and violet keep
+   their meaning and are not redefined. contrast.test.mjs reads the values below and checks WCAG AA. */
+
+[data-look="hud"] {
+  /* "stone" becomes navy: 950 = page, 900 = cards, 800 = lines, 400/500 = muted text */
+  --color-stone-50: #f0f7fc;
+  --color-stone-100: #e1eef7;
+  --color-stone-200: #c3d8e8;
+  --color-stone-300: #a8c3d8;
+  --color-stone-400: #93b0c6;
+  --color-stone-500: #8aa5bb;
+  --color-stone-600: #4d6a83;
+  --color-stone-700: #2f4862;
+  --color-stone-800: #1c3048;
+  --color-stone-900: #0f1f33;
+  --color-stone-950: #08121f;
+
+  /* "accent" becomes cyan; 600 is dark enough for white button text */
+  --color-accent-50: #ecfeff;
+  --color-accent-100: #cffafe;
+  --color-accent-200: #a5f3fc;
+  --color-accent-300: #67e8f9;
+  --color-accent-400: #22d3ee;
+  --color-accent-500: #06b6d4;
+  --color-accent-600: #0e7490;
+  --color-accent-700: #155e75;
+  --color-accent-800: #164e63;
+  --color-accent-900: #0f3b4c;
+  --color-accent-950: #062a36;
+
+  --hud-cyan: #22d3ee;
+  --hud-amber: #fbbf24;
+  --hud-red: #f87171;
+  --hud-offline: #64748b;
+  --hud-text: #e6fbff;
+  --font-hud: "Orbitron Variable", "Segoe UI", ui-sans-serif, sans-serif;
+  color-scheme: dark;
+}
+
+/* Grid, a soft top glow and faint scanlines: all painted on the page background, never over content. */
+[data-look="hud"] body {
+  background-color: var(--color-stone-950);
+  background-image:
+    radial-gradient(ellipse 80% 55% at 50% 0%, rgb(34 211 238 / 0.08), transparent 70%),
+    linear-gradient(rgb(34 211 238 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(34 211 238 / 0.035) 1px, transparent 1px),
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.012) 0 1px, transparent 1px 3px);
+  background-size: auto, 40px 40px, 40px 40px, auto;
+}
+
+.hud-font { font-family: var(--font-hud); letter-spacing: 0.12em; }
+.hud-wordmark {
+  font-family: var(--font-hud);
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  color: var(--hud-text);
+  text-shadow: 0 0 12px rgb(34 211 238 / 0.55), 0 0 32px rgb(34 211 238 / 0.25);
+}
+.hud-label { font-family: var(--font-hud); font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-stone-400); }
+
+/* Nav: the current page is cyan, not a pale block */
+[data-look="hud"] nav a[aria-current="page"] {
+  background: rgb(34 211 238 / 0.12);
+  color: var(--hud-text);
+  box-shadow: inset 2px 0 0 var(--hud-cyan);
+}
+
+/* The app icon (rust) shifted to the HUD's cyan */
+[data-look="hud"] img[src="/kestrel.svg"] { filter: hue-rotate(170deg) saturate(1.15); }
+
+/* A framed panel with corner brackets */
+.hud-frame {
+  position: relative;
+  border: 1px solid rgb(34 211 238 / 0.18);
+  background: rgb(15 31 51 / 0.72);
+  border-radius: 4px;
+}
+.hud-frame::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  --b: 10px;
+  --c: rgb(34 211 238 / 0.75);
+  background:
+    linear-gradient(var(--c), var(--c)) top left / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) top left / 2px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 2px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 2px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 2px var(--b) no-repeat;
+}
+
+/* Approval cards. The card itself: opaque background, no transparency, blur or animation.
+   The HUD only draws an amber frame and a static glow *outside* the card's box. */
+[data-look="hud"] [data-approval] {
+  background-color: var(--color-stone-900);
+  backdrop-filter: none;
+}
+[data-look="hud"] .hud-approval { position: relative; }
+[data-look="hud"] .hud-approval:has([data-approval])::before {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  pointer-events: none;
+  border-radius: 14px;
+  box-shadow: 0 0 22px rgb(251 191 36 / 0.22);
+  --b: 14px;
+  --c: rgb(251 191 36 / 0.85);
+  background:
+    linear-gradient(var(--c), var(--c)) top left / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) top left / 2px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) top right / 2px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom left / 2px var(--b) no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / var(--b) 2px no-repeat,
+    linear-gradient(var(--c), var(--c)) bottom right / 2px var(--b) no-repeat;
+}
+
+/* ---- The reactor: rings driven by agent state (see useHud.ts) ---- */
+
+.reactor { --phase: var(--hud-cyan); color: var(--phase); overflow: visible; }
+.reactor[data-phase="approval"] { --phase: var(--hud-amber); }
+.reactor[data-phase="error"] { --phase: var(--hud-red); }
+.reactor[data-phase="offline"] { --phase: var(--hud-offline); }
+.reactor .spin, .reactor .spin-rev, .reactor .breath, .reactor .rings, .reactor .seg { transform-box: fill-box; transform-origin: center; }
+.reactor .glow { filter: drop-shadow(0 0 5px var(--phase)); }
+.reactor .flash { opacity: 0; }
+.reactor * { transition: stroke 300ms, fill 300ms, opacity 300ms; }
+
+@keyframes hud-spin { to { transform: rotate(360deg); } }
+@keyframes hud-breath { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@keyframes hud-flash { 0% { opacity: 0; } 15% { opacity: 0.55; } 100% { opacity: 0; } }
+@keyframes hud-settle { 0% { transform: scale(1.05); opacity: 0.6; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes hud-draw { from { stroke-dashoffset: 1300; } to { stroke-dashoffset: 0; } }
+@keyframes hud-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes hud-boot-out { 0%, 80% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+
+.reactor[data-phase="idle"] .breath { animation: hud-breath 4.5s ease-in-out infinite; }
+.reactor[data-phase="thinking"] .spin { animation: hud-spin 3.2s linear infinite; }
+.reactor[data-phase="thinking"] .spin-rev { animation: hud-spin 5s linear infinite reverse; }
+.reactor[data-phase="streaming"] .spin { animation: hud-spin 1.4s linear infinite; }
+.reactor[data-phase="streaming"] .spin-rev { animation: hud-spin 2.4s linear infinite reverse; }
+.reactor[data-phase="tool"] .spin { animation: hud-spin 9s linear infinite; }
+.reactor .seg[data-state="active"] { animation: hud-breath 0.9s ease-in-out infinite; }
+.reactor[data-phase="approval"] .breath { animation: hud-breath 1.8s ease-in-out infinite; }
+.reactor[data-phase="error"] .flash { animation: hud-flash 0.9s ease-out 1; }
+.reactor[data-phase="done"] .rings { animation: hud-settle 0.9s ease-out 1; }
+
+/* Boot: rings draw in, the wordmark and status lines fade up, then the overlay fades out (1.2 s) */
+.hud-boot { animation: hud-boot-out 1.2s ease-in forwards; }
+.hud-boot .reactor circle, .hud-boot .reactor path { stroke-dasharray: 1300; animation: hud-draw 0.8s ease-out both; }
+.hud-boot .boot-line { animation: hud-fade-up 0.3s ease-out both; }
+
+/* Reduced motion: no rotation, no flashes, no boot. State still shows through colour and the text label. */
+@media (prefers-reduced-motion: reduce) {
+  [data-look="hud"] *, [data-look="hud"] *::before, [data-look="hud"] *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+  }
+  .reactor .breath { opacity: 0.85; }
+}

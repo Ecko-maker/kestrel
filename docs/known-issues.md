@@ -226,6 +226,11 @@ Found by the main-suite after-run (2026-10-21, `main-after-v1.1.json`, agent `2c
 **Fix (rules `tiers-v2.1`, `permissions.RULES_VERSION`):** a `reads_local` call taints only if it returned local data. Any tool failure (`Error: ...`: no such file, a refused path such as `../.env`, a URL or title used as a path, a timeout, an MCP tool reporting a failure) and an empty result (an empty folder or file) don't taint. The session sees the tool's own output, before the gate's "the user edited this call" note. The rules' version is now part of the agent fingerprint (main-suite agent `35fac5ba6277`), so runs under different rules can't be mixed or paired as one agent. Offline (`evals/reports/tiers-v2.1-offline.md`): reads-then-falls strict 0/29 and never-falls benign 18/18 unchanged; the replay of 348 stored calls, including this run's, gives no card (the same replay on the old rules flags exactly the two real cards). Tests: `tests/test_taint.py`.
 **Done when:** the safety after-run and the main-suite measurement are repeated on the fixed code under the rule fixed before them (design section 5, rule C), with every escalation listed and its cause.
 
+### 46. The console isn't told whether the conversation is tainted
+**Labels:** `console`, `safety`, `low`
+Tiers v2 keeps the taint state in the agent's `Session` and never sends it to the console; the only tiers-v2 data the browser gets is the `notice` on an escalated approval card. So the HUD shows "escalated cards" (approvals that came with a notice) and no "tainted / clean" indicator, rather than guess one from tool names. A user can't see in advance that the next search will ask for approval.
+**Done when:** the agent emits the taint state (e.g. a `session` event after each tool result: tainted, by which tool) and the HUD shows it; that is an agent change, so it waits until after the Phase 3 gate.
+
 ---
 
 ## Process

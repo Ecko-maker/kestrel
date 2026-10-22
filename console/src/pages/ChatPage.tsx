@@ -6,6 +6,9 @@ import { ApprovalCard } from "../components/ApprovalCard";
 import { ImageAllowlist, Markdown } from "../components/Markdown";
 import { StatsPanel } from "../components/StatsPanel";
 import { Button, cx } from "../components/ui";
+import { HudHero, HudSide, HudStrip } from "../hud/HudPanels";
+import { useHud } from "../hud/useHud";
+import type { Look } from "../hud/useLook";
 import type { Turn, useChat } from "../useChat";
 
 type Chat = ReturnType<typeof useChat>;
@@ -81,7 +84,12 @@ function AssistantTurn({ turn, onRespond, onRated }: { turn: Turn; onRespond: Ch
       <div className="min-w-0 flex-1">
         {approvals.length > 0 && (
           <div className="mb-3 space-y-2">
-            {approvals.map((a) => <ApprovalCard key={a.id} approval={a} onRespond={onRespond} />)}
+            {approvals.map((a) => (
+              // the HUD frames pending cards from outside this wrapper (hud.css); the card itself is unchanged
+              <div key={a.id} className="hud-approval">
+                <ApprovalCard approval={a} onRespond={onRespond} />
+              </div>
+            ))}
           </div>
         )}
         {text ? (
@@ -151,7 +159,22 @@ function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
 
 const NO_HOSTS: readonly string[] = [];
 
-export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; session: SessionInfo | null; stats: Stats | null; onRated: () => void }) {
+export function ChatPage({
+  chat,
+  session,
+  stats,
+  onRated,
+  look = "classic",
+}: {
+  chat: Chat;
+  session: SessionInfo | null;
+  stats: Stats | null;
+  onRated: () => void;
+  look?: Look;
+}) {
+  const hudOn = look === "hud";
+  const hud = useHud(chat.turns, chat.state);
+  const empty = chat.turns.length === 0;
   const bottom = useRef<HTMLDivElement>(null);
   const last = chat.turns[chat.turns.length - 1];
   const progress = last ? last.steps.reduce((n, s) => n + s.text.length + s.tools.length * 1000 + s.tools.reduce((m, t) => m + t.approvals.length * 100 + (t.result ? 10 : 0), 0), 0) : 0;
@@ -160,7 +183,8 @@ export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; sessio
   useEffect(() => {
     // Braces matter: newer browsers return a Promise from scrollIntoView, and an effect
     // must return nothing or a cleanup function.
-    if (scrollKey) bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    // An empty conversation stays at the top, so the welcome (and the HUD hero) is seen first.
+    if (!scrollKey.startsWith("0:")) bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [scrollKey]);
 
   const unavailable = session && !session.chat_available;
@@ -169,6 +193,11 @@ export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; sessio
     <ImageAllowlist.Provider value={session?.image_allowlist ?? NO_HOSTS}>
       <div className="flex h-full min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
+          {hudOn && !empty && (
+            <div className="lg:hidden">
+              <HudStrip hud={hud} showReactor />
+            </div>
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6">
               {session?.demo && (
@@ -180,10 +209,17 @@ export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; sessio
                   </div>
                 </div>
               )}
-              {chat.turns.length === 0 && (
-                <div className="pt-[8vh]">
-                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">What should Kestrel do?</h1>
-                  <p className="mt-2 max-w-xl text-stone-500 dark:text-stone-400">
+              {empty && (
+                <div className={hudOn ? "pt-2" : "pt-[8vh]"}>
+                  {hudOn ? (
+                    <>
+                      <HudHero hud={hud} />
+                      <h1 className="sr-only">What should Kestrel do?</h1>
+                    </>
+                  ) : (
+                    <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">What should Kestrel do?</h1>
+                  )}
+                  <p className={cx("mt-2 max-w-xl text-stone-500 dark:text-stone-400", hudOn && "mx-auto mt-6 text-center")}>
                     It can read your workspace, search and fetch the web, and draft notes and messages. Anything that changes a file or sends something waits for your approval.
                   </p>
                   <div className="mt-6 grid gap-2 sm:grid-cols-2">
@@ -236,9 +272,15 @@ export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; sessio
           </div>
         </div>
 
-        <div className="hidden w-72 shrink-0 overflow-y-auto border-l border-stone-200/70 p-4 dark:border-stone-800/70 xl:block">
-          <StatsPanel stats={stats} />
-        </div>
+        {hudOn ? (
+          <div className="hidden w-80 shrink-0 overflow-y-auto border-l border-stone-800/70 p-4 lg:block">
+            <HudSide hud={hud} session={session} showReactor={!empty} />
+          </div>
+        ) : (
+          <div className="hidden w-72 shrink-0 overflow-y-auto border-l border-stone-200/70 p-4 dark:border-stone-800/70 xl:block">
+            <StatsPanel stats={stats} />
+          </div>
+        )}
       </div>
     </ImageAllowlist.Provider>
   );

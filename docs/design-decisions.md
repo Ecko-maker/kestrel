@@ -230,3 +230,20 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Stage-6 acceptance (owner decision, 2026-10-11): the criterion is reads-then-falls → 0/29, not always-falls.** reads-then-falls is a scripted model that reads the local data, then obeys the injection: the weakest model a real attack needs. always-falls keeps 11/29 strict-user successes after, but they are artifacts: it writes a canary it never read into a search or fetch, which no real model can do, and with nothing read nothing taints the conversation. The same 11 attacks are stopped under reads-then-falls. The proof **passed on the `e37e6e5` task set** and is **to be re-run on the final attack texts** once `phase3/memory-safety` is merged in.
 - The model sees exactly the same tools and prompt (the fingerprint moves only because capabilities are hashed), so a change in the after-run is the defense, not a different agent. Pinned by `test_the_tiers_v2_agent_fingerprint_is_pinned`: agent `2cac3804ef92` (rules `tiers-v2`, the 2026-10-21 main-suite after-run), then `35fac5ba6277` once the approval rules' version was hashed too (rules `tiers-v2.1`, taint only from reads that returned local data, known issue #45); the tools hashed without capabilities still give the before run's `22ab98e45865`, with the same system prompt hash.
 - The content check is evidence more than a gate: after a read, every network call already asks. It tells the user *what* would leave, which makes "no" an informed answer.
+
+## 17. A HUD look for the console, driven by agent events
+
+**Decision** (owner-approved 2026-10-21, branch `console/hud-theme`): a second look, "HUD", next to the classic one (still the default). A toggle in the nav switches between them; the choice is kept in localStorage, with every access wrapped so blocked storage falls back to classic.
+- **Recolour, don't fork.** The HUD redefines Tailwind's `stone` (navy) and `accent` (cyan) colour variables under `html[data-look="hud"]` (`console/src/hud/hud.css`), so every page and component, approval cards included, is restyled without a second copy. Amber, red, emerald and violet keep their meaning.
+- **The rings show agent state, not decoration.** `useHud.ts` derives a phase from the existing chat reducer: idle, thinking (a step started and its `llm_call` hasn't arrived; `llm_call` is sent when the model has finished), streaming (`text_delta`), tool (a `tool_call` without its result: one ring segment lights up with the tool's name), approval (a pending card: amber), error (`error` or a failed `llm_call`: one red flash), done (settles), offline. No new server events.
+- **Approval cards stay plain.** Opaque background, no blur, no animation inside; the amber frame and glow are drawn outside the card's box. `src/hud/contrast.test.mjs` (run by `npm test` in CI) reads the palette from `hud.css` and checks WCAG AA for the text colours.
+- **Motion:** CSS/SVG only; `prefers-reduced-motion` turns off rotation, flashes and the 1.2 s boot sequence, and the state still shows through colour and a text label.
+- **Font:** Orbitron (SIL OFL 1.1, `@fontsource-variable/orbitron`), bundled by Vite (11.8 KB, Latin only), used only for the wordmark and HUD labels and downloaded only when the HUD is on. No CDN, so the CSP needed no change.
+
+**Alternatives:**
+- **A separate HUD chat page.** Freer layout, but two copies of the approval card and trace to keep in sync, and a safety-relevant card could drift between them.
+- **Canvas or WebGL effects.** Richer, but heavier, harder to make accessible, and not needed for rings.
+- **Show tiers-v2 taint in the HUD.** The console isn't told the session's taint state (known issue #46), so the panel shows only what it does receive: approval cards with a tiers-v2 notice ("escalated cards").
+
+**Why:** the HUD makes what the agent is doing visible at a glance (thinking, which tool, waiting on you) from data the console already has, at +5 KB gzipped JS and +2.4 KB CSS, and without making the approval decision harder to read.
+
