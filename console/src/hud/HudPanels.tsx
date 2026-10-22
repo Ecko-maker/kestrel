@@ -138,7 +138,7 @@ export function HudSide({ hud, session, showReactor }: { hud: HudState; session:
     <aside className="space-y-3">
       {showReactor && (
         <div className="hud-frame flex flex-col items-center p-3">
-          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} className="w-52" />
+          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} burst={hud.burst} className="w-52" />
           <PhaseReadout hud={hud} className="mt-1 text-center" />
         </div>
       )}
@@ -155,7 +155,7 @@ export function HudStrip({ hud, showReactor }: { hud: HudState; showReactor: boo
     <div className="border-b border-stone-800 bg-stone-950/85 px-4 py-2">
       <div className="flex items-center gap-3">
         {showReactor && (
-          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} size="compact" className="size-11 shrink-0" />
+          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} burst={hud.burst} size="compact" className="size-11 shrink-0" />
         )}
         <div className="min-w-0 flex-1">
           <PhaseReadout hud={hud} className="truncate" />

@@ -8,7 +8,8 @@ your real files and traces are untouched.
     uv run python scripts/demo_console.py --shots    # drive Edge with Playwright, save screenshots
 
 --shots also saves docs/screenshots/theme/: idle, thinking, tool, approval and error in the
-classic and HUD looks, plus the HUD at phone width.
+classic and HUD looks, the HUD mid answer-burst and at phone width, close-ups of the falcon's
+poses (falcon-*.png), and a WebM recording of one exchange (hud-demo.webm).
 """
 
 import argparse
@@ -83,6 +84,20 @@ def start_server() -> tuple[str, Path]:
     return config.url(), tmp
 
 
+def save_shot(target, path: Path, **options) -> None:
+    """Screenshot to bytes, then write with a few retries: on Windows a PNG that was just written can
+    be locked for a moment by another process (indexer, antivirus, an editor preview)."""
+    data = target.screenshot(**options)
+    for attempt in range(5):
+        try:
+            Path(path).write_bytes(data)
+            return
+        except OSError:
+            if attempt == 4:
+                raise
+            time.sleep(0.3)
+
+
 def take_screenshots(url: str, tmp: Path) -> None:
     from playwright.sync_api import sync_playwright
 
@@ -95,16 +110,18 @@ def take_screenshots(url: str, tmp: Path) -> None:
         try:
             run_demo(page, url)
         except Exception:
-            page.screenshot(path=tmp / "failure.png")
+            save_shot(page, tmp / "failure.png")
             print(f"failed; see {tmp / 'failure.png'}")
             raise
         phone = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2)
         phone.goto(url)
         phone.wait_for_timeout(800)
-        phone.screenshot(path=SHOTS / "mobile.png")
+        save_shot(phone, SHOTS / "mobile.png")
         THEME_SHOTS.mkdir(exist_ok=True)
         for look in ("classic", "hud"):
             theme_shots(browser, url, look)
+        falcon_closeups(browser, url)
+        record_exchange(browser, url)
         browser.close()
         show_results(tmp)
 
@@ -125,7 +142,7 @@ def run_demo(page, url: str) -> None:
     send(NOTE)
     page.wait_for_selector("[data-approval=create_note]")
     page.wait_for_timeout(400)
-    page.screenshot(path=SHOTS / "chat-approval-note.png")
+    save_shot(page, SHOTS / "chat-approval-note.png")
     page.get_by_role("button", name="Approve", exact=True).click()
     wait_idle()
 
@@ -133,7 +150,7 @@ def run_demo(page, url: str) -> None:
     send(EMAIL)
     page.wait_for_selector("[data-approval=send_message] >> text=I regret to inform you")
     page.wait_for_timeout(400)
-    page.screenshot(path=SHOTS / "chat-approval-email.png")
+    save_shot(page, SHOTS / "chat-approval-email.png")
     page.get_by_role("button", name="Reject").first.click()
     page.get_by_placeholder("Why not?").fill("Too formal. Make it casual and say it's traffic.")
     page.get_by_role("button", name="Reject").last.click()
@@ -145,7 +162,7 @@ def run_demo(page, url: str) -> None:
     send(SUSPICIOUS)
     page.wait_for_selector("[data-approval=send_message] >> text=attacker@example.com")
     page.wait_for_timeout(400)
-    page.screenshot(path=SHOTS / "chat-approval-injection.png")
+    save_shot(page, SHOTS / "chat-approval-injection.png")
     page.get_by_role("button", name="Reject").first.click()
     page.get_by_placeholder("Why not?").fill("That instruction came from the email, not from me.")
     page.get_by_role("button", name="Reject").last.click()
@@ -153,19 +170,19 @@ def run_demo(page, url: str) -> None:
     page.get_by_label("Good answer").last.click()
     page.get_by_text("Agent trace").last.click()  # expand the finished trace
     page.wait_for_timeout(300)
-    page.screenshot(path=SHOTS / "chat-agent-trace.png")
+    save_shot(page, SHOTS / "chat-agent-trace.png")
 
     # 4. The trace waterfall for the email conversation
     page.goto(url.split("?")[0] + "#/traces")
     page.get_by_text(EMAIL).click()
     page.wait_for_selector("text=All traces")
     page.wait_for_timeout(400)
-    page.screenshot(path=SHOTS / "trace-waterfall.png", full_page=True)
+    save_shot(page, SHOTS / "trace-waterfall.png", full_page=True)
 
     # 5. Stats, and dark mode
     page.goto(url.split("?")[0] + "#/stats")
     page.wait_for_timeout(600)
-    page.screenshot(path=SHOTS / "stats.png", full_page=True)
+    save_shot(page, SHOTS / "stats.png", full_page=True)
     page.get_by_role("radio", name="dark").click()
     page.goto(url.split("?")[0] + "#/chat")
     page.wait_for_timeout(300)
@@ -173,7 +190,7 @@ def run_demo(page, url: str) -> None:
     page.get_by_text(SUSPICIOUS).click()
     page.wait_for_selector("text=All traces")
     page.wait_for_timeout(400)
-    page.screenshot(path=SHOTS / "trace-waterfall-dark.png", full_page=True)
+    save_shot(page, SHOTS / "trace-waterfall-dark.png", full_page=True)
 
 
 class EventGate:
@@ -226,7 +243,7 @@ def theme_shots(browser, url: str, look: str) -> None:
     page.goto(url)
     page.wait_for_selector("text=Connected")
     page.wait_for_timeout(1600)  # the HUD's boot sequence (1.2 s) has finished
-    page.screenshot(path=out / f"{look}-idle.png")
+    save_shot(page, out / f"{look}-idle.png")
 
     box = page.get_by_label("Message")
 
@@ -242,26 +259,32 @@ def theme_shots(browser, url: str, look: str) -> None:
     send(TOKYO)
     gate.wait_paused(page)
     page.wait_for_timeout(700)
-    page.screenshot(path=out / f"{look}-thinking.png")
+    save_shot(page, out / f"{look}-thinking.png")
     gate.pause_after = "tool_call"  # tool running, its result held back
     gate.release()
     gate.wait_paused(page)
     page.wait_for_timeout(500)
-    page.screenshot(path=out / f"{look}-tool.png")
+    save_shot(page, out / f"{look}-tool.png")
+    gate.pause_after = "done"  # nothing comes after done; this just tells us the answer is in
+    gate.release()
+    gate.wait_paused(page)
+    if look == "hud":
+        page.wait_for_timeout(250)  # mid-burst (the burst lasts 0.9 s)
+        save_shot(page, out / "hud-answer-burst.png")
     gate.release()
     wait_idle()
 
     send(NOTE)
     page.wait_for_selector("[data-approval=create_note]")
     page.wait_for_timeout(500)
-    page.screenshot(path=out / f"{look}-approval.png")
+    save_shot(page, out / f"{look}-approval.png")
     page.get_by_role("button", name="Approve", exact=True).click()
     wait_idle()
 
     send(OUTAGE)
     page.locator("text=simulated outage >> visible=true").first.wait_for()
     page.wait_for_timeout(1000)  # after the red flash, the steady red state
-    page.screenshot(path=out / f"{look}-error.png")
+    save_shot(page, out / f"{look}-error.png")
     page.close()
 
     if look == "hud":
@@ -270,15 +293,112 @@ def theme_shots(browser, url: str, look: str) -> None:
         phone.goto(url)
         phone.wait_for_selector("textarea[placeholder^='Ask Kestrel']")
         phone.wait_for_timeout(1600)
-        phone.screenshot(path=out / "hud-mobile-idle.png")
+        save_shot(phone, out / "hud-mobile-idle.png")
         phone.get_by_label("Message").fill(NOTE)
         phone.get_by_label("Message").press("Enter")
         phone.wait_for_selector("[data-approval=create_note]")
         phone.wait_for_timeout(500)
-        phone.screenshot(path=out / "hud-mobile-approval.png")
+        save_shot(phone, out / "hud-mobile-approval.png")
         phone.get_by_role("button", name="Approve", exact=True).click()
         phone.wait_for_selector("textarea[placeholder^='Ask Kestrel']", timeout=30_000)
         phone.close()
+
+
+def hud_page(browser, url: str, gate: EventGate, **options):
+    page = browser.new_page(viewport={"width": 1280, "height": 800}, **options)
+    page.add_init_script("try { localStorage.setItem('kestrel-look', 'hud') } catch (e) {}")
+    page.route_web_socket("**/ws", gate.route)
+    page.goto(url)
+    page.wait_for_selector("text=Connected")
+    page.wait_for_timeout(1600)  # past the boot sequence
+    return page
+
+
+def say(page, text: str) -> None:
+    box = page.get_by_label("Message")
+    box.fill(text)
+    box.press("Enter")
+
+
+def falcon_closeups(browser, url: str) -> None:
+    """The falcon's poses, cropped to the rings: perch, flap, dive, burst, return, hover, shake."""
+    gate = EventGate()
+    page = hud_page(browser, url, gate, device_scale_factor=2.5)
+
+    def shot(name: str, where: str = "aside .reactor") -> None:
+        save_shot(page.locator(where), THEME_SHOTS / f"falcon-{name}.png")
+
+    shot("perch", ".reactor >> nth=0")  # the hero: no conversation yet
+    gate.pause_after = "step_started"
+    say(page, TOKYO)
+    gate.wait_paused(page)
+    page.wait_for_timeout(450)
+    shot("flap")
+    gate.pause_after = "tool_call"
+    gate.release()
+    gate.wait_paused(page)
+    page.wait_for_timeout(480)  # the bottom of the stoop is at 45% of 1.1 s
+    shot("dive")
+    gate.pause_after = "done"
+    gate.release()
+    gate.wait_paused(page)
+    page.wait_for_timeout(250)
+    shot("burst")
+    gate.release()
+    page.wait_for_timeout(1300)  # swoop finished, wings open
+    shot("return")
+    say(page, NOTE)
+    page.wait_for_selector("[data-approval=create_note]")
+    page.wait_for_timeout(600)
+    shot("hover")
+    page.get_by_role("button", name="Approve", exact=True).click()
+    page.wait_for_selector("textarea[placeholder^='Ask Kestrel']", timeout=30_000)
+    say(page, OUTAGE)
+    page.locator("text=simulated outage >> visible=true").first.wait_for()
+    page.wait_for_timeout(120)  # mid-shake
+    shot("shake")
+    page.close()
+
+
+def record_exchange(browser, url: str) -> None:
+    """A WebM of idle -> thinking -> tool -> answer burst -> approval, with Playwright's recorder.
+    The tool's result is held back 1.2 s so its dive is visible (the demo tool takes ~1 ms).
+    Skipped, with a message, when Playwright's ffmpeg isn't installed."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    with tempfile.TemporaryDirectory() as videos:
+        size = {"width": 1280, "height": 800}
+        context = browser.new_context(viewport=size, record_video_dir=videos, record_video_size=size)
+        context.add_init_script("try { localStorage.setItem('kestrel-look', 'hud') } catch (e) {}")
+        gate = EventGate()
+        try:
+            page = context.new_page()
+        except PlaywrightError as e:
+            if "ffmpeg" not in str(e):
+                raise
+            context.close()
+            print("hud-demo.webm skipped: the video recorder needs ffmpeg (uv run playwright install ffmpeg)")
+            return
+        page.route_web_socket("**/ws", gate.route)
+        page.goto(url)
+        page.wait_for_selector("text=Connected")
+        page.wait_for_timeout(2500)  # boot sequence, then idle
+        gate.pause_after = "tool_call"
+        say(page, TOKYO)
+        gate.wait_paused(page)
+        page.wait_for_timeout(1200)
+        gate.release()
+        page.wait_for_selector("textarea[placeholder^='Ask Kestrel']", timeout=30_000)
+        page.wait_for_timeout(2200)  # the burst and the swoop back
+        say(page, NOTE)
+        page.wait_for_selector("[data-approval=create_note]")
+        page.wait_for_timeout(1800)
+        page.get_by_role("button", name="Approve", exact=True).click()
+        page.wait_for_selector("textarea[placeholder^='Ask Kestrel']", timeout=30_000)
+        page.wait_for_timeout(2000)
+        video = page.video
+        context.close()  # the video is written on close
+        shutil.move(video.path(), THEME_SHOTS / "hud-demo.webm")
 
 
 def show_results(tmp: Path) -> None:
