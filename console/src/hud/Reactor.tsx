@@ -1,10 +1,11 @@
 // The HUD rings around the falcon. Pure SVG; every animation is a CSS rule in hud.css keyed on
-// data-phase, so the rings move only when the agent's state changes (see useHud.ts).
+// data-phase / data-pose / data-burst, which come from useHud.ts, so the rings and the bird move only
+// when the agent's state changes. overflow: hidden keeps every effect inside the reactor's own box.
 
-import { useId } from "react";
+import { useId, type CSSProperties } from "react";
 import { cx } from "../components/ui";
 import { FalconPaths } from "./FalconMark";
-import { PHASE_LABEL, SEGMENTS, type Phase, type Segment } from "./useHud";
+import { FALCON_POSE, PHASE_LABEL, SEGMENTS, type Phase, type Segment } from "./useHud";
 
 const C = 200;
 const SPAN = 360 / SEGMENTS;
@@ -32,6 +33,17 @@ const TICKS = Array.from({ length: 72 }, (_, i) => {
 
 const SEG_PATHS = Array.from({ length: SEGMENTS }, (_, i) => arc(156, i * SPAN + GAP / 2, (i + 1) * SPAN - GAP / 2));
 
+// 16 sparks for the answer burst: spread round the circle with a fixed jitter (no randomness, so
+// every burst and every screenshot looks the same), each with its own end point and start delay.
+const SPARKS = Array.from({ length: 16 }, (_, i) => {
+  const deg = i * 22.5 + ((i * 7) % 5) * 3;
+  const dist = 130 + ((i * 37) % 50);
+  const [x, y] = polar(dist, deg);
+  return { x: x - C, y: y - C, delay: (i % 4) * 20, r: i % 3 === 0 ? 5 : 3.5 };
+});
+
+const vars = (v: Record<string, string>) => v as CSSProperties;
+
 function segClass(state: Segment["state"] | undefined): { stroke: string; opacity: number } {
   if (state === "active") return { stroke: "currentColor", opacity: 1 };
   if (state === "ok") return { stroke: "currentColor", opacity: 0.55 };
@@ -43,27 +55,48 @@ export function Reactor({
   phase,
   segments,
   activeTool,
+  burst = null,
   size = "hero",
   className,
 }: {
   phase: Phase;
   segments: Segment[];
   activeTool: string | null;
+  burst?: number | null;
   size?: "hero" | "compact";
   className?: string;
 }) {
   const id = useId();
+  const pose = FALCON_POSE[phase];
   const label = PHASE_LABEL[phase] + (activeTool ? `: ${activeTool}` : "");
   const activeIdx = segments.findLastIndex((s) => s.state === "active");
   const mid = activeIdx >= 0 ? activeIdx * SPAN + SPAN / 2 : 0;
   const lower = mid > 90 && mid < 270;
 
+  // The dive: toward the lit segment, about two thirds of the way to the ring, tilted into it.
+  const [tx, ty] = polar(70, mid);
+  const tilt = ((mid + 180) % 360) - 180;
+  const dive = vars({ "--dx": `${(tx - C).toFixed(1)}px`, "--dy": `${(ty - C).toFixed(1)}px`, "--dr": `${(tilt * 0.4).toFixed(1)}deg` });
+
   return (
-    <svg viewBox="-30 -30 460 460" className={cx("reactor", className)} data-phase={phase} role="img" aria-label={`Kestrel status: ${label}`}>
+    <svg
+      viewBox="-30 -30 460 460"
+      className={cx("reactor", className)}
+      data-phase={phase}
+      data-pose={pose}
+      data-burst={burst != null ? "" : undefined}
+      role="img"
+      aria-label={`Kestrel status: ${label}`}
+    >
       <defs>
         <radialGradient id={`${id}core`}>
           <stop offset="0%" stopColor="currentColor" stopOpacity={0.28} />
           <stop offset="70%" stopColor="currentColor" stopOpacity={0.06} />
+          <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
+        </radialGradient>
+        <radialGradient id={`${id}burst`}>
+          <stop offset="0%" stopColor="var(--hud-text)" stopOpacity={0.6} />
+          <stop offset="45%" stopColor="currentColor" stopOpacity={0.35} />
           <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
         </radialGradient>
         {activeIdx >= 0 && size === "hero" && (
@@ -106,8 +139,33 @@ export function Reactor({
         </text>
       )}
 
-      <g transform={`translate(${C - 70} ${C - 72}) scale(1.4)`}>
-        <FalconPaths />
+      {burst != null && (
+        // Played once per answer (useHud's burstReducer); the key restarts it for the next one.
+        <g key={burst} className="burst" aria-hidden="true">
+          <circle className="burst-glow" cx={C} cy={C} r={170} fill={`url(#${id}burst)`} />
+          <circle className="shock" cx={C} cy={C} r={112} fill="none" stroke="var(--hud-text)" strokeWidth={5} />
+          {SPARKS.map((s, i) => (
+            <circle
+              key={i}
+              className="spark"
+              cx={C}
+              cy={C}
+              r={s.r}
+              fill="var(--hud-text)"
+              style={vars({ "--sx": `${s.x.toFixed(1)}px`, "--sy": `${s.y.toFixed(1)}px`, animationDelay: `${s.delay}ms` })}
+            />
+          ))}
+        </g>
+      )}
+
+      {/* flight = lift, dive, swoop, shake; bob = the idle float; the wings move inside the nested svg.
+          A new tool call remounts the flight group, so each one gets its own dive. */}
+      <g key={pose === "dive" ? `dive-${segments.length}` : "flight"} className="falcon-flight" style={dive}>
+        <g className="falcon-bob">
+          <svg x={C - 70} y={C - 72} width={140} height={140} viewBox="0 0 100 100" overflow="visible">
+            <FalconPaths />
+          </svg>
+        </g>
       </g>
       <circle className="flash" cx={C} cy={C} r={200} fill="var(--hud-red)" />
     </svg>

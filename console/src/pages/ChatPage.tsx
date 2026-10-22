@@ -8,7 +8,7 @@ import { StatsPanel } from "../components/StatsPanel";
 import { Button, cx } from "../components/ui";
 import { HudHero, HudSide, HudStrip } from "../hud/HudPanels";
 import { useHud } from "../hud/useHud";
-import type { Look } from "../hud/useLook";
+import { useReducedMotion, type Look } from "../hud/useLook";
 import type { Turn, useChat } from "../useChat";
 
 type Chat = ReturnType<typeof useChat>;
@@ -173,7 +173,7 @@ export function ChatPage({
   look?: Look;
 }) {
   const hudOn = look === "hud";
-  const hud = useHud(chat.turns, chat.state);
+  const hud = useHud(chat.turns, chat.state, useReducedMotion());
   const empty = chat.turns.length === 0;
   const bottom = useRef<HTMLDivElement>(null);
   const last = chat.turns[chat.turns.length - 1];

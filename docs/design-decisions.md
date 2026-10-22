@@ -263,5 +263,7 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Canvas or WebGL effects.** Richer, but heavier, harder to make accessible, and not needed for rings.
 - **Show tiers-v2 taint in the HUD.** The console isn't told the session's taint state (known issue #60), so the panel shows only what it does receive: approval cards with a tiers-v2 notice ("escalated cards").
 
+- **The falcon tells the tagline** (2026-10-21): wings and body are separate SVG groups; `FALCON_POSE` in `useHud.ts` maps each phase to a pose: perched (idle), flapping and lifted (thinking), a short stoop at the lit segment (tool), hovering with wings spread (approval), swooping back with wings open (answer), a short shake (error). On `answer` (never `text_delta`, never for a failed turn) a one-shot burst plays: a shockwave, 16 sparks and a quick spin that settles, all within 0.9 s. `burstReducer` keeps it to one at a time and none under reduced motion, which also freezes the falcon in its drawn pose. Transforms and opacity only; the reactor clips to its own box, so nothing moves over the chat or a card.
+
 **Why:** the HUD makes what the agent is doing visible at a glance (thinking, which tool, waiting on you) from data the console already has, at +5 KB gzipped JS and +2.4 KB CSS, and without making the approval decision harder to read.
 

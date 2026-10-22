@@ -38,3 +38,20 @@ export const prefersReducedMotion = () => {
     return false;
   }
 };
+
+// The same, kept current if the user changes the setting while the page is open.
+export function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(prefersReducedMotion);
+  useEffect(() => {
+    let media: MediaQueryList;
+    try {
+      media = matchMedia("(prefers-reduced-motion: reduce)");
+    } catch {
+      return;
+    }
+    const onChange = () => setReduced(media.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+  return reduced;
+}

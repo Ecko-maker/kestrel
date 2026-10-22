@@ -1,8 +1,10 @@
 // What the HUD shows, derived only from the chat state the console already has (useChat's turns).
 // No new server events: every value here comes from step_started, text_delta, llm_call, tool_call,
 // tool_result, approval_required/resolved, answer, error and done.
+// This file is the one place that maps events to HUD states (phase, falcon pose, answer burst);
+// the components only draw what it returns. Tested by useHud.test.mjs (no runtime imports but react).
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 import type { ConnectionState, Turn } from "../useChat";
 
 // Note: llm_call arrives when the model has *finished* (it carries duration and tokens), so
@@ -41,6 +43,8 @@ export interface LogEntry {
 
 export interface HudState {
   phase: Phase;
+  pose: FalconPose;
+  burst: number | null; // id of the answer burst playing now, if any
   activeTool: string | null;
   segments: Segment[];
   telemetry: Telemetry;
@@ -78,6 +82,69 @@ export function phaseOf(turns: Turn[], connection: ConnectionState): { phase: Ph
   const step = last.steps[last.steps.length - 1];
   if (step && !step.llm && step.text) return { phase: "streaming", ...none };
   return { phase: "thinking", ...none };
+}
+
+// The falcon tells the tagline: perched while idle, flapping while it thinks, diving at the lit
+// segment for a tool, hovering while it waits for you, swooping back with the answer.
+export type FalconPose = "perch" | "flap" | "dive" | "hover" | "return" | "shake" | "rest";
+
+export const FALCON_POSE: Record<Phase, FalconPose> = {
+  idle: "perch",
+  thinking: "flap",
+  streaming: "flap",
+  tool: "dive",
+  approval: "hover",
+  done: "return",
+  error: "shake",
+  offline: "rest",
+};
+
+// ---- Answer burst ----
+// Only the `answer` event sets turn.answer (text_delta never does), so this key changes exactly when
+// an answer arrives. Failed turns get an error answer too; they get no burst.
+export function answerKey(turns: Turn[]): string | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (t.answer) return t.answer.stopReason === "error" || t.error ? null : t.id;
+  }
+  return null;
+}
+
+// Every burst animation ends within this (hud.css). One burst at a time, so at most one glow per
+// 0.9 s: well under WCAG 2.3.1's three flashes per second.
+export const BURST_MS = 900;
+
+export interface BurstState {
+  seen: string | null; // the last answer considered, played or not
+  playing: number | null; // id of the burst on screen
+  count: number;
+}
+
+export type BurstAction = { type: "answer"; key: string | null; reducedMotion: boolean } | { type: "end"; id: number };
+
+export const burstStart = (key: string | null): BurstState => ({ seen: key, playing: null, count: 0 });
+
+export function burstReducer(state: BurstState, action: BurstAction): BurstState {
+  if (action.type === "end") return state.playing === action.id ? { ...state, playing: null } : state;
+  if (action.key === null || action.key === state.seen) return state;
+  // An answer that lands while a burst plays (or under reduced motion) is marked seen and never plays.
+  if (state.playing !== null || action.reducedMotion) return { ...state, seen: action.key };
+  const id = state.count + 1;
+  return { seen: action.key, playing: id, count: id };
+}
+
+function useAnswerBurst(turns: Turn[], reducedMotion: boolean): number | null {
+  const key = answerKey(turns);
+  // Answers already on screen when the HUD mounts (e.g. back from the traces page) don't replay.
+  const [state, dispatch] = useReducer(burstReducer, key, burstStart);
+  useEffect(() => dispatch({ type: "answer", key, reducedMotion }), [key, reducedMotion]);
+  useEffect(() => {
+    if (state.playing === null) return;
+    const id = state.playing;
+    const timer = setTimeout(() => dispatch({ type: "end", id }), BURST_MS);
+    return () => clearTimeout(timer);
+  }, [state.playing]);
+  return state.playing;
 }
 
 export function segmentsOf(turn: Turn | undefined): Segment[] {
@@ -167,9 +234,18 @@ function fmtShort(ms: number | null | undefined): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function useHud(turns: Turn[], connection: ConnectionState): HudState {
-  return useMemo(() => {
+export function useHud(turns: Turn[], connection: ConnectionState, reducedMotion: boolean): HudState {
+  const burst = useAnswerBurst(turns, reducedMotion);
+  const base = useMemo(() => {
     const { phase, activeTool } = phaseOf(turns, connection);
-    return { phase, activeTool, segments: segmentsOf(turns.at(-1)), telemetry: telemetryOf(turns), log: logOf(turns) };
+    return {
+      phase,
+      pose: FALCON_POSE[phase],
+      activeTool,
+      segments: segmentsOf(turns.at(-1)),
+      telemetry: telemetryOf(turns),
+      log: logOf(turns),
+    };
   }, [turns, connection]);
+  return useMemo(() => ({ ...base, burst }), [base, burst]);
 }
