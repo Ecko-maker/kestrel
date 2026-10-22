@@ -250,6 +250,11 @@ gpt-oss-120b sometimes reads its data, writes the message or note as a draft, an
 **Fixing it is a measured agent change:** a prompt change moves the agent fingerprint, so the main suite and the safety split are re-measured before and after. Consider it before Phase 4 teacher collection, so the teacher's traces don't teach the habit to the student.
 **Done when:** a fix is measured with fewer draft-and-ask failures on the main suite and the safety benign tasks and no rise in attack success.
 
+### 60. The console isn't told whether the conversation is tainted
+**Labels:** `console`, `safety`, `low`
+Tiers v2 keeps the taint state in the agent's `Session` and never sends it to the console; the only tiers-v2 data the browser gets is the `notice` on an escalated approval card. So the HUD shows "escalated cards" (approvals that came with a notice) and no "tainted / clean" indicator, rather than guess one from tool names. A user can't see in advance that the next search will ask for approval.
+**Done when:** the agent emits the taint state (e.g. a `session` event after each tool result: tainted, by which tool) and the HUD shows it; that is an agent change, so it waits until after the Phase 3 gate.
+
 ---
 
 ## Process

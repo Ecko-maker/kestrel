@@ -6,6 +6,9 @@ your real files and traces are untouched.
 
     uv run python scripts/demo_console.py            # serve it; open the printed URL yourself
     uv run python scripts/demo_console.py --shots    # drive Edge with Playwright, save screenshots
+
+--shots also saves docs/screenshots/theme/: idle, thinking, tool, approval and error in the
+classic and HUD looks, plus the HUD at phone width.
 """
 
 import argparse
@@ -20,12 +23,27 @@ from pathlib import Path
 import uvicorn
 
 from kestrel.demo import DEMO_NOTICE, DEMO_PROMPTS, DemoLLM
+from kestrel.llm import LLMError
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "docs" / "screenshots"
 PORT = 8799
 
 NOTE, EMAIL, SUSPICIOUS = DEMO_PROMPTS[3], DEMO_PROMPTS[4], DEMO_PROMPTS[5]
+TOKYO = DEMO_PROMPTS[0]
+OUTAGE = "Show me what a provider outage looks like"
+THEME_SHOTS = SHOTS / "theme"
+
+
+class ShotsLLM(DemoLLM):
+    """The demo model, plus one prompt that fails like a provider outage, for the error screenshot.
+    The agent's real error path handles it (LLMError -> error event -> error answer)."""
+
+    def chat(self, messages, tools=None, on_text=None):
+        if str(messages[-1].get("content")) == OUTAGE:
+            time.sleep(self.delay)
+            raise LLMError("demo", "simulated outage for the screenshot run (503 Service Unavailable)")
+        return super().chat(messages, tools, on_text)
 
 
 def start_server() -> tuple[str, Path]:
@@ -39,7 +57,7 @@ def start_server() -> tuple[str, Path]:
     shutil.copytree(ROOT / "workspace", tmp / "workspace", ignore=shutil.ignore_patterns("notes", "outbox"))
     tools.WORKSPACE = (tmp / "workspace").resolve()
     tracer = Tracer(tmp / "traces.db", record_content=True)
-    llm = DemoLLM(delay=0.6)
+    llm = ShotsLLM(delay=0.6)
 
     def make_agent(on_event, approver):
         return Agent(
@@ -84,6 +102,9 @@ def take_screenshots(url: str, tmp: Path) -> None:
         phone.goto(url)
         phone.wait_for_timeout(800)
         phone.screenshot(path=SHOTS / "mobile.png")
+        THEME_SHOTS.mkdir(exist_ok=True)
+        for look in ("classic", "hud"):
+            theme_shots(browser, url, look)
         browser.close()
         show_results(tmp)
 
@@ -153,6 +174,111 @@ def run_demo(page, url: str) -> None:
     page.wait_for_selector("text=All traces")
     page.wait_for_timeout(400)
     page.screenshot(path=SHOTS / "trace-waterfall-dark.png", full_page=True)
+
+
+class EventGate:
+    """Forwards the console's WebSocket traffic and can hold the server's events after a chosen one,
+    so a short state (thinking, a running tool) stays on screen for a screenshot. The events are
+    the agent's real ones, only delayed."""
+
+    def __init__(self):
+        self.client = None
+        self.pause_after: str | None = None
+        self.paused = False
+        self.held: list = []
+
+    def route(self, ws) -> None:
+        server = ws.connect_to_server()
+        self.client = ws
+        ws.on_message(server.send)
+        server.on_message(self._from_server)
+
+    def _from_server(self, message) -> None:
+        if self.paused:
+            self.held.append(message)
+            return
+        self.client.send(message)
+        if self.pause_after and json.loads(message).get("type") == self.pause_after:
+            self.paused, self.pause_after = True, None
+
+    def wait_paused(self, page) -> None:
+        for _ in range(200):
+            if self.paused:
+                return
+            page.wait_for_timeout(50)  # Playwright delivers WebSocket callbacks while waiting
+        raise TimeoutError("the expected event never came")
+
+    def release(self) -> None:
+        self.paused = False
+        held, self.held = self.held, []
+        for message in held:
+            self._from_server(message)
+
+
+def theme_shots(browser, url: str, look: str) -> None:
+    """Idle, thinking, tool, approval and error in one look; for the HUD also the phone width."""
+    out = THEME_SHOTS
+    # 1x: the HUD's grid texture makes 2x PNGs ~4 times bigger
+    page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1, color_scheme="light")
+    page.add_init_script(f"try {{ localStorage.setItem('kestrel-look', '{look}') }} catch (e) {{}}")
+    gate = EventGate()
+    page.route_web_socket("**/ws", gate.route)
+    page.goto(url)
+    page.wait_for_selector("text=Connected")
+    page.wait_for_timeout(1600)  # the HUD's boot sequence (1.2 s) has finished
+    page.screenshot(path=out / f"{look}-idle.png")
+
+    box = page.get_by_label("Message")
+
+    def send(text):
+        box.fill(text)
+        box.press("Enter")
+
+    def wait_idle():
+        page.wait_for_selector("textarea[placeholder^='Ask Kestrel']", timeout=30_000)
+        page.wait_for_timeout(300)
+
+    gate.pause_after = "step_started"  # model call in flight
+    send(TOKYO)
+    gate.wait_paused(page)
+    page.wait_for_timeout(700)
+    page.screenshot(path=out / f"{look}-thinking.png")
+    gate.pause_after = "tool_call"  # tool running, its result held back
+    gate.release()
+    gate.wait_paused(page)
+    page.wait_for_timeout(500)
+    page.screenshot(path=out / f"{look}-tool.png")
+    gate.release()
+    wait_idle()
+
+    send(NOTE)
+    page.wait_for_selector("[data-approval=create_note]")
+    page.wait_for_timeout(500)
+    page.screenshot(path=out / f"{look}-approval.png")
+    page.get_by_role("button", name="Approve", exact=True).click()
+    wait_idle()
+
+    send(OUTAGE)
+    page.locator("text=simulated outage >> visible=true").first.wait_for()
+    page.wait_for_timeout(1000)  # after the red flash, the steady red state
+    page.screenshot(path=out / f"{look}-error.png")
+    page.close()
+
+    if look == "hud":
+        phone = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1.5)
+        phone.add_init_script("try { localStorage.setItem('kestrel-look', 'hud') } catch (e) {}")
+        phone.goto(url)
+        phone.wait_for_selector("textarea[placeholder^='Ask Kestrel']")
+        phone.wait_for_timeout(1600)
+        phone.screenshot(path=out / "hud-mobile-idle.png")
+        phone.get_by_label("Message").fill(NOTE)
+        phone.get_by_label("Message").press("Enter")
+        phone.wait_for_selector("[data-approval=create_note]")
+        phone.wait_for_timeout(500)
+        phone.screenshot(path=out / "hud-mobile-approval.png")
+        phone.get_by_role("button", name="Approve", exact=True).click()
+        phone.wait_for_selector("textarea[placeholder^='Ask Kestrel']", timeout=30_000)
+        phone.close()
 
 
 def show_results(tmp: Path) -> None:

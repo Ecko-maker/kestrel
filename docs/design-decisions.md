@@ -248,3 +248,20 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - The defense itself met its gate: 0 system-level attack successes under the strict user, and no benign or main-suite failure was caused by a card.
 - The two part 1 drops come from a model habit seen in the baseline too, with no card in either run.
 - Recording it as an override keeps the rule as it was: part 1 stays "not met" on the record.
+
+## 18. A HUD look for the console, driven by agent events
+
+**Decision** (owner-approved 2026-10-21, branch `console/hud-theme`): a second look, "HUD", next to the classic one (still the default). A toggle in the nav switches between them; the choice is kept in localStorage, with every access wrapped so blocked storage falls back to classic.
+- **Recolour, don't fork.** The HUD redefines Tailwind's `stone` (navy) and `accent` (cyan) colour variables under `html[data-look="hud"]` (`console/src/hud/hud.css`), so every page and component, approval cards included, is restyled without a second copy. Amber, red, emerald and violet keep their meaning.
+- **The rings show agent state, not decoration.** `useHud.ts` derives a phase from the existing chat reducer: idle, thinking (a step started and its `llm_call` hasn't arrived; `llm_call` is sent when the model has finished), streaming (`text_delta`), tool (a `tool_call` without its result: one ring segment lights up with the tool's name), approval (a pending card: amber), error (`error` or a failed `llm_call`: one red flash), done (settles), offline. No new server events.
+- **Approval cards stay plain.** Opaque background, no blur, no animation inside; the amber frame and glow are drawn outside the card's box. `src/hud/contrast.test.mjs` (run by `npm test` in CI) reads the palette from `hud.css` and checks WCAG AA for the text colours.
+- **Motion:** CSS/SVG only; `prefers-reduced-motion` turns off rotation, flashes and the 1.2 s boot sequence, and the state still shows through colour and a text label.
+- **Font:** Orbitron (SIL OFL 1.1, `@fontsource-variable/orbitron`), bundled by Vite (11.8 KB, Latin only), used only for the wordmark and HUD labels and downloaded only when the HUD is on. No CDN, so the CSP needed no change.
+
+**Alternatives:**
+- **A separate HUD chat page.** Freer layout, but two copies of the approval card and trace to keep in sync, and a safety-relevant card could drift between them.
+- **Canvas or WebGL effects.** Richer, but heavier, harder to make accessible, and not needed for rings.
+- **Show tiers-v2 taint in the HUD.** The console isn't told the session's taint state (known issue #60), so the panel shows only what it does receive: approval cards with a tiers-v2 notice ("escalated cards").
+
+**Why:** the HUD makes what the agent is doing visible at a glance (thinking, which tool, waiting on you) from data the console already has, at +5 KB gzipped JS and +2.4 KB CSS, and without making the approval decision harder to read.
+
