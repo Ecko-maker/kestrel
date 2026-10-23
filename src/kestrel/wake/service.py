@@ -8,6 +8,12 @@ Privacy: audio chunks live only in memory (audio.py -> detector -> dropped). The
 a wake is a span with its time (Tracer.record_wake). Listening is off unless KESTREL_WAKE=on, and
 the console shows "Listening" whenever the microphone is open: the `wake_status` event saying so is
 sent before the stream opens and again after it closes.
+
+Power (power.decide): plugged in, listen and keep the PC awake; on battery, listen only while the PC
+is awake, at or above KESTREL_WAKE_MIN_BATTERY and with the saver off. The state is polled every
+5 seconds (one cheap Windows call), so plugging in resumes within seconds and the keep-awake request
+is dropped within seconds of switching to battery. After standby (a jump in wall-clock time between
+two loop turns) or when the stream stops delivering audio, the microphone is closed and reopened.
 """
 
 import os
@@ -22,12 +28,15 @@ from typing import Any
 from kestrel.wake.audio import AudioSource
 from kestrel.wake.detector import Detector
 from kestrel.wake.greeting import clean_name, greeting
-from kestrel.wake.power import Power
+from kestrel.wake.power import Decision, Power, decide
 from kestrel.wake.speech import Speaker
 
 COOLDOWN_S = 10.0
-BATTERY_CHECK_S = 5.0
+POWER_CHECK_S = 5.0  # how often the power state is read (one GetSystemPowerStatus call)
+STANDBY_GAP_S = 10.0  # a wall-clock jump this long between two loop turns means the PC was asleep
+STALL_S = 5.0  # an open stream that delivers no audio this long is reopened
 RETRY_S = 10.0  # after a microphone or model error
+DEFAULT_MIN_BATTERY = 30
 DEFAULT_THRESHOLD = 0.5  # provisional until measured with scripts/wake_eval.py (docs/voice-wake.md)
 MODEL_NAME = "vosk-model-small-en-us-0.15"
 
@@ -45,7 +54,8 @@ def default_model_dir() -> Path:
 @dataclass(frozen=True)
 class WakeSettings:
     enabled: bool = False  # KESTREL_WAKE: the master switch; off by default
-    on_battery: bool = False  # KESTREL_WAKE_ON_BATTERY: listen on battery too
+    on_battery: bool = True  # KESTREL_WAKE_ON_BATTERY=off: never listen on battery (an override)
+    min_battery: int = DEFAULT_MIN_BATTERY  # KESTREL_WAKE_MIN_BATTERY: pause below this on battery
     user_name: str | None = None  # KESTREL_USER_NAME
     threshold: float = DEFAULT_THRESHOLD  # KESTREL_WAKE_THRESHOLD
     model_dir: Path = Path(MODEL_NAME)  # KESTREL_WAKE_MODEL
@@ -57,7 +67,8 @@ class WakeSettings:
         model = os.getenv("KESTREL_WAKE_MODEL")
         return cls(
             enabled=_flag("KESTREL_WAKE"),
-            on_battery=_flag("KESTREL_WAKE_ON_BATTERY"),
+            on_battery=_flag("KESTREL_WAKE_ON_BATTERY", "on"),
+            min_battery=max(0, min(100, int(os.getenv("KESTREL_WAKE_MIN_BATTERY", DEFAULT_MIN_BATTERY)))),
             user_name=clean_name(os.getenv("KESTREL_USER_NAME")),
             threshold=float(os.getenv("KESTREL_WAKE_THRESHOLD", DEFAULT_THRESHOLD)),
             model_dir=Path(model) if model else default_model_dir(),
@@ -67,6 +78,8 @@ class WakeSettings:
 class WakeService:
     """One listening thread. start()/stop() follow the server's lifetime; set_enabled() is the
     console's toggle. The keep-awake request is held only while the microphone is open on mains."""
+
+    reopened = 0  # times the stream was reopened after standby or a stall
 
     def __init__(
         self,
@@ -93,6 +106,9 @@ class WakeService:
         self._listening = False
         self._keeping_awake = False
         self._reason: str | None = None
+        self._battery: int | None = None
+        self._on_ac = True
+        self._low = False  # the low-battery latch (power.decide)
         self._last_wake: float | None = None
         self._changed = threading.Event()
         self._stopping = threading.Event()
@@ -133,60 +149,85 @@ class WakeService:
                 "listening": self._listening,
                 "keeping_awake": self._keeping_awake,
                 "paused": self._reason,
+                "on_ac": self._on_ac,
+                "battery": self._battery,
             }
 
     # --- the listening thread -----------------------------------------------------------
 
     def _set(self, **changes: Any) -> None:
+        """Update the status; tell the consoles only if something changed (the loop polls often)."""
         with self._lock:
+            changed = any(getattr(self, f"_{key}") != value for key, value in changes.items())
             for key, value in changes.items():
                 setattr(self, f"_{key}", value)
-        self.emit(self.status())
+        if changed:
+            self.emit(self.status())
 
     def _wait(self, seconds: float) -> None:
         self._changed.wait(seconds)
         self._changed.clear()
 
-    def _should_listen(self) -> str | None:
-        """None if the microphone should be open now, else why not."""
-        if not self._enabled:
-            return "off"
-        if not self.settings.on_battery and self.power.on_battery():
-            return "on battery"
-        return None
+    def _power(self) -> Decision:
+        """Read the power state, apply the battery rule, and show the battery in the status."""
+        state = self.power.state()
+        decision = decide(state, self.settings.min_battery, self.settings.on_battery, self._low)
+        self._low = decision.low
+        self._set(on_ac=state.on_ac, battery=state.percent)
+        return decision
+
+    def _hold(self, keep_awake: bool) -> None:
+        self._set(keeping_awake=self.power.keep_awake(keep_awake))  # shown only if Windows granted it
 
     def _run(self) -> None:
         while not self._stopping.is_set():
-            reason = self._should_listen()
-            if reason is not None:
-                self._set(reason=reason)
-                self._wait(BATTERY_CHECK_S)
+            if not self._enabled:
+                self._release()
+                self._set(reason="off")
+                self._wait(POWER_CHECK_S)
+                continue
+            decision = self._power()
+            if not decision.listen:
+                self._release()
+                self._set(reason=decision.reason)
+                self._wait(POWER_CHECK_S)
                 continue
             try:
-                self._listen()
+                self._listen(decision)
             except Exception as e:  # no microphone, no model, permission denied...
                 self._release()
                 self._set(reason=f"error: {type(e).__name__}: {e}"[:200])
                 self._wait(RETRY_S)
 
-    def _listen(self) -> None:
+    def _listen(self, decision: Decision) -> None:
         detector = self.make_detector()
         source = self.make_source()
         self._set(listening=True, reason=None)  # the indicator turns on before the microphone does
         try:
             source.open()
-            on_mains = not self.power.on_battery()
-            if on_mains:
-                self._set(keeping_awake=self.power.keep_awake(True))  # shown only if Windows granted it
-            checked = self.clock()
+            self._hold(decision.keep_awake)
+            checked = heard = self.clock()
+            last_turn = self.wall()
             while not self._stopping.is_set() and not self._changed.is_set():
                 chunk = source.read(timeout=0.5)
-                if chunk is not None and detector.feed(chunk) is not None:
-                    self.on_wake()
-                if self.clock() - checked >= BATTERY_CHECK_S:
+                now = self.wall()
+                if now - last_turn > STANDBY_GAP_S:  # the PC slept: reopen the stream, re-read power
+                    self.reopened += 1
+                    break
+                last_turn = now
+                if chunk is not None:
+                    heard = self.clock()
+                    if detector.feed(chunk) is not None:
+                        self.on_wake()
+                elif self.clock() - heard > STALL_S:  # the device went away or stopped delivering
+                    self.reopened += 1
+                    break
+                if self.clock() - checked >= POWER_CHECK_S:
                     checked = self.clock()
-                    if self._should_listen() is not None:
+                    decision = self._power()
+                    if not decision.listen:
                         break
+                    self._hold(decision.keep_awake)  # dropped at once on battery, taken again on mains
         finally:
             source.close()
             self._release()

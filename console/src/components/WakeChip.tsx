@@ -6,13 +6,8 @@ import { useEffect, useState } from "react";
 import { Mic, MicOff } from "lucide-react";
 import type { WakeStatus } from "../api";
 import type { Wake } from "../useChat";
+import { wakeLabel } from "../wakeLabel";
 import { cx } from "./ui";
-
-export function wakeLabel(status: WakeStatus): string {
-  if (status.listening) return "Listening";
-  if (!status.enabled) return "Wake word off";
-  return status.paused ? `Paused: ${status.paused}` : "Starting…";
-}
 
 export function WakeChip({ status, onToggle }: { status: WakeStatus; onToggle: (enabled: boolean) => void }) {
   if (!status.available) return null;

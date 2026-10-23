@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import type { SessionInfo, WakeStatus } from "../api";
-import { wakeLabel } from "../components/WakeChip";
+import { wakeLabel } from "../wakeLabel";
 import { cx } from "../components/ui";
 import { fmtMs, fmtUsd } from "../format";
 import { Reactor } from "./Reactor";
@@ -185,6 +185,7 @@ export function HudStrip({ hud, showReactor, wake }: { hud: HudState; showReacto
             <span>{t.costUsd == null ? "price n/a" : fmtUsd(t.costUsd)}</span>
             <span>{fmtMs(t.lastCallMs)}</span>
             {wake?.listening && <span className="text-red-300">mic on{wake.keeping_awake ? " · keeping PC awake" : ""}</span>}
+            {wake?.available && !wake.listening && wake.enabled && wake.paused && <span>mic paused: {wake.paused}</span>}
           </div>
         </div>
       </div>

@@ -1,10 +1,12 @@
 """Windows calls for the wake word, through ctypes (no extra dependency).
 
-- on_battery: GetSystemPowerStatus. Listening pauses on battery unless KESTREL_WAKE_ON_BATTERY=on.
+- state: GetSystemPowerStatus: mains or battery, battery percent, and the saver flag
+  (SystemStatusFlag; Windows 11's Energy Saver, formerly Battery Saver). decide() turns it into
+  "listen or not, hold keep-awake or not, and why" (the rules are in its docstring).
 - keep_awake: a "system required" power request (PowerCreateRequest/PowerSetRequest) while the
   microphone is open on mains power, so the screen can turn off without the PC entering Modern
-  Standby (which pauses all desktop apps, Kestrel included). Cleared as soon as listening stops.
-  It shows in `powercfg /requests` with the reason below.
+  Standby (which pauses all desktop apps, Kestrel included). Never held on battery. It shows in
+  `powercfg /requests` with the reason below.
 - wake_display: resets the display idle timer (SetThreadExecutionState ES_DISPLAY_REQUIRED) and
   sends one zero-distance mouse move (SendInput). Never a click, a key or a real movement.
 - bring_to_front: finds the console's window by its title and activates it. Windows allows this
@@ -16,6 +18,7 @@ code at all, and synthetic input never reaches the secure (lock screen) desktop.
 
 import ctypes
 import sys
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 ES_DISPLAY_REQUIRED = 0x00000002
@@ -27,6 +30,9 @@ POWER_REQUEST_CONTEXT_SIMPLE_STRING = 0x1
 POWER_REQUEST_SYSTEM_REQUIRED = 1
 KEEP_AWAKE_REASON = "Kestrel is listening for its wake word"
 EDGE_WINDOW_CLASS = "Chrome_WidgetWin_1"
+NO_SYSTEM_BATTERY = 128
+UNKNOWN = 255
+RESUME_MARGIN = 5  # after a low-battery pause, listening resumes at the minimum + 5 points
 
 
 class MOUSEINPUT(ctypes.Structure):
@@ -64,6 +70,59 @@ class REASON_CONTEXT(ctypes.Structure):
     _fields_ = [("Version", ctypes.c_ulong), ("Flags", ctypes.c_ulong), ("SimpleReasonString", ctypes.c_wchar_p)]
 
 
+@dataclass(frozen=True)
+class PowerState:
+    on_ac: bool  # mains power, or a PC without a battery
+    percent: int | None  # battery charge, None if unknown or no battery
+    saver: bool  # Energy Saver / Battery Saver is on
+
+
+MAINS = PowerState(on_ac=True, percent=None, saver=False)
+
+
+@dataclass(frozen=True)
+class Decision:
+    listen: bool
+    keep_awake: bool
+    reason: str | None  # why not listening, for the console
+    low: bool  # the low-battery latch, carried to the next decision
+
+
+def decide(state: PowerState, min_battery: int, allow_battery: bool, was_low: bool) -> Decision:
+    """The battery rule.
+
+    - Plugged in: listen and hold the keep-awake request (and forget any low-battery pause).
+    - On battery: listen only while the PC is awake, never holding a keep-awake request, if the
+      battery is at least min_battery and the saver is off.
+    - Below min_battery: pause, and stay paused until min_battery + 5 (or mains): no flapping
+      around the threshold.
+    - KESTREL_WAKE_ON_BATTERY=off (allow_battery False): never listen on battery.
+    """
+    if state.on_ac:
+        return Decision(listen=True, keep_awake=True, reason=None, low=False)
+    if not allow_battery:
+        return Decision(False, False, "on battery (KESTREL_WAKE_ON_BATTERY=off)", was_low)
+    low = was_low
+    if state.percent is not None:
+        if state.percent < min_battery:
+            low = True
+        elif state.percent >= min_battery + RESUME_MARGIN:
+            low = False
+    if low:
+        shown = f" ({state.percent}%)" if state.percent is not None else ""
+        return Decision(False, False, f"battery low{shown}", low=True)
+    if state.saver:
+        return Decision(False, False, "power saver", low=False)
+    return Decision(listen=True, keep_awake=False, reason=None, low=False)
+
+
+def read_power_state(status: SYSTEM_POWER_STATUS) -> PowerState:
+    no_battery = status.BatteryFlag == NO_SYSTEM_BATTERY
+    on_ac = no_battery or status.ACLineStatus != 0  # 1 = mains; 255 = unknown, treated as mains
+    percent = None if no_battery or status.BatteryLifePercent == UNKNOWN else int(status.BatteryLifePercent)
+    return PowerState(on_ac=on_ac, percent=percent, saver=status.SystemStatusFlag == 1)
+
+
 def nudge_input() -> INPUT:
     """The only input Kestrel ever synthesizes: a mouse move of zero pixels."""
     move = MOUSEINPUT(dx=0, dy=0, mouseData=0, dwFlags=MOUSEEVENTF_MOVE, time=0, dwExtraInfo=0)
@@ -71,7 +130,7 @@ def nudge_input() -> INPUT:
 
 
 class Power(Protocol):
-    def on_battery(self) -> bool: ...
+    def state(self) -> PowerState: ...
     def keep_awake(self, on: bool) -> bool:
         """Hold (on) or clear the keep-awake request; returns whether one is held now."""
         ...
@@ -83,8 +142,8 @@ class Power(Protocol):
 class NullPower:
     """Not Windows (or tests): nothing to do."""
 
-    def on_battery(self) -> bool:
-        return False
+    def state(self) -> PowerState:
+        return MAINS
 
     def keep_awake(self, on: bool) -> bool:
         return False
@@ -103,11 +162,11 @@ class WindowsPower:
         self._request: Any = None
         self._reason: REASON_CONTEXT | None = None  # kept alive while the request exists
 
-    def on_battery(self) -> bool:
+    def state(self) -> PowerState:
         status = SYSTEM_POWER_STATUS()
         if not self.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
-            return False
-        return status.ACLineStatus == 0  # 1 = mains, 255 = unknown (desktops): treated as mains
+            return MAINS  # can't tell: behave as before the battery rule existed
+        return read_power_state(status)
 
     def keep_awake(self, on: bool) -> bool:
         if on and self._request is None:

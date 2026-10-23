@@ -26,9 +26,14 @@ from kestrel.wake.power import (
     INPUT,
     INPUT_MOUSE,
     KEEP_AWAKE_REASON,
+    MAINS,
     MOUSEEVENTF_MOVE,
     POWER_REQUEST_SYSTEM_REQUIRED,
+    SYSTEM_POWER_STATUS,
+    PowerState,
     WindowsPower,
+    decide,
+    read_power_state,
 )
 from kestrel.web.app import COOKIE, WebConfig, create_app
 
@@ -102,15 +107,23 @@ class FakeSource:
         self.log.append("close")
 
 
+def battery(percent: int, saver: bool = False) -> PowerState:
+    return PowerState(on_ac=False, percent=percent, saver=saver)
+
+
 class FakePower:
-    def __init__(self, log: list, battery: bool = False):
+    """A power source the test changes while the service runs (`current`)."""
+
+    def __init__(self, log: list, current: PowerState = MAINS):
         self.log = log
-        self.battery = battery
+        self.current = current
+        self.reads = 0
         self.awake = False
         self.refuse = False  # Windows refused the power request
 
-    def on_battery(self) -> bool:
-        return self.battery
+    def state(self) -> PowerState:
+        self.reads += 1
+        return self.current
 
     def keep_awake(self, on: bool) -> bool:
         if on != self.awake:
@@ -140,12 +153,20 @@ class FakeSpeaker:
 
 @pytest.fixture(autouse=True)
 def fast_checks(monkeypatch):
-    monkeypatch.setattr(service_module, "BATTERY_CHECK_S", 0.05)
+    monkeypatch.setattr(service_module, "POWER_CHECK_S", 0.05)
     monkeypatch.setattr(service_module, "RETRY_S", 0.05)
 
 
 def make_service(
-    tmp_path, *, chunks=(), battery=False, enabled=True, on_battery=False, name=None, clock=time.monotonic
+    tmp_path,
+    *,
+    chunks=(),
+    power_state=MAINS,
+    enabled=True,
+    on_battery=True,
+    name=None,
+    clock=time.monotonic,
+    wall=time.time,
 ):
     log: list = []
     tracer = Tracer(tmp_path / "traces.db", record_content=True, prices={})
@@ -158,8 +179,10 @@ def make_service(
         return sources[-1]
 
     speaker = FakeSpeaker()
-    power = FakePower(log, battery)
-    service = WakeService(settings, lambda: detector, make_source, power, speaker, tracer.record_wake, clock=clock)
+    power = FakePower(log, power_state)
+    service = WakeService(
+        settings, lambda: detector, make_source, power, speaker, tracer.record_wake, clock=clock, wall=wall
+    )
     events: list[dict] = []
 
     def emit(event):
@@ -233,10 +256,11 @@ def test_the_model_is_only_loaded_from_a_local_folder(tmp_path):
 
 
 def test_off_by_default(monkeypatch, tmp_path):
-    for name in ("KESTREL_WAKE", "KESTREL_WAKE_ON_BATTERY", "KESTREL_USER_NAME"):
+    for name in ("KESTREL_WAKE", "KESTREL_WAKE_ON_BATTERY", "KESTREL_WAKE_MIN_BATTERY", "KESTREL_USER_NAME"):
         monkeypatch.delenv(name, raising=False)
     settings = WakeSettings.from_env()
-    assert not settings.enabled and not settings.on_battery and settings.user_name is None
+    assert not settings.enabled and settings.user_name is None
+    assert settings.on_battery is True and settings.min_battery == 30  # the battery rule, unless overridden
     assert build_wake_service(lambda at: None) is None
     service, log, events, *_ = make_service(tmp_path, enabled=False)
     service.start()
@@ -276,25 +300,179 @@ def test_cooldown_no_second_wake_within_10_seconds(tmp_path):
     assert [e["type"] for e in events] == ["wake", "wake"]
 
 
-def test_on_battery_listening_pauses_and_nothing_is_held(tmp_path):
-    service, log, _events, *_ = make_service(tmp_path, battery=True)
+# --- the battery rule -------------------------------------------------------------------------
+
+
+def test_decide_the_battery_rule_with_hysteresis():
+    mains = decide(MAINS, 30, True, was_low=True)
+    assert (mains.listen, mains.keep_awake, mains.reason, mains.low) == (True, True, None, False)
+    ok = decide(battery(64), 30, True, False)
+    assert (ok.listen, ok.keep_awake, ok.reason) == (True, False, None)
+    low = decide(battery(29), 30, True, False)
+    assert (low.listen, low.reason, low.low) == (False, "battery low (29%)", True)
+    assert decide(battery(30), 30, True, False).listen is True  # "at or above" the minimum
+    still = decide(battery(33), 30, True, was_low=True)
+    assert (still.listen, still.reason) == (False, "battery low (33%)")
+    assert decide(battery(34), 30, True, was_low=True).listen is False
+    resumed = decide(battery(35), 30, True, was_low=True)
+    assert (resumed.listen, resumed.low) == (True, False)
+    saver = decide(battery(80, saver=True), 30, True, False)
+    assert (saver.listen, saver.reason) == (False, "power saver")
+    off = decide(battery(90), 30, allow_battery=False, was_low=False)
+    assert (off.listen, off.reason) == (False, "on battery (KESTREL_WAKE_ON_BATTERY=off)")
+    assert decide(PowerState(on_ac=True, percent=50, saver=True), 30, True, False).listen  # plugged in: listen
+
+
+def test_windows_power_status_is_read_into_a_power_state():
+    def status(ac, flag, percent, saver):
+        return read_power_state(SYSTEM_POWER_STATUS(ac, flag, percent, saver, 0, 0))
+
+    assert status(0, 0, 64, 1) == PowerState(on_ac=False, percent=64, saver=True)
+    assert status(1, 8, 64, 0) == PowerState(on_ac=True, percent=64, saver=False)
+    assert status(255, 255, 255, 0) == PowerState(on_ac=True, percent=None, saver=False)  # unknown: mains
+    assert status(0, 128, 255, 0).on_ac is True  # no system battery: a desktop
+
+
+def test_windows_power_state_comes_from_getsystempowerstatus():
+    class Kernel32:
+        def GetSystemPowerStatus(self, pointer):
+            s = pointer._obj
+            s.ACLineStatus, s.BatteryFlag, s.BatteryLifePercent, s.SystemStatusFlag = 0, 0, 42, 1
+            return 1
+
+    assert WindowsPower(FakeDLL(), Kernel32()).state() == PowerState(on_ac=False, percent=42, saver=True)
+
+
+def test_on_mains_it_listens_and_keeps_the_pc_awake(tmp_path):
+    service, _log, *_ = make_service(tmp_path)
     service.start()
     try:
-        wait_for(lambda: service.status()["paused"] == "on battery")
+        wait_for(lambda: service.status()["keeping_awake"])
+        assert service.status()["listening"] and service.status()["on_ac"] is True
+    finally:
+        service.stop()
+
+
+def test_on_battery_at_64_percent_it_listens_without_keeping_the_pc_awake(tmp_path):
+    service, log, *_ = make_service(tmp_path, power_state=battery(64))
+    service.start()
+    try:
+        wait_for(lambda: "open" in log)
+        time.sleep(0.2)  # several power checks
+        status = service.status()
+        assert status["listening"] and not status["keeping_awake"]
+        assert (status["on_ac"], status["battery"], status["paused"]) == (False, 64, None)
+    finally:
+        service.stop()
+    assert "keep_awake:True" not in log
+
+
+def test_low_battery_pauses_and_resumes_only_at_35_percent(tmp_path):
+    service, log, _, _, power, *_ = make_service(tmp_path, power_state=battery(29))
+    service.start()
+    try:
+        wait_for(lambda: service.status()["paused"] == "battery low (29%)")
+        assert "open" not in log
+        power.current = battery(33)
+        wait_for(lambda: service.status()["paused"] == "battery low (33%)")
+        time.sleep(0.2)
+        assert "open" not in log and not service.status()["listening"]  # still paused at 33%
+        power.current = battery(35)
+        wait_for(lambda: service.status()["listening"])
+        assert service.status()["paused"] is None and not service.status()["keeping_awake"]
+    finally:
+        service.stop()
+
+
+def test_falling_below_the_minimum_while_listening_pauses(tmp_path):
+    service, log, _, _, power, *_ = make_service(tmp_path, power_state=battery(31))
+    service.start()
+    try:
+        wait_for(lambda: "open" in log)
+        power.current = battery(29)
+        wait_for(lambda: service.status()["paused"] == "battery low (29%)" and "close" in log)
+        assert not service.status()["listening"]
+    finally:
+        service.stop()
+
+
+def test_power_saver_pauses_and_resumes_when_turned_off(tmp_path):
+    service, log, _, _, power, *_ = make_service(tmp_path, power_state=battery(80, saver=True))
+    service.start()
+    try:
+        wait_for(lambda: service.status()["paused"] == "power saver")
+        assert "open" not in log
+        power.current = battery(80)
+        wait_for(lambda: service.status()["listening"])
+        power.current = battery(80, saver=True)
+        wait_for(lambda: service.status()["paused"] == "power saver" and "close" in log)
+    finally:
+        service.stop()
+
+
+def test_plugging_in_while_paused_resumes_at_once_and_keeps_the_pc_awake(tmp_path):
+    service, _log, _, _, power, *_ = make_service(tmp_path, power_state=battery(12))
+    service.start()
+    try:
+        wait_for(lambda: service.status()["paused"] == "battery low (12%)")
+        power.current = PowerState(on_ac=True, percent=12, saver=False)  # still at 12%, but plugged in
+        started = time.monotonic()
+        wait_for(lambda: service.status()["listening"] and service.status()["keeping_awake"])
+        assert time.monotonic() - started < 1.0  # the next 5-second poll (0.05 s here)
+    finally:
+        service.stop()
+
+
+def test_the_keep_awake_request_is_released_on_every_switch_to_battery(tmp_path):
+    service, log, _, _, power, *_ = make_service(tmp_path)
+    service.start()
+    try:
+        for _ in range(2):
+            wait_for(lambda: power.awake)
+            power.current = battery(70)
+            wait_for(lambda: not power.awake)
+            assert service.status()["listening"] and not service.status()["keeping_awake"]
+            power.current = MAINS
+    finally:
+        service.stop()
+    assert log.count("keep_awake:True") == 2 and log.count("keep_awake:False") == 2
+    assert log.count("open") == 1  # switching power never reopened the microphone
+
+
+def test_kestrel_wake_on_battery_off_forces_off_on_battery(tmp_path):
+    service, log, *_ = make_service(tmp_path, power_state=battery(90), on_battery=False)
+    service.start()
+    try:
+        wait_for(lambda: service.status()["paused"] == "on battery (KESTREL_WAKE_ON_BATTERY=off)")
     finally:
         service.stop()
     assert "open" not in log and "keep_awake:True" not in log
 
 
-def test_kestrel_wake_on_battery_listens_without_holding_the_pc_awake(tmp_path):
-    service, log, *_ = make_service(tmp_path, battery=True, on_battery=True)
+def test_after_standby_the_stream_is_reopened_and_power_read_again(tmp_path):
+    wall = [1_000_000.0]
+    service, log, _, _, power, *_ = make_service(tmp_path, power_state=battery(64), wall=lambda: wall[0])
     service.start()
     try:
         wait_for(lambda: "open" in log)
-        assert service.status()["listening"] and not service.status()["keeping_awake"]
+        reads = power.reads
+        wall[0] += 3600  # an hour of Modern Standby passes between two loop turns
+        wait_for(lambda: log.count("open") == 2)
+        assert log.index("close") < len(log) - 1 - log[::-1].index("open")  # closed, then opened again
+        assert power.reads > reads and service.reopened == 1 and service.status()["listening"]
     finally:
         service.stop()
-    assert "keep_awake:True" not in log
+
+
+def test_a_stream_that_stops_delivering_audio_is_reopened(tmp_path, monkeypatch):
+    monkeypatch.setattr(service_module, "STALL_S", 0.2)
+    service, log, *_ = make_service(tmp_path, chunks=[b"noise"])  # one chunk, then silence from the device
+    service.start()
+    try:
+        wait_for(lambda: log.count("open") >= 2)
+        assert service.reopened >= 1
+    finally:
+        service.stop()
 
 
 def test_keep_awake_is_held_only_while_listening_and_released_when_turned_off(tmp_path):
@@ -312,6 +490,8 @@ def test_keep_awake_is_held_only_while_listening_and_released_when_turned_off(tm
             "listening": False,
             "keeping_awake": False,
             "paused": "off",
+            "on_ac": True,
+            "battery": None,
         }
         service.set_enabled(True)
         wait_for(lambda: power.awake)

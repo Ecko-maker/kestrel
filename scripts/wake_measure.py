@@ -55,7 +55,7 @@ def main() -> int:
         record_wake=lambda at: print(f"  wake heard at {time.strftime('%H:%M:%S', time.localtime(at))}"),
     )
     service.emit = lambda e: print(f"  event: {e}") if e["type"] == "wake" else None
-    print(f"on battery: {power.on_battery()}; KESTREL_WAKE_ON_BATTERY: {settings.on_battery}")
+    print(f"power: {power.state()}; KESTREL_WAKE_ON_BATTERY: {settings.on_battery}, min {settings.min_battery}%")
     service.start()
     deadline = time.monotonic() + 30
     while not service.status()["listening"] and time.monotonic() < deadline:
