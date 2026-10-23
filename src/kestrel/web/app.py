@@ -259,6 +259,8 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
             while True:
                 message = await ws.receive_json()
                 kind = message.get("type")
+                if kind in ("user_message", "wake_dismiss") and wake is not None:
+                    wake.end_attention()  # typing or sending ends the wake's Listening window
                 if kind == "user_message" and agent is not None:
                     text = str(message.get("text", "")).strip()[:MAX_MESSAGE_CHARS]
                     if not text:

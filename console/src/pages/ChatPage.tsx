@@ -118,6 +118,7 @@ function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const update = (value: string) => {
     setText(value);
+    if (value) chat.dismissWake(); // typing ends the wake's Listening mode
     const el = ref.current; // grow with the text, up to 200px
     if (!el) return;
     el.style.height = "auto";
@@ -173,7 +174,11 @@ export function ChatPage({
   look?: Look;
 }) {
   const hudOn = look === "hud";
-  const hud = useHud(chat.turns, chat.state, useReducedMotion(), chat.wake);
+  const hud = useHud(chat.turns, chat.state, useReducedMotion(), {
+    wake: chat.wake,
+    micOn: !!chat.wakeStatus.listening,
+    dismissed: chat.wakeDismissed,
+  });
   const empty = chat.turns.length === 0;
   const bottom = useRef<HTMLDivElement>(null);
   const last = chat.turns[chat.turns.length - 1];

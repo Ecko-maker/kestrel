@@ -45,6 +45,11 @@ const pairs = [
   ["accent-300 on card", v("color-accent-300"), card],
   ["accent-200 on page", v("color-accent-200"), pageBright],
   ["wordmark on page", v("hud-text"), pageBright],
+  // the modes' labels (Standby, Listening…, Answering…)
+  ...["hud-standby", "hud-listening", "hud-answering"].flatMap((name) => [
+    [`${name} label on page`, v(name), pageBright],
+    [`${name} label on card`, v(name), card],
+  ]),
   ["amber phase text on page", TW["amber-300"], pageBright],
   ["red phase text on card", TW["red-300"], card],
   ["emerald log text on card", TW["emerald-300"], card],

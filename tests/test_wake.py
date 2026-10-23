@@ -167,15 +167,19 @@ def make_service(
     name=None,
     clock=time.monotonic,
     wall=time.time,
+    listen_seconds=8.0,
+    source=None,
 ):
     log: list = []
     tracer = Tracer(tmp_path / "traces.db", record_content=True, prices={})
-    settings = WakeSettings(enabled=enabled, on_battery=on_battery, user_name=name, model_dir=tmp_path)
+    settings = WakeSettings(
+        enabled=enabled, on_battery=on_battery, user_name=name, model_dir=tmp_path, listen_seconds=listen_seconds
+    )
     detector = FakeDetector()
     sources: list[FakeSource] = []
 
     def make_source():
-        sources.append(FakeSource(log, chunks))
+        sources.append(source(log) if source else FakeSource(log, chunks))
         return sources[-1]
 
     speaker = FakeSpeaker()
@@ -796,3 +800,93 @@ def test_listening_thread_is_the_only_thread_left_running_while_on(tmp_path):
     finally:
         service.stop()
     assert not any(t.name == "kestrel-wake" for t in threading.enumerate())
+
+
+# --- Listening mode: the live mic level --------------------------------------------------------
+
+
+class SpeakingSource(FakeSource):
+    """A microphone that never stops: a loud 0.1 s chunk every 10 ms of test time."""
+
+    LOUD = b"\x00\x40" * 1600  # 16-bit samples at +16384: about -6 dBFS
+
+    def read(self, timeout: float):
+        time.sleep(0.01)
+        return self.LOUD
+
+
+def levels(events):
+    return [e for e in events if e["type"] == "wake_level"]
+
+
+def test_loudness_is_0_for_silence_and_near_1_for_full_scale():
+    from kestrel.wake.service import loudness, smooth
+
+    assert loudness(b"\x00\x00" * 1600) == 0.0
+    assert loudness(b"") == 0.0
+    assert 0.99 <= loudness(b"\xff\x7f" * 1600) <= 1.0  # +32767
+    assert 0.85 <= loudness(SpeakingSource.LOUD) <= 0.95  # about -6 dBFS
+    assert 0.0 < smooth(0.0, 1.0) < 1.0 and smooth(1.0, 0.0) > smooth(0.0, 1.0) - 1  # it moves, never jumps
+
+
+def test_level_events_carry_one_number_and_only_while_listening(tmp_path):
+    service, _, events, *_ = make_service(tmp_path, source=SpeakingSource, listen_seconds=0.4)
+    service.start()
+    try:
+        time.sleep(0.3)
+        assert levels(events) == []  # Standby: the mic is on, but no level leaves the service
+        service.on_wake()
+        wait_for(lambda: len(levels(events)) >= 5)
+        for event in levels(events):
+            assert set(event) == {"type", "level"}  # one number, nothing else
+            assert isinstance(event["level"], float) and 0.0 <= event["level"] <= 1.0
+        wait_for(lambda: not service.attending())  # the 0.4 s window ran out
+        time.sleep(0.05)
+        before = len(levels(events))
+        time.sleep(0.3)
+        assert len(levels(events)) == before  # back in Standby: no more level events
+    finally:
+        service.stop()
+    wake = next(e for e in events if e["type"] == "wake")
+    assert wake["listen_seconds"] == 0.4
+
+
+def test_level_events_come_about_ten_times_a_second(tmp_path):
+    from kestrel.wake.audio import CHUNK_FRAMES
+    from kestrel.wake.detector import SAMPLE_RATE
+
+    assert CHUNK_FRAMES / SAMPLE_RATE == 0.1  # one level per 0.1 s chunk of real audio
+
+
+def test_typing_or_sending_ends_the_listening_window(tmp_path):
+    service, _, _, tracer, *_ = make_service(tmp_path, source=SpeakingSource)
+    config = WebConfig(token=TOKEN, static_dir=None, extra_hosts=("testserver",))
+    app = create_app(lambda e, a: None, tracer, config, wake=service)  # type: ignore[arg-type,return-value]
+    with TestClient(app, base_url=BASE) as client, client.websocket_connect(f"/ws?token={TOKEN}") as ws:
+        for message in ({"type": "wake_dismiss"}, {"type": "user_message", "text": "hi"}):
+            service._last_wake = None
+            service.on_wake()
+            assert service.attending()
+            ws.send_json(message)
+            wait_for(lambda: not service.attending())
+
+
+def test_kestrel_wake_listen_seconds(monkeypatch):
+    monkeypatch.setenv("KESTREL_WAKE_LISTEN_SECONDS", "12")
+    assert WakeSettings.from_env().listen_seconds == 12.0
+    monkeypatch.setenv("KESTREL_WAKE_LISTEN_SECONDS", "999")
+    assert WakeSettings.from_env().listen_seconds == 60.0
+    monkeypatch.delenv("KESTREL_WAKE_LISTEN_SECONDS")
+    assert WakeSettings.from_env().listen_seconds == 8.0
+
+
+def test_level_code_never_writes_or_logs_audio():
+    """The level path is two pure functions on bytes: no file, print or logging call anywhere in it."""
+    import inspect
+
+    from kestrel.wake import service as module
+
+    for fn in (module.loudness, module.smooth, module.WakeService._send_level):
+        body = inspect.getsource(fn)
+        for banned in ("open(", "print(", "logging", "write", "record_wake"):
+            assert banned not in body, f"{fn.__name__} contains {banned}"

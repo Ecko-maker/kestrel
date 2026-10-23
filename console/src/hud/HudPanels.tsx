@@ -9,10 +9,13 @@ import { fmtMs, fmtUsd } from "../format";
 import { Reactor } from "./Reactor";
 import { PHASE_LABEL, type HudState, type LogKind, type Phase } from "./useHud";
 
+// Label colours; the mode's name is always written out too (colour is never the only cue).
 const PHASE_TEXT: Record<Phase, string> = {
   idle: "text-accent-300",
+  standby: "text-[color:var(--hud-standby)]",
+  attending: "text-[color:var(--hud-listening)]",
   thinking: "text-accent-300",
-  streaming: "text-accent-300",
+  streaming: "text-[color:var(--hud-answering)]",
   tool: "text-accent-300",
   done: "text-accent-300",
   approval: "text-amber-300",
@@ -134,7 +137,7 @@ export function EventLog({ hud, className }: { hud: HudState; className?: string
 export function HudHero({ hud }: { hud: HudState }) {
   return (
     <div className="flex flex-col items-center text-center">
-      <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} className="w-[min(340px,56vw)] sm:w-[min(340px,78vw)]" />
+      <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} pulse={hud.pulse} className="w-[min(340px,56vw)] sm:w-[min(340px,78vw)]" />
       <div className="hud-wordmark mt-2 pl-[0.32em] text-4xl sm:text-5xl">KESTREL</div>
       <p className="hud-font mt-3 text-[11px] uppercase text-stone-300">Hunts on its own · Comes back when called</p>
       <PhaseReadout hud={hud} className="mt-3" />
@@ -158,7 +161,7 @@ export function HudSide({
     <aside className="space-y-3">
       {showReactor && (
         <div className="hud-frame flex flex-col items-center p-3">
-          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} burst={hud.burst} className="w-52" />
+          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} burst={hud.burst} pulse={hud.pulse} className="w-52" />
           <PhaseReadout hud={hud} className="mt-1 text-center" />
         </div>
       )}
@@ -175,7 +178,7 @@ export function HudStrip({ hud, showReactor, wake }: { hud: HudState; showReacto
     <div className="border-b border-stone-800 bg-stone-950/85 px-4 py-2">
       <div className="flex items-center gap-3">
         {showReactor && (
-          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} burst={hud.burst} size="compact" className="size-11 shrink-0" />
+          <Reactor phase={hud.phase} segments={hud.segments} activeTool={hud.activeTool} burst={hud.burst} pulse={hud.pulse} size="compact" className="size-11 shrink-0" />
         )}
         <div className="min-w-0 flex-1">
           <PhaseReadout hud={hud} className="truncate" />

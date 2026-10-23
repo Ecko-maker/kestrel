@@ -48,11 +48,37 @@ Install the console as an Edge app window and let it start with Windows:
 | `KESTREL_WAKE_MIN_BATTERY` | 30 | On battery, pause below this charge; resume at this + 5 (35%) or when plugged in. |
 | `KESTREL_WAKE_ON_BATTERY` | on | An override: `off` never listens on battery ("Paused: on battery (KESTREL_WAKE_ON_BATTERY=off)"). |
 | `KESTREL_USER_NAME` | none | The name in the greeting (printable characters, at most 40). |
+| `KESTREL_WAKE_LISTEN_SECONDS` | 8 | How long the HUD stays in Listening after a wake, unless you type or send first (1-60). |
 | `KESTREL_WAKE_THRESHOLD` | 0.5 | Minimum Vosk confidence for "kestrel". Provisional: choose it from your measurement below. |
 | `KESTREL_WAKE_MODEL` | `%LOCALAPPDATA%\kestrel\models\vosk-model-small-en-us-0.15` | The model folder. |
 
 The console's switch (`POST /api/wake`) turns listening off and on while the server runs. It needs the
 same login as every other API route, and requests from another site's page are refused.
+
+## The HUD's modes
+
+Each mode has its own falcon pose, ring motion, colour and text label, so colour is never the only cue.
+`console/src/hud/useHud.ts` (`hudPhase`) decides; agent work always wins, so an approval card is never
+hidden by a wake. Screenshots: `docs/screenshots/theme/hud-mode-*.png`.
+
+| Mode | When | Falcon | Rings | Colour | Label |
+|---|---|---|---|---|---|
+| Standby | wake word on, mic open, nothing happening | perched, eyes softly glowing | one slow, faint ripple | dim teal | "Standby" |
+| (fly-in) | the moment "Kestrel" is heard | flies in from outside the rings, wings open | a soft ring | bright | "Hello" + the greeting |
+| Listening | after a wake, until you type, send, or `KESTREL_WAKE_LISTEN_SECONDS` pass | wings half raised, slow beats | a ring that swells with the live mic level | green | "Listening…" |
+| Thinking | waiting for the model | flapping, lifted | rotating segments | cyan | "Thinking…" |
+| Answering | the answer's text arriving | wings fully open, a steady glide | a pulse per ~40 characters, at most every 0.45 s | warm white-gold | "Answering…" |
+| Done | 1.4 s after an answer | swoops back, wings open | the answer burst | cyan | "Done" |
+| Ready | the wake word off, nothing happening | perched | slow pulse | cyan | "Ready" |
+
+Tool, approval and error are unchanged. Under reduced motion nothing moves (no pose change, ripple,
+level ring motion or pulses); the colour and the label still change.
+
+**The mic level** is the only thing about the audio that ever leaves the wake service: one number,
+0 to 1 (the RMS of each 0.1 s chunk, in dBFS mapped from -60..0, smoothed), sent as
+`{"type": "wake_level", "level": 0.42}` about 10 times a second, and only during Listening. Typing in
+the composer (a `wake_dismiss` message) or sending a message ends Listening on the server too, so the
+level stops at once.
 
 ## What it can and can't do on this PC (Modern Standby)
 
@@ -102,6 +128,7 @@ mouse move of zero pixels (`SendInput`). Never a click, a key press or a real mo
 | You can see when the microphone is open | "Listening" is sent before the stream opens and after it closes | `test_wake_flow_end_to_end` |
 | Audio is never saved | Chunks go from PortAudio's callback to a bounded in-memory queue to the detector, then are dropped | `test_audio_is_never_written_to_disk` |
 | Audio is never sent | The wake modules import no network library | `test_wake_code_imports_no_network_agent_model_or_tool_module` |
+| Only a loudness number reaches the console, only while Listening | `wake_level` carries `type` and `level` and nothing else; none in Standby or after Listening ends | `test_level_events_carry_one_number_and_only_while_listening`, `test_typing_or_sending_ends_the_listening_window` |
 | A wake records only its time | One span named `wake`, attributes `{"kestrel.wake": "detected"}` | `test_a_wake_records_only_its_time` |
 | Wake records never become data | No row in `traces`, so not in Traces, Stats, `kestrel export` or `kestrel distill build` | `test_wake_records_are_hidden_from_traces_stats_and_export`, `test_wake_records_never_reach_the_table_the_distillation_dataset_reads` |
 | No model call, no tool, no approval | The service holds no agent, model or tool | `test_a_wake_makes_no_model_call_runs_no_tool_and_leaves_approvals_to_clicks` |

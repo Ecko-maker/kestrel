@@ -16,6 +16,8 @@ is dropped within seconds of switching to battery. After standby (a jump in wall
 two loop turns) or when the stream stops delivering audio, the microphone is closed and reopened.
 """
 
+import array
+import math
 import os
 import sys
 import threading
@@ -37,6 +39,30 @@ STANDBY_GAP_S = 10.0  # a wall-clock jump this long between two loop turns means
 STALL_S = 5.0  # an open stream that delivers no audio this long is reopened
 RETRY_S = 10.0  # after a microphone or model error
 DEFAULT_MIN_BATTERY = 30
+DEFAULT_LISTEN_S = 8.0  # KESTREL_WAKE_LISTEN_SECONDS: the Listening window after a wake
+LEVEL_FLOOR_DB = -60.0  # loudness 0 at -60 dBFS, 1 at 0 dBFS
+
+
+def loudness(pcm: bytes) -> float:
+    """One chunk's loudness as 0-1: RMS of the 16-bit samples, in dBFS, mapped from -60..0 dB.
+    Computed in memory; only this number ever leaves the wake service."""
+    samples = array.array("h")
+    samples.frombytes(pcm[: len(pcm) // 2 * 2])
+    if not samples:
+        return 0.0
+    rms = math.sqrt(sum(x * x for x in samples) / len(samples))
+    if rms < 1:
+        return 0.0
+    db = 20 * math.log10(rms / 32768)
+    return max(0.0, min(1.0, (db - LEVEL_FLOOR_DB) / -LEVEL_FLOOR_DB))
+
+
+def smooth(previous: float, current: float) -> float:
+    """Fast rise, slower fall, so the ring follows speech without flicker."""
+    weight = 0.6 if current > previous else 0.25
+    return previous + weight * (current - previous)
+
+
 DEFAULT_THRESHOLD = 0.5  # provisional until measured with scripts/wake_eval.py (docs/voice-wake.md)
 MODEL_NAME = "vosk-model-small-en-us-0.15"
 
@@ -56,6 +82,7 @@ class WakeSettings:
     enabled: bool = False  # KESTREL_WAKE: the master switch; off by default
     on_battery: bool = True  # KESTREL_WAKE_ON_BATTERY=off: never listen on battery (an override)
     min_battery: int = DEFAULT_MIN_BATTERY  # KESTREL_WAKE_MIN_BATTERY: pause below this on battery
+    listen_seconds: float = DEFAULT_LISTEN_S  # KESTREL_WAKE_LISTEN_SECONDS
     user_name: str | None = None  # KESTREL_USER_NAME
     threshold: float = DEFAULT_THRESHOLD  # KESTREL_WAKE_THRESHOLD
     model_dir: Path = Path(MODEL_NAME)  # KESTREL_WAKE_MODEL
@@ -69,6 +96,7 @@ class WakeSettings:
             enabled=_flag("KESTREL_WAKE"),
             on_battery=_flag("KESTREL_WAKE_ON_BATTERY", "on"),
             min_battery=max(0, min(100, int(os.getenv("KESTREL_WAKE_MIN_BATTERY", DEFAULT_MIN_BATTERY)))),
+            listen_seconds=max(1.0, min(60.0, float(os.getenv("KESTREL_WAKE_LISTEN_SECONDS", DEFAULT_LISTEN_S)))),
             user_name=clean_name(os.getenv("KESTREL_USER_NAME")),
             threshold=float(os.getenv("KESTREL_WAKE_THRESHOLD", DEFAULT_THRESHOLD)),
             model_dir=Path(model) if model else default_model_dir(),
@@ -109,6 +137,8 @@ class WakeService:
         self._battery: int | None = None
         self._on_ac = True
         self._low = False  # the low-battery latch (power.decide)
+        self._attend_until: float | None = None  # end of the Listening window after a wake (clock)
+        self._level = 0.0
         self._last_wake: float | None = None
         self._changed = threading.Event()
         self._stopping = threading.Event()
@@ -219,6 +249,7 @@ class WakeService:
                     heard = self.clock()
                     if detector.feed(chunk) is not None:
                         self.on_wake()
+                    self._send_level(chunk)
                 elif self.clock() - heard > STALL_S:  # the device went away or stopped delivering
                     self.reopened += 1
                     break
@@ -239,6 +270,24 @@ class WakeService:
         if self._listening or self._keeping_awake:
             self._set(listening=False, keeping_awake=False)
 
+    # --- the Listening window ---------------------------------------------------------------
+
+    def attending(self) -> bool:
+        until = self._attend_until
+        return until is not None and self.clock() < until
+
+    def end_attention(self) -> None:
+        """The console reported typing, or a message was sent: stop sending levels."""
+        self._attend_until = None
+
+    def _send_level(self, chunk: bytes) -> None:
+        """While Listening only: one number, 0-1, for the console's level ring. Never the audio."""
+        if not self.attending():
+            self._attend_until = None
+            return
+        self._level = smooth(self._level, loudness(chunk))
+        self.emit({"type": "wake_level", "level": round(self._level, 3)})
+
     # --- a wake -----------------------------------------------------------------------
 
     def on_wake(self) -> bool:
@@ -251,6 +300,8 @@ class WakeService:
         self.record_wake(at)
         self.power.wake_display()
         self.power.bring_to_front(self.settings.window_title)
-        self.emit({"type": "wake", "at": at, "greeting": self.greeting})
+        self._level = 0.0
+        self._attend_until = now + self.settings.listen_seconds
+        self.emit({"type": "wake", "at": at, "greeting": self.greeting, "listen_seconds": self.settings.listen_seconds})
         self.speaker.say(self.greeting)
         return True
