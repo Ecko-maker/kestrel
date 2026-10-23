@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppWindow, ChartColumn, ChartGantt, FlaskConical, MessagesSquare, Monitor, Moon, Radar, Sun } from "lucide-react";
-import { api, AuthError, type SessionInfo, type Stats } from "./api";
+import { api, AuthError, getWake, setWake, type SessionInfo, type Stats } from "./api";
 import { cx } from "./components/ui";
+import { WakeCaption, WakeChip } from "./components/WakeChip";
 import { BootSequence } from "./hud/BootSequence";
 import { FalconMark } from "./hud/FalconMark";
 import { storageGet, storageSet, useLook, type Look } from "./hud/useLook";
@@ -125,6 +126,14 @@ export function App() {
     api<Stats>("/api/stats").then(setStats).catch((e) => e instanceof AuthError && setAuthError(true));
   }, []);
   const chat = useChat(refreshStats);
+  const { setWakeStatus } = chat;
+  useEffect(() => {
+    getWake().then(setWakeStatus).catch(() => undefined); // later changes arrive over the socket
+  }, [setWakeStatus]);
+  const toggleWake = useCallback(
+    (enabled: boolean) => void setWake(enabled).then(setWakeStatus).catch(() => undefined),
+    [setWakeStatus],
+  );
 
   useEffect(() => {
     api<SessionInfo>("/api/session").then(setSession).catch((e) => e instanceof AuthError && setAuthError(true));
@@ -189,6 +198,7 @@ export function App() {
             {chat.state === "open" ? "Connected" : chat.state === "connecting" ? "Connecting" : "Disconnected"}
           </span>
           <div className="flex items-center gap-2 md:flex-col md:items-stretch">
+            <WakeChip status={chat.wakeStatus} onToggle={toggleWake} />
             <LookSwitch look={look} setLook={setLook} />
             {look === "classic" && <ThemeSwitch theme={theme} setTheme={setTheme} />}
           </div>
@@ -205,6 +215,7 @@ export function App() {
         )}
       </main>
       {look === "hud" && <BootSequence session={session} connection={chat.state} />}
+      {look === "classic" && <WakeCaption wake={chat.wake} />}
     </div>
   );
 }

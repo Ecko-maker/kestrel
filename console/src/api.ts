@@ -118,5 +118,19 @@ export async function bootstrapAuth(): Promise<void> {
   window.history.replaceState(null, "", url.pathname + url.search + url.hash);
 }
 
+// The wake word (docs/voice-wake.md). available = KESTREL_WAKE=on on the server.
+export interface WakeStatus {
+  type?: "wake_status";
+  available: boolean;
+  enabled?: boolean;
+  listening?: boolean; // the microphone is open right now
+  keeping_awake?: boolean; // a keep-awake request is held (mains power only)
+  paused?: string | null; // "off", "on battery", or an error
+}
+
+export const getWake = () => api<WakeStatus>("/api/wake");
+export const setWake = (enabled: boolean) =>
+  api<WakeStatus>("/api/wake", { method: "POST", body: JSON.stringify({ enabled }) });
+
 export const rateTrace = (traceId: string, rating: "good" | "bad", note = "") =>
   api<{ ok: boolean }>(`/api/traces/${traceId}/rating`, { method: "POST", body: JSON.stringify({ rating, note }) });

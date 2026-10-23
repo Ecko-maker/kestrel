@@ -173,7 +173,7 @@ export function ChatPage({
   look?: Look;
 }) {
   const hudOn = look === "hud";
-  const hud = useHud(chat.turns, chat.state, useReducedMotion());
+  const hud = useHud(chat.turns, chat.state, useReducedMotion(), chat.wake);
   const empty = chat.turns.length === 0;
   const bottom = useRef<HTMLDivElement>(null);
   const last = chat.turns[chat.turns.length - 1];
@@ -195,7 +195,7 @@ export function ChatPage({
         <div className="flex min-w-0 flex-1 flex-col">
           {hudOn && !empty && (
             <div className="lg:hidden">
-              <HudStrip hud={hud} showReactor />
+              <HudStrip hud={hud} showReactor wake={chat.wakeStatus} />
             </div>
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -274,7 +274,7 @@ export function ChatPage({
 
         {hudOn ? (
           <div className="hidden w-80 shrink-0 overflow-y-auto border-l border-stone-800/70 p-4 lg:block">
-            <HudSide hud={hud} session={session} showReactor={!empty} />
+            <HudSide hud={hud} session={session} showReactor={!empty} wake={chat.wakeStatus} />
           </div>
         ) : (
           <div className="hidden w-72 shrink-0 overflow-y-auto border-l border-stone-200/70 p-4 dark:border-stone-800/70 xl:block">

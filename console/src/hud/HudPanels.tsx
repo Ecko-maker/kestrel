@@ -2,7 +2,8 @@
 // and the compact strip (narrow screens). All values come from useHud.
 
 import { useEffect, useRef, type ReactNode } from "react";
-import type { SessionInfo } from "../api";
+import type { SessionInfo, WakeStatus } from "../api";
+import { wakeLabel } from "../components/WakeChip";
 import { cx } from "../components/ui";
 import { fmtMs, fmtUsd } from "../format";
 import { Reactor } from "./Reactor";
@@ -17,6 +18,7 @@ const PHASE_TEXT: Record<Phase, string> = {
   approval: "text-amber-300",
   error: "text-red-300",
   offline: "text-stone-400",
+  waking: "text-accent-100",
 };
 
 export function HudFrame({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
@@ -34,6 +36,7 @@ export function PhaseReadout({ hud, className }: { hud: HudState; className?: st
     <div className={cx("hud-font text-[11px] font-semibold uppercase", PHASE_TEXT[hud.phase], className)} role="status" aria-live="polite">
       {PHASE_LABEL[hud.phase]}
       {hud.activeTool && <span className="normal-case tracking-normal text-stone-100"> · {hud.activeTool}</span>}
+      {hud.greeting && <span className="block font-sans text-[13px] font-normal normal-case tracking-normal text-stone-100">{hud.greeting}</span>}
     </div>
   );
 }
@@ -50,7 +53,7 @@ function Row({ label, value, hint }: { label: string; value: ReactNode; hint?: R
   );
 }
 
-export function Telemetry({ hud, session }: { hud: HudState; session: SessionInfo | null }) {
+export function Telemetry({ hud, session, wake }: { hud: HudState; session: SessionInfo | null; wake?: WakeStatus }) {
   const t = hud.telemetry;
   const configured = session?.models[0];
   const provider = t.provider ?? configured?.provider;
@@ -71,6 +74,13 @@ export function Telemetry({ hud, session }: { hud: HudState; session: SessionInf
         <Row label="Last answer" value={fmtMs(t.lastTurnMs)} />
         <Row label="Tool calls" value={t.toolCalls} />
         <Row label="Escalated cards" value={t.escalated} />
+        {wake?.available && (
+          <Row
+            label="Microphone"
+            value={<span className={wake.listening ? "text-red-300" : undefined}>{wakeLabel(wake)}</span>}
+            hint={wake.keeping_awake ? "keeping PC awake" : undefined}
+          />
+        )}
       </dl>
       <p className="mt-2 text-[11px] leading-4 text-stone-400">
         This conversation. Escalated cards = approvals with a tiers-v2 notice; the session's taint state is not sent to the
@@ -133,7 +143,17 @@ export function HudHero({ hud }: { hud: HudState }) {
 }
 
 // Laptop and wider: rings (once the hero is gone), telemetry, log.
-export function HudSide({ hud, session, showReactor }: { hud: HudState; session: SessionInfo | null; showReactor: boolean }) {
+export function HudSide({
+  hud,
+  session,
+  showReactor,
+  wake,
+}: {
+  hud: HudState;
+  session: SessionInfo | null;
+  showReactor: boolean;
+  wake?: WakeStatus;
+}) {
   return (
     <aside className="space-y-3">
       {showReactor && (
@@ -142,14 +162,14 @@ export function HudSide({ hud, session, showReactor }: { hud: HudState; session:
           <PhaseReadout hud={hud} className="mt-1 text-center" />
         </div>
       )}
-      <Telemetry hud={hud} session={session} />
+      <Telemetry hud={hud} session={session} wake={wake} />
       <EventLog hud={hud} />
     </aside>
   );
 }
 
 // Narrow screens: a small ring, the phase, four numbers, and the log behind a disclosure.
-export function HudStrip({ hud, showReactor }: { hud: HudState; showReactor: boolean }) {
+export function HudStrip({ hud, showReactor, wake }: { hud: HudState; showReactor: boolean; wake?: WakeStatus }) {
   const t = hud.telemetry;
   return (
     <div className="border-b border-stone-800 bg-stone-950/85 px-4 py-2">
@@ -164,6 +184,7 @@ export function HudStrip({ hud, showReactor }: { hud: HudState; showReactor: boo
             <span>{t.tokens.toLocaleString()} tok</span>
             <span>{t.costUsd == null ? "price n/a" : fmtUsd(t.costUsd)}</span>
             <span>{fmtMs(t.lastCallMs)}</span>
+            {wake?.listening && <span className="text-red-300">mic on{wake.keeping_awake ? " · keeping PC awake" : ""}</span>}
           </div>
         </div>
       </div>

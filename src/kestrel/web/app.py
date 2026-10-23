@@ -5,13 +5,15 @@
     GET  /api/traces/{id}             one trace with its spans
     GET  /api/stats                   totals, percentiles and per-request points for charts
     POST /api/traces/{id}/rating      {"rating": "good"|"bad", "note": "..."}
+    GET  /api/wake                    the wake word's status (docs/voice-wake.md)
+    POST /api/wake                    {"enabled": true|false}: the console's listening toggle
     WS   /ws                          chat: the browser sends messages and approval answers,
                                       the server streams the agent's events back
 
 Security: the server only listens on 127.0.0.1. Every request needs the access token
 printed at startup, either once in the URL (?token=..., exchanged for an HttpOnly cookie)
 or as "Authorization: Bearer ...". The Host header must be 127.0.0.1/localhost (blocks DNS
-rebinding), WebSocket origins are checked, and CORS only allows the Vite dev server.
+rebinding), API and WebSocket origins are checked, and CORS only allows the Vite dev server.
 Every response carries a Content-Security-Policy that lets images load only from the console
 itself and KESTREL_IMAGE_ALLOWLIST hosts (tiers v2, defense d): even if the markdown renderer had a
 bug, an image URL carrying private data couldn't be fetched from another host.
@@ -19,7 +21,8 @@ bug, an image URL carrying private data couldn't be fetched from another host.
 
 import asyncio
 import secrets
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlencode
@@ -32,6 +35,7 @@ from pydantic import BaseModel
 from kestrel import trace_report
 from kestrel.agent import Agent, EventCallback
 from kestrel.tracing import Tracer
+from kestrel.wake import WakeService
 from kestrel.web.approver import APPROVAL_TIMEOUT, WebApprover
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -80,6 +84,10 @@ class Rating(BaseModel):
     note: str = ""
 
 
+class WakeToggle(BaseModel):
+    enabled: bool
+
+
 UNAUTHORIZED_PAGE = """<!doctype html><meta charset="utf-8"><title>Kestrel</title>
 <body style="font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#334">
 <h1 style="font-size:1.25rem">Kestrel console</h1>
@@ -87,8 +95,26 @@ UNAUTHORIZED_PAGE = """<!doctype html><meta charset="utf-8"><title>Kestrel</titl
 It contains a one-time access token, so only you can use this console.</p></body>"""
 
 
-def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> FastAPI:
-    app = FastAPI(title="Kestrel", docs_url=None, redoc_url=None, openapi_url=None)
+def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake: WakeService | None = None) -> FastAPI:
+    # Every open console's event sender; the wake service broadcasts to all of them.
+    clients: set[Callable[[dict], None]] = set()
+
+    def broadcast(event: dict) -> None:
+        for send in list(clients):
+            send(event)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if wake is not None:
+            wake.emit = broadcast
+            wake.start()
+        try:
+            yield
+        finally:
+            if wake is not None:
+                wake.stop()  # closes the microphone and clears the keep-awake request
+
+    app = FastAPI(title="Kestrel", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.config = config
 
     def token_ok(candidate: str | None) -> bool:
@@ -113,6 +139,9 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
             return JSONResponse({"detail": "invalid host"}, status_code=400)
         if request.method == "OPTIONS" or request.url.path == "/healthz":
             return await call_next(request)  # CORS preflight and health checks carry no credentials
+        origin = request.headers.get("origin")
+        if request.url.path.startswith("/api/") and origin is not None and origin not in config.allowed_origins:
+            return JSONResponse({"detail": "invalid origin"}, status_code=403)  # another site's page
         if not authorized(request.headers, request.cookies, request.query_params):
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "missing or invalid token"}, status_code=401)
@@ -177,6 +206,16 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
             raise HTTPException(404, str(e)) from None
         return {"ok": True}
 
+    @app.get("/api/wake")
+    def wake_status() -> dict:
+        return wake.status() if wake is not None else {"type": "wake_status", "available": False}
+
+    @app.post("/api/wake")
+    def wake_toggle(body: WakeToggle) -> dict:
+        if wake is None:
+            raise HTTPException(409, "the wake word is off; set KESTREL_WAKE=on and restart")
+        return wake.set_enabled(body.enabled)
+
     # --- Chat over WebSocket ------------------------------------------------------
 
     @app.websocket("/ws")
@@ -197,6 +236,9 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
         def emit(event: dict) -> None:  # called from the agent's worker threads
             loop.call_soon_threadsafe(outbox.put_nowait, event)
 
+        clients.add(emit)
+        if wake is not None:
+            emit(wake.status())  # so the console shows "Listening" from the start if it is
         approver = WebApprover(timeout=config.approval_timeout)
         try:
             agent = make_agent(emit, approver)
@@ -230,6 +272,7 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
         except WebSocketDisconnect, RuntimeError:
             pass
         finally:
+            clients.discard(emit)
             approver.close()  # anything waiting for an answer is rejected; the agent finishes on its own
             sender.cancel()
 
