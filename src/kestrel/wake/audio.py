@@ -8,8 +8,8 @@ from typing import Any, Protocol
 
 from kestrel.wake.detector import SAMPLE_RATE
 
-CHUNK_FRAMES = 4_000  # 0.25 s at 16 kHz
-MAX_QUEUED = 40  # ~10 s; older audio is dropped rather than piling up
+CHUNK_FRAMES = 1_600  # 0.1 s at 16 kHz: also the pace of the Listening level (10 a second)
+MAX_QUEUED = 100  # ~10 s; older audio is dropped rather than piling up
 
 
 class AudioSource(Protocol):

@@ -235,10 +235,29 @@ export type ConnectionState = "connecting" | "open" | "closed";
 // The wake word was heard (server event `wake`). Kept apart from the turns: a wake is never a chat
 // message, never starts a model call and never answers an approval.
 export interface Wake {
-  key: string; // changes once per wake: drives the fly-in (useHud)
-  at: number;
+  key: string; // changes once per wake: drives the fly-in and Listening mode (useHud)
+  at: number; // server time
+  receivedAt: number; // this browser's time, compared with when a message was sent
   greeting: string;
+  listenSeconds: number; // the Listening window (KESTREL_WAKE_LISTEN_SECONDS)
 }
+
+// The live mic level (0-1) during Listening, from `wake_level` events (about 10 a second). A tiny
+// store outside React state, so only the rings that draw it re-render, not the whole chat.
+type Listener = () => void;
+const levelListeners = new Set<Listener>();
+let levelValue = 0;
+export const micLevel = {
+  get: () => levelValue,
+  set(value: number) {
+    levelValue = value;
+    levelListeners.forEach((listener) => listener());
+  },
+  subscribe(listener: Listener) {
+    levelListeners.add(listener);
+    return () => void levelListeners.delete(listener);
+  },
+};
 
 export function useChat(onTurnDone?: () => void) {
   const [turns, dispatch] = useReducer(reduce, []);
@@ -246,6 +265,7 @@ export function useChat(onTurnDone?: () => void) {
   const [notice, setNotice] = useState<string | null>(null);
   const [wake, setWakeEvent] = useState<Wake | null>(null);
   const [wakeStatus, setWakeStatus] = useState<WakeStatus>({ available: false });
+  const [dismissedWake, setDismissedWake] = useState<string | null>(null); // a wake ended by typing
   const wakes = useRef(0);
   const socket = useRef<WebSocket | null>(null);
   const doneRef = useRef(onTurnDone);
@@ -267,9 +287,17 @@ export function useChat(onTurnDone?: () => void) {
       const event = JSON.parse(msg.data) as ServerEvent;
       if (event.type === "ready") return setNotice(null);
       if (event.type === "wake_status") return setWakeStatus(event as unknown as WakeStatus);
+      if (event.type === "wake_level") return micLevel.set(event.level as number);
       if (event.type === "wake") {
         wakes.current += 1;
-        return setWakeEvent({ key: `wake-${wakes.current}`, at: event.at as number, greeting: event.greeting as string });
+        micLevel.set(0);
+        return setWakeEvent({
+          key: `wake-${wakes.current}`,
+          at: event.at as number,
+          receivedAt: Date.now(),
+          greeting: event.greeting as string,
+          listenSeconds: (event.listen_seconds as number) ?? 8,
+        });
       }
       if (event.type === "error" && !event.trace_id) return setNotice(event.message as string);
       dispatch({ kind: "event", event });
@@ -294,6 +322,13 @@ export function useChat(onTurnDone?: () => void) {
     socket.current.send(JSON.stringify({ type: "user_message", text }));
   }, []);
 
+  // Typing ends the wake's Listening mode, here and on the server (which stops sending levels).
+  const dismissWake = useCallback(() => {
+    if (!wake || dismissedWake === wake.key) return;
+    setDismissedWake(wake.key);
+    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "wake_dismiss" }));
+  }, [wake, dismissedWake]);
+
   const answerApproval = useCallback(
     (approvalId: string, response: { decision: "approve" | "edit" | "reject"; args?: unknown; reason?: string; for_session?: boolean }) => {
       socket.current?.send(JSON.stringify({ type: "approval_response", approval_id: approvalId, ...response }));
@@ -303,5 +338,18 @@ export function useChat(onTurnDone?: () => void) {
   );
 
   const running = turns.length > 0 && !turns[turns.length - 1].done;
-  return { turns, state, notice, running, send, answerApproval, reconnect: connect, wake, wakeStatus, setWakeStatus };
+  return {
+    turns,
+    state,
+    notice,
+    running,
+    send,
+    answerApproval,
+    reconnect: connect,
+    wake,
+    wakeStatus,
+    setWakeStatus,
+    wakeDismissed: wake !== null && dismissedWake === wake.key,
+    dismissWake,
+  };
 }

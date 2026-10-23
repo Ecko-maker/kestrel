@@ -31,7 +31,7 @@ const done = play(answered, ev("done"));
 test("falcon pose for each state", () => {
   assert.equal(pose([]), "perch", "idle: perched");
   assert.equal(pose(thinking), "flap", "thinking (step started, no llm_call yet): flaps");
-  assert.equal(pose(streaming), "flap", "streaming text: still flapping");
+  assert.equal(pose(streaming), "glide", "streaming text (Answering): wings open, gliding");
   assert.equal(pose(tooling), "dive", "a tool_call without its result: dives");
   assert.equal(pose(toolDone), "flap", "tool finished, next model call: back to flapping");
   assert.equal(pose(done), "return", "answer + done: swoops back");
@@ -127,13 +127,13 @@ test("burst: every burst animation in hud.css ends within BURST_MS, under 1 s, a
 // ---- Wake word (docs/voice-wake.md) ----
 
 test("wake: shows over idle and done only, never over work, an approval or an error", async () => {
-  const { withWake } = await import("./useHud.ts");
-  assert.equal(withWake("idle", true), "waking");
-  assert.equal(withWake("done", true), "waking");
+  const { hudPhase } = await import("./useHud.ts");
+  const arriving = { micOn: true, arriving: true, attending: true, settling: false };
+  assert.equal(hudPhase("idle", arriving), "waking");
+  assert.equal(hudPhase("done", arriving), "waking");
   for (const busy of ["thinking", "streaming", "tool", "approval", "error", "offline"]) {
-    assert.equal(withWake(busy, true), busy, `${busy} is not covered by a wake`);
+    assert.equal(hudPhase(busy, arriving), busy, `${busy} is not covered by a wake`);
   }
-  assert.equal(withWake("idle", false), "idle");
 });
 
 test("wake: the falcon arrives, and the label greets", async () => {
@@ -157,6 +157,7 @@ test("wake under reduced motion: no flight and no ring, only the colour change",
   const css = readFileSync(new URL("./hud.css", import.meta.url), "utf8");
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
   assert.match(reduced, /\.reactor \.falcon-flight, \.reactor \.falcon-bob, \.reactor \.wing \{ transform: none !important; \}/);
-  assert.match(reduced, /\.reactor \.wake-ring \{ display: none; \}|\.reactor \.burst, \.reactor \.wake-ring \{ display: none; \}/);
+  const hidden = reduced.split(/\r?\n/).find((line) => line.includes(".reactor .wake-ring"));
+  assert.ok(hidden && hidden.includes("display: none"), "the wake ring is hidden under reduced motion");
   assert.match(css, /\.reactor\[data-phase="waking"\] \{ --phase: var\(--hud-text\); \}/, "the colour change");
 });
