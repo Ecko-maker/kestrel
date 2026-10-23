@@ -267,3 +267,22 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** the HUD makes what the agent is doing visible at a glance (thinking, which tool, waiting on you) from data the console already has, at +5 KB gzipped JS and +2.4 KB CSS, and without making the approval decision harder to read.
 
+## 18. Voice wake-up: Vosk with a two-word grammar, local speech, no model call
+
+**Decision** (owner-approved 2026-10-22, branch `voice/wake-word`; guide `docs/voice-wake.md`): saying "Kestrel" wakes the display, brings the console forward, plays the falcon's fly-in and speaks a fixed greeting. Off by default (`KESTREL_WAKE=on`).
+- **Detection:** Vosk 0.3.45 with its small English model (Apache-2.0, 41 MB), restricted to the grammar `["kestrel", "[unk]"]`, behind a `Detector` interface. "[unk]" keeps other speech from being forced onto the wake word (tested with a recognizer that behaves like Vosk's grammar mode).
+- **Greeting:** SAPI 5 through comtypes, on its own thread. Fixed text; the name comes from `KESTREL_USER_NAME`, none in the repo.
+- **Power:** pauses on battery by default; on mains, a "system required" power request is held only while the microphone is open and cleared when listening stops or the server shuts down (tested). The HUD says "keeping PC awake" only when Windows granted it.
+- **Records:** a wake is one `wake` span with its time and no `traces` row, so it never reaches Traces, Stats, `kestrel export` or `kestrel distill build`.
+- **API:** `GET/POST /api/wake` under the same login, Host check and, new for every `/api/` route, an Origin check (403 for another site's page).
+
+**Alternatives:**
+- **openWakeWord with a custom "kestrel" model.** Built for wake words, with thresholds that mean something, but a custom model is trained in Colab on 17.5 GB of negative features licensed CC BY-NC-SA, so the model's own licence is unclear; the bundled models are CC BY-NC-SA too. Kept as the swap-in if the measured false-wake rate is too high.
+- **The browser's speechSynthesis for the greeting.** Chromium allows it only after a user gesture on the page, so a wake after a reload would be silent; Edge's "Natural" voices are online. SAPI is local and works with no page open.
+- **Piper for the greeting.** Better voices, but a 60 MB+ voice download and the maintained fork is GPL-3.0.
+- **A real mouse movement or a key press to wake the display.** It would change what the user is doing; a zero-pixel move is enough to count as input (pinned by a test).
+
+**Why:** the wake word is the first voice feature, so it is built where mistakes are cheapest: it can only wake and greet. Nothing it hears can reach the model, a tool or an approval, and nothing it hears is kept.
+
+**Measured** (2026-10-22/23, this laptop, Python 3.14): feasibility on synthetic Windows-voice clips 4/4 spotted, 0/10 look-alikes (not an accuracy claim); CPU while listening 1.3% of one core over 10 minutes (per minute 0.2-5.5%); the `powercfg /requests` check needs an elevated prompt (known issue #47). Detection rate and false wakes per hour wait for the owner's recordings (`scripts/wake_eval.py`).
+

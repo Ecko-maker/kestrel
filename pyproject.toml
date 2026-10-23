@@ -24,6 +24,14 @@ dependencies = [
 kestrel = "kestrel:main"
 kestrel-mcp = "kestrel.mcp_server:main"
 
+[project.optional-dependencies]
+wake = [
+    "comtypes>=1.4.17 ; sys_platform == 'win32'",
+    "sounddevice>=0.5.6",
+    "soundfile>=0.14.0",
+    "vosk>=0.3.45",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]
 build-backend = "uv_build"
@@ -65,7 +73,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
-module = ["ddgs.*"]
+module = ["ddgs.*", "vosk.*", "sounddevice.*", "soundfile.*", "comtypes.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -123,3 +123,40 @@ test("burst: every burst animation in hud.css ends within BURST_MS, under 1 s, a
   const MAX_SPARK_DELAY = 60; // Reactor.tsx SPARKS: (i % 4) * 20
   for (const [rule, ms] of rules) assert.ok(Number(ms) + MAX_SPARK_DELAY <= BURST_MS, rule.split("{")[0]);
 });
+
+// ---- Wake word (docs/voice-wake.md) ----
+
+test("wake: shows over idle and done only, never over work, an approval or an error", async () => {
+  const { withWake } = await import("./useHud.ts");
+  assert.equal(withWake("idle", true), "waking");
+  assert.equal(withWake("done", true), "waking");
+  for (const busy of ["thinking", "streaming", "tool", "approval", "error", "offline"]) {
+    assert.equal(withWake(busy, true), busy, `${busy} is not covered by a wake`);
+  }
+  assert.equal(withWake("idle", false), "idle");
+});
+
+test("wake: the falcon arrives, and the label greets", async () => {
+  const { PHASE_LABEL } = await import("./useHud.ts");
+  assert.equal(FALCON_POSE.waking, "arrive");
+  assert.equal(PHASE_LABEL.waking, "Hello");
+});
+
+test("wake: plays once per wake event, not again for the same one", () => {
+  let s = burstStart(null);
+  s = burstReducer(s, { type: "answer", key: "wake-1", reducedMotion: false });
+  assert.equal(s.playing, 1);
+  assert.equal(burstReducer(s, { type: "answer", key: "wake-1", reducedMotion: false }), s);
+  s = burstReducer(s, { type: "end", id: 1 });
+  assert.equal(burstReducer(s, { type: "answer", key: "wake-2", reducedMotion: false }).playing, 2);
+});
+
+test("wake under reduced motion: no flight and no ring, only the colour change", async () => {
+  const { WAKE_MS } = await import("./useHud.ts");
+  assert.ok(WAKE_MS <= 2000);
+  const css = readFileSync(new URL("./hud.css", import.meta.url), "utf8");
+  const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+  assert.match(reduced, /\.reactor \.falcon-flight, \.reactor \.falcon-bob, \.reactor \.wing \{ transform: none !important; \}/);
+  assert.match(reduced, /\.reactor \.wake-ring \{ display: none; \}|\.reactor \.burst, \.reactor \.wake-ring \{ display: none; \}/);
+  assert.match(css, /\.reactor\[data-phase="waking"\] \{ --phase: var\(--hud-text\); \}/, "the colour change");
+});

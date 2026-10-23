@@ -255,6 +255,15 @@ gpt-oss-120b sometimes reads its data, writes the message or note as a draft, an
 Tiers v2 keeps the taint state in the agent's `Session` and never sends it to the console; the only tiers-v2 data the browser gets is the `notice` on an escalated approval card. So the HUD shows "escalated cards" (approvals that came with a notice) and no "tainted / clean" indicator, rather than guess one from tool names. A user can't see in advance that the next search will ask for approval.
 **Done when:** the agent emits the taint state (e.g. a `session` event after each tool result: tainted, by which tool) and the HUD shows it; that is an agent change, so it waits until after the Phase 3 gate.
 
+### 47. Voice wake-up: parts that need the owner's machine and hands
+**Labels:** `voice`, `medium`
+Built and tested with fakes (docs/voice-wake.md); these depend on the real PC, the real room or an elevated prompt:
+- **Accuracy:** detection rate and false wakes per hour are unmeasured until the owner records ~30 "Kestrel" clips and an hour or more of background audio (`scripts/wake_record.py`, `scripts/wake_eval.py`). `KESTREL_WAKE_THRESHOLD=0.5` is provisional. On synthetic clips Vosk reported confidence 1.0 for every word, so the confidence may not separate well; the eval reports every threshold.
+- **Keep-awake in `powercfg /requests`:** needs an elevated prompt. Run `uv run python scripts/wake_measure.py --minutes 1` from an admin PowerShell; it prints whether the request is listed while listening and gone after.
+- **Display, lock screen and window:** whether `SetThreadExecutionState` plus the zero-pixel move turns the display back on after the idle timeout, what happens on the lock screen, and whether the Edge app window's title is exactly "Kestrel" (what `bring_to_front` looks for) are to be checked by hand once the app window is installed.
+- **distill:** `kestrel distill build` is on `phase4/trace-dataset`; its `read_traces` was checked to skip wake records, but the direct test belongs where both branches meet.
+**Done when:** the eval table and chosen threshold are in docs/voice-wake.md, the powercfg check is recorded, the display/lock/window behaviour is written down, and a distill test calls `build` on a database with a wake record.
+
 ---
 
 ## Process

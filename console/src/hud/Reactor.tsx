@@ -158,7 +158,12 @@ export function Reactor({
         </g>
       )}
 
-      {/* flight = lift, dive, swoop, shake; bob = the idle float; the wings move inside the nested svg.
+      {phase === "waking" && (
+        // a soft ring once the falcon has landed (wake fly-in); hidden under reduced motion
+        <circle className="wake-ring" cx={C} cy={C} r={112} fill="none" stroke="currentColor" strokeWidth={3} aria-hidden="true" />
+      )}
+
+      {/* flight = lift, dive, swoop, shake, arrive; bob = the idle float; the wings move inside the nested svg.
           A new tool call remounts the flight group, so each one gets its own dive. */}
       <g key={pose === "dive" ? `dive-${segments.length}` : "flight"} className="falcon-flight" style={dive}>
         <g className="falcon-bob">

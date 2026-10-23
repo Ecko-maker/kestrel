@@ -2,6 +2,7 @@
 // Server events (see src/kestrel/agent.py) are folded into a list of turns by `reduce`.
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { WakeStatus } from "./api";
 
 export type ApprovalStatus = "pending" | "approved" | "edited" | "rejected";
 
@@ -231,10 +232,21 @@ export function reduce(turns: Turn[], action: Action): Turn[] {
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
+// The wake word was heard (server event `wake`). Kept apart from the turns: a wake is never a chat
+// message, never starts a model call and never answers an approval.
+export interface Wake {
+  key: string; // changes once per wake: drives the fly-in (useHud)
+  at: number;
+  greeting: string;
+}
+
 export function useChat(onTurnDone?: () => void) {
   const [turns, dispatch] = useReducer(reduce, []);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [notice, setNotice] = useState<string | null>(null);
+  const [wake, setWakeEvent] = useState<Wake | null>(null);
+  const [wakeStatus, setWakeStatus] = useState<WakeStatus>({ available: false });
+  const wakes = useRef(0);
   const socket = useRef<WebSocket | null>(null);
   const doneRef = useRef(onTurnDone);
   useEffect(() => {
@@ -254,6 +266,11 @@ export function useChat(onTurnDone?: () => void) {
     ws.addEventListener("message", (msg) => {
       const event = JSON.parse(msg.data) as ServerEvent;
       if (event.type === "ready") return setNotice(null);
+      if (event.type === "wake_status") return setWakeStatus(event as unknown as WakeStatus);
+      if (event.type === "wake") {
+        wakes.current += 1;
+        return setWakeEvent({ key: `wake-${wakes.current}`, at: event.at as number, greeting: event.greeting as string });
+      }
       if (event.type === "error" && !event.trace_id) return setNotice(event.message as string);
       dispatch({ kind: "event", event });
       if (event.type === "done") doneRef.current?.();
@@ -264,6 +281,7 @@ export function useChat(onTurnDone?: () => void) {
     open();
     return () => socket.current?.close();
   }, [open]);
+
 
   const connect = useCallback(() => {
     setState("connecting"); // a user-initiated reconnect: show it right away
@@ -285,5 +303,5 @@ export function useChat(onTurnDone?: () => void) {
   );
 
   const running = turns.length > 0 && !turns[turns.length - 1].done;
-  return { turns, state, notice, running, send, answerApproval, reconnect: connect };
+  return { turns, state, notice, running, send, answerApproval, reconnect: connect, wake, wakeStatus, setWakeStatus };
 }

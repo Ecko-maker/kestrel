@@ -9,7 +9,8 @@ import type { ConnectionState, Turn } from "../useChat";
 
 // Note: llm_call arrives when the model has *finished* (it carries duration and tokens), so
 // "thinking" is the gap between step_started (or a tool result) and the next llm_call.
-export type Phase = "idle" | "thinking" | "streaming" | "tool" | "approval" | "error" | "done" | "offline";
+// "waking": the wake word was just heard (server event `wake`); shown only over idle/done, never over work.
+export type Phase = "idle" | "thinking" | "streaming" | "tool" | "approval" | "error" | "done" | "offline" | "waking";
 
 export type SegmentState = "active" | "ok" | "failed";
 export interface Segment {
@@ -45,6 +46,7 @@ export interface HudState {
   phase: Phase;
   pose: FalconPose;
   burst: number | null; // id of the answer burst playing now, if any
+  greeting: string | null; // the spoken greeting, while the wake fly-in plays
   activeTool: string | null;
   segments: Segment[];
   telemetry: Telemetry;
@@ -62,6 +64,7 @@ export const PHASE_LABEL: Record<Phase, string> = {
   error: "Error",
   done: "Done",
   offline: "Offline",
+  waking: "Hello",
 };
 
 export function phaseOf(turns: Turn[], connection: ConnectionState): { phase: Phase; activeTool: string | null } {
@@ -86,7 +89,7 @@ export function phaseOf(turns: Turn[], connection: ConnectionState): { phase: Ph
 
 // The falcon tells the tagline: perched while idle, flapping while it thinks, diving at the lit
 // segment for a tool, hovering while it waits for you, swooping back with the answer.
-export type FalconPose = "perch" | "flap" | "dive" | "hover" | "return" | "shake" | "rest";
+export type FalconPose = "perch" | "flap" | "dive" | "hover" | "return" | "shake" | "rest" | "arrive";
 
 export const FALCON_POSE: Record<Phase, FalconPose> = {
   idle: "perch",
@@ -97,6 +100,7 @@ export const FALCON_POSE: Record<Phase, FalconPose> = {
   done: "return",
   error: "shake",
   offline: "rest",
+  waking: "arrive", // "Comes back when called": flies in from outside the rings, wings open
 };
 
 // ---- Answer burst ----
@@ -133,18 +137,28 @@ export function burstReducer(state: BurstState, action: BurstAction): BurstState
   return { seen: action.key, playing: id, count: id };
 }
 
-function useAnswerBurst(turns: Turn[], reducedMotion: boolean): number | null {
-  const key = answerKey(turns);
-  // Answers already on screen when the HUD mounts (e.g. back from the traces page) don't replay.
+// One play per new key, ms long, never two at once; keys already present on mount don't play.
+// Used for the answer burst (suppressed under reduced motion) and the wake fly-in (not suppressed:
+// under reduced motion the falcon stays still, but the colour and greeting still show).
+function useOneShot(key: string | null, suppressed: boolean, ms: number): number | null {
   const [state, dispatch] = useReducer(burstReducer, key, burstStart);
-  useEffect(() => dispatch({ type: "answer", key, reducedMotion }), [key, reducedMotion]);
+  useEffect(() => dispatch({ type: "answer", key, reducedMotion: suppressed }), [key, suppressed]);
   useEffect(() => {
     if (state.playing === null) return;
     const id = state.playing;
-    const timer = setTimeout(() => dispatch({ type: "end", id }), BURST_MS);
+    const timer = setTimeout(() => dispatch({ type: "end", id }), ms);
     return () => clearTimeout(timer);
-  }, [state.playing]);
+  }, [state.playing, ms]);
   return state.playing;
+}
+
+// ---- Wake ----
+// The wake fly-in: from outside the rings to the centre, wings open, a soft ring, then idle.
+export const WAKE_MS = 1600;
+
+// A wake shows only when Kestrel isn't busy: it never covers thinking, a tool, an approval or an error.
+export function withWake(phase: Phase, waking: boolean): Phase {
+  return waking && (phase === "idle" || phase === "done") ? "waking" : phase;
 }
 
 export function segmentsOf(turn: Turn | undefined): Segment[] {
@@ -234,8 +248,14 @@ function fmtShort(ms: number | null | undefined): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function useHud(turns: Turn[], connection: ConnectionState, reducedMotion: boolean): HudState {
-  const burst = useAnswerBurst(turns, reducedMotion);
+export function useHud(
+  turns: Turn[],
+  connection: ConnectionState,
+  reducedMotion: boolean,
+  wake: { key: string; greeting: string } | null = null,
+): HudState {
+  const burst = useOneShot(answerKey(turns), reducedMotion, BURST_MS);
+  const waking = useOneShot(wake?.key ?? null, false, WAKE_MS) !== null;
   const base = useMemo(() => {
     const { phase, activeTool } = phaseOf(turns, connection);
     return {
@@ -247,5 +267,9 @@ export function useHud(turns: Turn[], connection: ConnectionState, reducedMotion
       log: logOf(turns),
     };
   }, [turns, connection]);
-  return useMemo(() => ({ ...base, burst }), [base, burst]);
+  return useMemo(() => {
+    const phase = withWake(base.phase, waking);
+    const greeting = phase === "waking" ? (wake?.greeting ?? null) : null;
+    return { ...base, phase, pose: FALCON_POSE[phase], burst, greeting };
+  }, [base, burst, waking, wake?.greeting]);
 }
