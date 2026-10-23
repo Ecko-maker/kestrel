@@ -170,6 +170,78 @@ detector sits behind an interface (`kestrel.wake.detector.Detector`), and openWa
   Without elevation, Windows granted the request and released it on demand (`keep_awake` returned True, then False).
 - Accuracy and false wakes per hour: **not measured yet** (waiting for your recordings).
 
+## Talking to Kestrel
+
+After a wake, say your request. Kestrel records it in memory, transcribes it on this PC, and the
+console sends the text exactly like typed text (your message shows a mic icon). The answer is
+spoken: its first two sentences, then "The rest is on screen."
+
+**Turn it on:** `uv run python scripts/get_talk_model.py` once (whisper.cpp base.en, 5-bit, MIT,
+57 MB, SHA-256 pinned; `--model tiny.en-q5_1` for the faster 31 MB fallback). With `KESTREL_WAKE=on`
+and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake to greeting only.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `KESTREL_TALK` | on | `off`: a wake only greets |
+| `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech |
+| `KESTREL_TALK_MIN_CONFIDENCE` | 0.45 | the hallucination guard's floor (provisional; from your measurement) |
+
+The console's **Speak answers** switch (remembered per browser) turns the spoken answers off.
+
+**How a request ends.** Each 0.1 s chunk's loudness is compared with the room's noise floor (learned
+while waiting for the wake word). The request starts at the first chunk 0.15 above it and ends after
+1 s of quiet, or at 20 s. Nothing said within 3 s of the greeting: "I didn't catch that". Kestrel's
+own voice (the greeting) is never recorded as your request.
+
+**The hallucination guard.** Whisper can invent text from silence or noise (a 100 Hz hum came out as
+"(dramatic music)" in a test here). Before anything reaches the agent, a transcript is dropped, and
+Kestrel says "I didn't catch that", when:
+- there was under 0.4 s of speech above the noise floor;
+- its confidence is under `KESTREL_TALK_MIN_CONFIDENCE`. whisper.cpp's per-segment no-speech
+  probability isn't exposed by pywhispercpp, so the closest signal is used: the segment confidence
+  (the geometric mean of its token probabilities) is used as 1 - no-speech; whisper.cpp's own
+  no-speech threshold (0.6) also stays on inside the model;
+- the whole normalised transcript is a known filler ("thank you for watching", "thanks for
+  watching", "you", "thank you", "bye", lone punctuation, sound labels such as "[BLANK_AUDIO]").
+  Only whole-transcript matches: "thank you for watching the match with me" is sent.
+
+**What is never spoken:** an approval card's details. When one appears during a spoken request,
+Kestrel says only "I need your approval on screen." Voice can't approve: a spoken "approve" is just
+chat text (and is refused while the agent waits), and only a click resolves the card. Typed questions
+are never spoken. Kestrel never says its own name (it would wake itself): "Kestrel" in spoken text
+becomes "I". Saying "Kestrel" while it speaks stops the speech.
+
+**What leaves the microphone:** nothing but the transcript, which becomes a normal chat message. The
+recording is a byte buffer in memory, handed to the recogniser and dropped; no audio is written,
+logged or sent (tests: `tests/test_talk.py`). The model sees the same input for typed and spoken
+requests: the voice flag stays in the console and the server, never in the agent's messages
+(`test_the_model_sees_the_same_input_typed_or_spoken`; the agent's code and fingerprint are unchanged).
+
+### Measuring it (no accuracy is claimed until you have recorded your requests)
+
+1. `uv run python scripts/talk_record.py`: 20 built-in requests (or `--prompts file.txt`); each one is
+   shown, you press Enter, read it at your normal distance and pace, press Enter. WAVs and `refs.tsv`
+   go to `data/talk/requests/` (git-ignored).
+2. Background-only audio (podcast, TV) in `data/wake/background/`, as for the wake word.
+3. `uv run python scripts/talk_eval.py --requests data/talk/requests --background data/wake/background`
+   (`--model tiny.en-q5_1` to compare). It reports:
+   - **word error rate, raw and normalised.** Raw: lower case and punctuation only. Normalised
+     (`kestrel.wake.normalize`, a small Whisper-style English normaliser): contractions expanded,
+     symbols and units as words (%, $, &), thousands separators removed, number words as digits
+     ("seventeen and a half" = 17.5). "What's 17.5% of 2,340?" and "what is seventeen and a half
+     percent of two thousand three hundred forty" score as identical;
+   - **latency** per request (the time from the end of the recording to the transcript);
+   - each request's confidence and what the guard would do with it (to set the confidence floor);
+   - **false requests per hour**: the background is streamed through the same end-of-speech detector
+     as if Kestrel were listening all the time; every segment it cuts is transcribed and guarded, and
+     those that pass would have been requests you never made. An upper bound: the live listener only
+     records right after a wake.
+
+Measured so far (research, 2026-10-23, synthetic Windows-voice requests padded to 5 s, Ryzen 7 8840HS,
+8 threads; a pipeline check, not an accuracy claim): base.en 5-bit 0.80 s per request, normalised WER
+1.1% (raw 12.4%: number formatting), 0 false requests in 2 minutes of synthetic hum and noise. Published
+LibriSpeech test-clean WER: base.en about 4.3%, tiny.en 8.4%, Vosk small 9.85%.
+
 ## Components
 
 | File | Role |
@@ -181,7 +253,10 @@ detector sits behind an interface (`kestrel.wake.detector.Detector`), and openWa
 | `src/kestrel/wake/speech.py` | The greeting through SAPI 5 (comtypes) on its own thread |
 | `src/kestrel/wake/greeting.py` | The fixed greeting and the name's cleaning |
 | `console/src/hud/useHud.ts` | `waking` phase and `arrive` pose; the fly-in plays once per wake |
-| `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator |
+| `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator; "Speak answers" |
+| `src/kestrel/wake/talk.py` | End of speech, the hallucination guard, what is spoken |
+| `src/kestrel/wake/transcribe.py` | whisper.cpp (pywhispercpp), pinned model files |
+| `src/kestrel/wake/normalize.py` | The text normaliser for word error rate |
 
 Licences: Vosk and its small English model Apache-2.0; sounddevice MIT (bundles PortAudio, MIT);
 comtypes MIT; soundfile BSD-3-Clause (bundles libsndfile, LGPL-2.1).

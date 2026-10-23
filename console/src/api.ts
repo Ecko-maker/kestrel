@@ -128,6 +128,7 @@ export interface WakeStatus {
   paused?: string | null; // "off", "battery low (28%)", "power saver", "on battery (...)", or an error
   on_ac?: boolean; // plugged in (or no battery)
   battery?: number | null; // battery percent, when Windows reports one
+  talk?: boolean; // spoken requests are on (the talk model is installed)
 }
 
 export const getWake = () => api<WakeStatus>("/api/wake");
