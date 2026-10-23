@@ -45,7 +45,8 @@ Install the console as an Edge app window and let it start with Windows:
 | Variable | Default | Meaning |
 |---|---|---|
 | `KESTREL_WAKE` | off | The master switch. Off: no listening thread exists and the microphone is never opened. |
-| `KESTREL_WAKE_ON_BATTERY` | off | Listen on battery too. By default listening pauses on battery ("Paused: on battery"). |
+| `KESTREL_WAKE_MIN_BATTERY` | 30 | On battery, pause below this charge; resume at this + 5 (35%) or when plugged in. |
+| `KESTREL_WAKE_ON_BATTERY` | on | An override: `off` never listens on battery ("Paused: on battery (KESTREL_WAKE_ON_BATTERY=off)"). |
 | `KESTREL_USER_NAME` | none | The name in the greeting (printable characters, at most 40). |
 | `KESTREL_WAKE_THRESHOLD` | 0.5 | Minimum Vosk confidence for "kestrel". Provisional: choose it from your measurement below. |
 | `KESTREL_WAKE_MODEL` | `%LOCALAPPDATA%\kestrel\models\vosk-model-small-en-us-0.15` | The model folder. |
@@ -59,13 +60,32 @@ This laptop uses Modern Standby (`powercfg /a`: "Standby (S0 Low Power Idle)"). 
 documents that the system starts entering standby when the display turns off, including after the idle
 timeout, and that all desktop apps, Kestrel included, are then paused.
 
-- **Display off, PC awake: works.** While listening on mains power, Kestrel holds a "system required"
-  power request ("Kestrel is listening for its wake word"), so the screen can turn off without the PC
-  going into standby. The HUD shows "keeping PC awake" whenever it holds it. It is cleared the moment
-  listening stops: switch off, battery, or server shutdown.
-- **On battery:** listening pauses by default. With `KESTREL_WAKE_ON_BATTERY=on` it listens without
-  holding the request, so Windows may still put the PC into standby (power requests block standby for
-  at most 5 minutes on battery anyway), and then nothing is heard.
+### The battery rule
+
+| Power | Listening | Keep-awake request | Shown as |
+|---|---|---|---|
+| Plugged in | yes | held | "Listening", HUD: "keeping PC awake" |
+| Battery, at or above `KESTREL_WAKE_MIN_BATTERY` (30%), saver off | yes, while the PC is awake | never | "Listening (battery 64%)" |
+| Battery below the minimum | paused until 35% or plugged in | never | "Paused: battery low (28%)" |
+| Battery, Energy Saver (Battery Saver) on | paused until the saver is off | never | "Paused: power saver" |
+| Battery, `KESTREL_WAKE_ON_BATTERY=off` | paused | never | "Paused: on battery (KESTREL_WAKE_ON_BATTERY=off)" |
+
+- **Plugged in, display off: works.** Kestrel holds a "system required" power request ("Kestrel is
+  listening for its wake word"), so the screen can turn off without the PC going into standby. The HUD
+  shows "keeping PC awake" only when Windows granted it. It is cleared at once on a switch to battery,
+  and when listening stops (switch off, low battery, saver, server shutdown).
+- **On battery, the PC is allowed to sleep.** No request is held, so Windows goes to standby as usual
+  to save the battery: about 5 minutes after the screen turns off (Microsoft's documented limit for
+  apps keeping a battery-powered PC out of standby; not measured on this laptop). From then on Kestrel
+  can't hear anything until the PC wakes. When it wakes, Kestrel notices (a jump in the clock between
+  two loop turns), reads the power state again and reopens the microphone stream, so listening resumes
+  on its own.
+- **How power is read:** `GetSystemPowerStatus` every 5 seconds (mains or battery, percent, and the
+  saver flag `SystemStatusFlag`). One call costs microseconds, and polling this often means plugging in
+  resumes within seconds and the keep-awake request is dropped within seconds of unplugging. Energy
+  Saver applies on battery only here: plugged in, Kestrel listens even if the saver is forced on.
+- **A stream that goes quiet** (no audio for 5 seconds, e.g. the microphone was unplugged or didn't
+  come back after standby) is closed and reopened.
 - **Locked screen:** the display can wake, but it shows the lock screen. Kestrel never unlocks; the
   greeting is spoken, and the console is visible once you sign in.
 - **Asleep (lid closed, power button, Sleep, hibernate): impossible.** A sleeping PC runs no Kestrel
@@ -130,7 +150,7 @@ detector sits behind an interface (`kestrel.wake.detector.Detector`), and openWa
 | `src/kestrel/wake/detector.py` | `Detector` interface; `VoskDetector` with the grammar `["kestrel", "[unk]"]` |
 | `src/kestrel/wake/audio.py` | Microphone (sounddevice) as in-memory chunks |
 | `src/kestrel/wake/service.py` | The flow: cooldown, display, window, greeting, `wake` event, trace |
-| `src/kestrel/wake/power.py` | Windows calls through ctypes: battery, keep-awake, display, window |
+| `src/kestrel/wake/power.py` | Windows calls through ctypes: power state and the battery rule (`decide`), keep-awake, display, window |
 | `src/kestrel/wake/speech.py` | The greeting through SAPI 5 (comtypes) on its own thread |
 | `src/kestrel/wake/greeting.py` | The fixed greeting and the name's cleaning |
 | `console/src/hud/useHud.ts` | `waking` phase and `arrive` pose; the fly-in plays once per wake |

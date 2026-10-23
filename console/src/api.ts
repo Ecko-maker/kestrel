@@ -125,7 +125,9 @@ export interface WakeStatus {
   enabled?: boolean;
   listening?: boolean; // the microphone is open right now
   keeping_awake?: boolean; // a keep-awake request is held (mains power only)
-  paused?: string | null; // "off", "on battery", or an error
+  paused?: string | null; // "off", "battery low (28%)", "power saver", "on battery (...)", or an error
+  on_ac?: boolean; // plugged in (or no battery)
+  battery?: number | null; // battery percent, when Windows reports one
 }
 
 export const getWake = () => api<WakeStatus>("/api/wake");
