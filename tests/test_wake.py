@@ -140,12 +140,23 @@ class FakePower:
 
 
 class FakeSpeaker:
+    """Records what would be said; `speaking` can be set by a test (barge-in, the greeting)."""
+
     def __init__(self):
         self.said: list[str] = []
+        self.stops = 0
+        self.speaking = False
         self.closed = False
 
     def say(self, text):
         self.said.append(text)
+
+    def stop(self):
+        self.stops += 1
+        self.speaking = False
+
+    def busy(self):
+        return self.speaking
 
     def close(self):
         self.closed = True
@@ -496,6 +507,7 @@ def test_keep_awake_is_held_only_while_listening_and_released_when_turned_off(tm
             "paused": "off",
             "on_ac": True,
             "battery": None,
+            "talk": False,
         }
         service.set_enabled(True)
         wait_for(lambda: power.awake)

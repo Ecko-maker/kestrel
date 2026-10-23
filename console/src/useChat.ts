@@ -80,12 +80,13 @@ export interface Turn {
   answer?: Answer;
   error?: string;
   done: boolean;
+  voice?: boolean; // a spoken request (shown with a mic icon); the agent gets the same text either way
 }
 
 type ServerEvent = { type: string; trace_id?: string; [key: string]: unknown };
 
 type Action =
-  | { kind: "send"; text: string }
+  | { kind: "send"; text: string; voice?: boolean }
   | { kind: "event"; event: ServerEvent }
   | { kind: "localApproval"; approvalId: string; status: ApprovalStatus };
 
@@ -109,7 +110,8 @@ function mapApprovals(turn: Turn, fn: (a: Approval) => Approval): Turn {
 
 export function reduce(turns: Turn[], action: Action): Turn[] {
   if (action.kind === "send") {
-    return [...turns, { id: crypto.randomUUID(), user: action.text, startedAt: now(), steps: [], done: false }];
+    const turn: Turn = { id: crypto.randomUUID(), user: action.text, startedAt: now(), steps: [], done: false };
+    return [...turns, action.voice ? { ...turn, voice: true } : turn];
   }
   if (action.kind === "localApproval") {
     return updateLast(turns, (t) =>
@@ -259,6 +261,16 @@ export const micLevel = {
   },
 };
 
+// "Speak answers" (spoken requests only), remembered per browser; storage may be blocked.
+const SPEAK_KEY = "kestrel-speak-answers";
+function readSpeak(): boolean {
+  try {
+    return localStorage.getItem(SPEAK_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 export function useChat(onTurnDone?: () => void) {
   const [turns, dispatch] = useReducer(reduce, []);
   const [state, setState] = useState<ConnectionState>("connecting");
@@ -266,6 +278,11 @@ export function useChat(onTurnDone?: () => void) {
   const [wake, setWakeEvent] = useState<Wake | null>(null);
   const [wakeStatus, setWakeStatus] = useState<WakeStatus>({ available: false });
   const [dismissedWake, setDismissedWake] = useState<string | null>(null); // a wake ended by typing
+  const [speakAnswers, setSpeak] = useState(readSpeak);
+  const [voiceNote, setVoiceNote] = useState<{ key: string; text: string } | null>(null);
+  const speakRef = useRef(speakAnswers);
+  const wakeKey = useRef<string | null>(null);
+  const sendRef = useRef<(text: string, voice?: boolean) => void>(() => undefined);
   const wakes = useRef(0);
   const socket = useRef<WebSocket | null>(null);
   const doneRef = useRef(onTurnDone);
@@ -288,8 +305,16 @@ export function useChat(onTurnDone?: () => void) {
       if (event.type === "ready") return setNotice(null);
       if (event.type === "wake_status") return setWakeStatus(event as unknown as WakeStatus);
       if (event.type === "wake_level") return micLevel.set(event.level as number);
+      // A spoken request, already transcribed by the server: sent exactly like typed text.
+      if (event.type === "voice_request") return sendRef.current(event.text as string, true);
+      if (event.type === "wake_end") return setDismissedWake(wakeKey.current); // the request was recorded
+      if (event.type === "voice_ignored") {
+        wakes.current += 1;
+        return setVoiceNote({ key: `note-${wakes.current}`, text: "I didn't catch that." });
+      }
       if (event.type === "wake") {
         wakes.current += 1;
+        wakeKey.current = `wake-${wakes.current}`;
         micLevel.set(0);
         return setWakeEvent({
           key: `wake-${wakes.current}`,
@@ -316,10 +341,25 @@ export function useChat(onTurnDone?: () => void) {
     open();
   }, [open]);
 
-  const send = useCallback((text: string) => {
+  const send = useCallback((text: string, voice = false) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return;
-    dispatch({ kind: "send", text });
-    socket.current.send(JSON.stringify({ type: "user_message", text }));
+    dispatch({ kind: "send", text, voice });
+    // The voice flag and "Speak answers" are for the server only; the agent receives just the text.
+    const extra = voice ? { voice: true, speak: speakRef.current } : {};
+    socket.current.send(JSON.stringify({ type: "user_message", text, ...extra }));
+  }, []);
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+
+  const setSpeakAnswers = useCallback((on: boolean) => {
+    setSpeak(on);
+    speakRef.current = on;
+    try {
+      localStorage.setItem(SPEAK_KEY, on ? "on" : "off");
+    } catch {
+      // not remembered; the switch still works for this page
+    }
   }, []);
 
   // Typing ends the wake's Listening mode, here and on the server (which stops sending levels).
@@ -351,5 +391,8 @@ export function useChat(onTurnDone?: () => void) {
     setWakeStatus,
     wakeDismissed: wake !== null && dismissedWake === wake.key,
     dismissWake,
+    speakAnswers,
+    setSpeakAnswers,
+    voiceNote,
   };
 }

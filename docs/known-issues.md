@@ -241,6 +241,19 @@ Built and tested with fakes (docs/voice-wake.md); these depend on the real PC, t
 - **distill:** `kestrel distill build` is on `phase4/trace-dataset`; its `read_traces` was checked to skip wake records, but the direct test belongs where both branches meet.
 **Done when:** the eval table and chosen threshold are in docs/voice-wake.md, the powercfg check is recorded, the display/lock/window behaviour is written down, and a distill test calls `build` on a database with a wake record.
 
+### 48. Kestrel can hear itself (self-interruption)
+**Labels:** `voice`, `medium`
+Windows doesn't cancel the speakers' sound out of the microphone for an ordinary capture stream, so
+while Kestrel reads an answer aloud, the wake word listener hears it. If the spoken text contained
+"Kestrel", the listener would wake on its own voice and stop the speech (barge-in) in the middle of
+an answer. Mitigation: spoken text never contains the name ("Kestrel" becomes "I", `talk.for_speech`;
+fixed sentences avoid it), and the recorder ignores audio while Kestrel is speaking (the greeting is
+never taken for your request). Words that merely sound like "kestrel" can still wake it during speech;
+not measured.
+**Done when:** a spoken answer read at normal volume next to the microphone is measured not to wake
+Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
+recorded in docs/voice-wake.md.
+
 ---
 
 ## Process

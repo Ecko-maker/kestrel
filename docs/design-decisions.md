@@ -269,3 +269,14 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Measured** (2026-10-22/23, this laptop, Python 3.14): feasibility on synthetic Windows-voice clips 4/4 spotted, 0/10 look-alikes (not an accuracy claim); CPU while listening 1.3% of one core over 10 minutes (per minute 0.2-5.5%); the `powercfg /requests` check needs an elevated prompt (known issue #47). Detection rate and false wakes per hour wait for the owner's recordings (`scripts/wake_eval.py`).
 
+## 19. Talking to Kestrel: whisper.cpp base.en, a hallucination guard, the same input for the model
+
+**Decision** (owner-approved 2026-10-23, branch `voice/talk`; guide `docs/voice-wake.md`, "Talking to Kestrel"): after a wake, one spoken request is recorded in memory, transcribed locally with whisper.cpp base.en (5-bit, MIT, 57 MB, SHA-256 pinned; tiny.en as a one-setting fallback) and sent by the most recently active console exactly like typed text. Answers to spoken requests (only) are spoken, first two sentences, behind a remembered "Speak answers" switch.
+- **End of speech:** loudness above a learned noise floor; 1 s of quiet ends it, 20 s at most, 3 s to start.
+- **Hallucination guard:** drop on under 0.4 s of speech, low confidence (segment confidence as the closest available signal to whisper.cpp's no-speech probability, which pywhispercpp doesn't expose), or a whole-transcript filler; a dropped transcript is treated like an empty one.
+- **Safety:** an approval card is announced with one fixed sentence, never read; voice can't approve. The voice flag stays in the server and the console; the agent receives only the text, so the model's input is identical for typed and spoken requests (tested), and the agent fingerprint is unchanged.
+
+**Alternatives:** Vosk small (already installed, 1.7 s per 5 s request in one go, LibriSpeech test-clean 9.85%); faster-whisper tiny.en (0.28 s, 8.4%); faster-whisper base.en (145 MB, same model family as the choice, not measured: over the 100 MB limit); openai-whisper (needs PyTorch). Measured on this laptop (Ryzen 7 8840HS, 8 threads, synthetic 5 s requests): whisper.cpp base.en 5-bit 0.80 s.
+
+**Why:** base.en roughly halves tiny.en's errors on real speech for half a second more, from a 57 MB file and a 1.4 MB library. The guard exists because a transcript is sent to the agent as if the user had said it: inventing a request is worse than missing one.
+

@@ -32,6 +32,17 @@ from kestrel.wake.detector import Detector
 from kestrel.wake.greeting import clean_name, greeting
 from kestrel.wake.power import Decision, Power, decide
 from kestrel.wake.speech import Speaker
+from kestrel.wake.talk import (
+    DEFAULT_MIN_CONFIDENCE,
+    DIDNT_CATCH,
+    MAX_REQUEST_S,
+    START_TIMEOUT_S,
+    Endpointer,
+    NoiseFloor,
+    for_speech,
+    guard,
+)
+from kestrel.wake.transcribe import DEFAULT_TALK_MODEL, Transcriber
 
 COOLDOWN_S = 10.0
 POWER_CHECK_S = 5.0  # how often the power state is read (one GetSystemPowerStatus call)
@@ -88,6 +99,9 @@ class WakeSettings:
     model_dir: Path = Path(MODEL_NAME)  # KESTREL_WAKE_MODEL
     window_title: str = "Kestrel"
     cooldown_s: float = COOLDOWN_S
+    talk: bool = True  # KESTREL_TALK=off: a wake only greets (no spoken requests)
+    talk_model: str = DEFAULT_TALK_MODEL  # KESTREL_TALK_MODEL: base.en-q5_1 or tiny.en-q5_1
+    min_confidence: float = DEFAULT_MIN_CONFIDENCE  # KESTREL_TALK_MIN_CONFIDENCE
 
     @classmethod
     def from_env(cls) -> WakeSettings:
@@ -100,6 +114,9 @@ class WakeSettings:
             user_name=clean_name(os.getenv("KESTREL_USER_NAME")),
             threshold=float(os.getenv("KESTREL_WAKE_THRESHOLD", DEFAULT_THRESHOLD)),
             model_dir=Path(model) if model else default_model_dir(),
+            talk=_flag("KESTREL_TALK", "on"),
+            talk_model=os.getenv("KESTREL_TALK_MODEL", DEFAULT_TALK_MODEL),
+            min_confidence=float(os.getenv("KESTREL_TALK_MIN_CONFIDENCE", DEFAULT_MIN_CONFIDENCE)),
         )
 
 
@@ -119,8 +136,11 @@ class WakeService:
         record_wake: Callable[[float], None],
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
+        make_transcriber: Callable[[], Transcriber] | None = None,
     ):
         self.settings = settings
+        self.make_transcriber = make_transcriber  # None: a wake only greets
+        self._transcriber: Transcriber | None = None
         self.make_detector = make_detector
         self.make_source = make_source
         self.power = power
@@ -129,6 +149,7 @@ class WakeService:
         self.clock = clock
         self.wall = wall
         self.emit: Callable[[dict], None] = lambda event: None  # set by the web app (broadcast)
+        self.on_request: Callable[[str], None] = lambda text: None  # set by the web app: one console
         self.greeting = greeting(settings.user_name)
         self._enabled = settings.enabled
         self._listening = False
@@ -139,6 +160,9 @@ class WakeService:
         self._low = False  # the low-battery latch (power.decide)
         self._attend_until: float | None = None  # end of the Listening window after a wake (clock)
         self._level = 0.0
+        self._noise = NoiseFloor()  # the room's quiet level, learned while waiting
+        self._recording: bytearray | None = None  # the spoken request, in memory only
+        self._endpoint: Endpointer | None = None
         self._last_wake: float | None = None
         self._changed = threading.Event()
         self._stopping = threading.Event()
@@ -181,6 +205,7 @@ class WakeService:
                 "paused": self._reason,
                 "on_ac": self._on_ac,
                 "battery": self._battery,
+                "talk": self.make_transcriber is not None,
             }
 
     # --- the listening thread -----------------------------------------------------------
@@ -247,9 +272,13 @@ class WakeService:
                 last_turn = now
                 if chunk is not None:
                     heard = self.clock()
-                    if detector.feed(chunk) is not None:
-                        self.on_wake()
-                    self._send_level(chunk)
+                    level = loudness(chunk)
+                    woke = detector.feed(chunk) is not None and self.on_wake()
+                    if self._recording is not None and not woke:
+                        self._record(chunk, level)
+                    elif self._recording is None:
+                        self._noise.update(level)
+                    self._send_level(level)
                 elif self.clock() - heard > STALL_S:  # the device went away or stopped delivering
                     self.reopened += 1
                     break
@@ -277,16 +306,65 @@ class WakeService:
         return until is not None and self.clock() < until
 
     def end_attention(self) -> None:
-        """The console reported typing, or a message was sent: stop sending levels."""
+        """The console reported typing, or a message was sent: stop listening, drop any recording."""
         self._attend_until = None
+        self._recording = self._endpoint = None
 
-    def _send_level(self, chunk: bytes) -> None:
+    def _send_level(self, level: float) -> None:
         """While Listening only: one number, 0-1, for the console's level ring. Never the audio."""
         if not self.attending():
             self._attend_until = None
             return
-        self._level = smooth(self._level, loudness(chunk))
+        self._level = smooth(self._level, level)
         self.emit({"type": "wake_level", "level": round(self._level, 3)})
+
+    # --- a spoken request ------------------------------------------------------------------------
+
+    def say(self, text: str) -> None:
+        self.speaker.say(for_speech(text))
+
+    def _record(self, chunk: bytes, level: float) -> None:
+        recording, endpoint = self._recording, self._endpoint
+        if recording is None or endpoint is None:
+            return  # ended by the console meanwhile
+        if self.speaker.busy():
+            return  # Kestrel's own voice (the greeting): not part of your request
+        recording += chunk
+        state = endpoint.feed(level)
+        if state not in ("waiting", "speaking"):
+            self._finish(state, bytes(recording), endpoint.speech_s)
+
+    def _finish(self, state: str, audio: bytes, speech_s: float) -> None:
+        self._recording = self._endpoint = None
+        self._attend_until = None
+        self.emit({"type": "wake_end", "reason": state})
+        if state == "no_speech":
+            self._ignored("no speech")
+            return
+        threading.Thread(target=self._transcribe, args=(audio, speech_s), name="kestrel-stt", daemon=True).start()
+
+    def _transcribe(self, audio: bytes, speech_s: float) -> None:
+        try:
+            if self._transcriber is None and self.make_transcriber is not None:
+                self._transcriber = self.make_transcriber()
+            if self._transcriber is None:
+                return
+            transcript = self._transcriber.transcribe(audio)
+        except Exception as e:  # a missing model, a broken file: say so, never crash the listener
+            self._ignored(f"transcription failed: {type(e).__name__}")
+            return
+        finally:
+            del audio  # the recording's last reference: it goes now
+        text, reason = guard(transcript.text, transcript.confidence, speech_s, self.settings.min_confidence)
+        if text is None:
+            self._ignored(reason)
+            return
+        self.on_request(text)
+
+    def _ignored(self, reason: str) -> None:
+        """Nothing usable was heard: say so; nothing reaches the agent."""
+        self.emit({"type": "voice_ignored", "reason": reason})
+        self.say(DIDNT_CATCH)
 
     # --- a wake -----------------------------------------------------------------------
 
@@ -296,12 +374,18 @@ class WakeService:
         if self._last_wake is not None and now - self._last_wake < self.settings.cooldown_s:
             return False
         self._last_wake = now
+        self.speaker.stop()  # barge-in: "Kestrel" while it speaks stops the speech
         at = self.wall()
         self.record_wake(at)
         self.power.wake_display()
         self.power.bring_to_front(self.settings.window_title)
         self._level = 0.0
-        self._attend_until = now + self.settings.listen_seconds
-        self.emit({"type": "wake", "at": at, "greeting": self.greeting, "listen_seconds": self.settings.listen_seconds})
-        self.speaker.say(self.greeting)
+        if self.make_transcriber is not None:  # record one spoken request
+            self._recording, self._endpoint = bytearray(), Endpointer(floor=self._noise.value)
+            window = 3.0 + START_TIMEOUT_S + MAX_REQUEST_S  # the greeting, then the request at most
+        else:
+            window = self.settings.listen_seconds
+        self._attend_until = now + window
+        self.emit({"type": "wake", "at": at, "greeting": self.greeting, "listen_seconds": window})
+        self.say(self.greeting)
         return True

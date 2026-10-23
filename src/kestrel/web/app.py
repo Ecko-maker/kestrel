@@ -36,6 +36,7 @@ from kestrel import trace_report
 from kestrel.agent import Agent, EventCallback
 from kestrel.tracing import Tracer
 from kestrel.wake import WakeService
+from kestrel.wake.talk import APPROVAL_SENTENCE, NO_CONSOLE, spoken_answer
 from kestrel.web.approver import APPROVAL_TIMEOUT, WebApprover
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -103,10 +104,23 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
         for send in list(clients):
             send(event)
 
+    # A spoken request goes to one console only: the one used most recently (it then sends it
+    # exactly like typed text). Only its text travels; the audio never left the wake service.
+    active: list[Callable[[dict], None]] = []
+
+    def deliver_request(text: str) -> None:
+        target = active[-1] if active and active[-1] in clients else None
+        if target is None:
+            if wake is not None:
+                wake.say(NO_CONSOLE)
+            return
+        target({"type": "voice_request", "text": text})
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if wake is not None:
             wake.emit = broadcast
+            wake.on_request = deliver_request
             wake.start()
         try:
             yield
@@ -233,10 +247,28 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
         loop = asyncio.get_running_loop()
         outbox: asyncio.Queue = asyncio.Queue()
 
+        # A turn that started as a spoken request (and the console's "Speak answers" switch). The flag
+        # stays here: the agent gets only the text, so the model sees typed and spoken input alike.
+        voice = {"on": False, "speak": True}
+
         def emit(event: dict) -> None:  # called from the agent's worker threads
             loop.call_soon_threadsafe(outbox.put_nowait, event)
+            if voice["on"] and wake is not None:
+                speak_reply(event)
+
+        def speak_reply(event: dict) -> None:
+            """Voice turns only: the answer's first sentences, or for an approval card only a fixed
+            sentence, never its details. Voice can't answer the card: only a click resolves it."""
+            kind = event.get("type")
+            if kind == "done":
+                voice["on"] = False
+            elif voice["speak"] and kind == "approval_required":
+                wake.say(APPROVAL_SENTENCE)  # type: ignore[union-attr]
+            elif voice["speak"] and kind == "answer":
+                wake.say(spoken_answer(str(event.get("text") or "")))  # type: ignore[union-attr]
 
         clients.add(emit)
+        active.append(emit)
         if wake is not None:
             emit(wake.status())  # so the console shows "Listening" from the start if it is
         approver = WebApprover(timeout=config.approval_timeout)
@@ -259,6 +291,9 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
             while True:
                 message = await ws.receive_json()
                 kind = message.get("type")
+                if emit in active:
+                    active.remove(emit)
+                active.append(emit)  # this console is now the most recently active one
                 if kind in ("user_message", "wake_dismiss") and wake is not None:
                     wake.end_attention()  # typing or sending ends the wake's Listening window
                 if kind == "user_message" and agent is not None:
@@ -268,6 +303,8 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
                     if running and not running.done():
                         emit({"type": "error", "message": "Kestrel is still working on your last message."})
                         continue
+                    voice["on"] = bool(message.get("voice"))
+                    voice["speak"] = message.get("speak", True) is not False
                     running = asyncio.create_task(asyncio.to_thread(agent.run, text))
                 elif kind == "approval_response":
                     approver.resolve(str(message.get("approval_id")), message)
@@ -275,6 +312,8 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
             pass
         finally:
             clients.discard(emit)
+            if emit in active:
+                active.remove(emit)
             approver.close()  # anything waiting for an answer is rejected; the agent finishes on its own
             sender.cancel()
 
