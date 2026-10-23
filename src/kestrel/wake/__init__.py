@@ -21,7 +21,24 @@ def build_wake_service(record_wake) -> WakeService | None:
             factories.append(vosk_recognizer_factory(settings.model_dir))
         return VoskDetector(factories[0], settings.threshold)
 
-    return WakeService(settings, make_detector, MicSource, default_power(), default_speaker(), record_wake)
+    make_transcriber = None
+    if settings.talk:
+        from kestrel.wake.transcribe import WhisperCppTranscriber, talk_model_file
+
+        model_file = talk_model_file(settings.talk_model)
+        if model_file.is_file():
+            make_transcriber = lambda: WhisperCppTranscriber(model_file)  # noqa: E731 (loaded on first request)
+        else:
+            print(f"[wake] spoken requests off: no talk model at {model_file} (scripts/get_talk_model.py)")
+    return WakeService(
+        settings,
+        make_detector,
+        MicSource,
+        default_power(),
+        default_speaker(),
+        record_wake,
+        make_transcriber=make_transcriber,
+    )
 
 
 __all__ = ["WakeService", "WakeSettings", "build_wake_service"]

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, FlaskConical, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
+import { ArrowUp, FlaskConical, Mic, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
 import { rateTrace, type SessionInfo, type Stats } from "../api";
 import { AgentTrace } from "../components/AgentTrace";
 import { ApprovalCard } from "../components/ApprovalCard";
@@ -243,7 +243,10 @@ export function ChatPage({
               )}
               {chat.turns.map((turn) => (
                 <div key={turn.id} className="space-y-5">
-                  <div className="flex justify-end">
+                  <div className="flex items-start justify-end gap-2">
+                    {turn.voice && (
+                      <Mic className="mt-3 size-4 shrink-0 text-stone-500 dark:text-stone-400" role="img" aria-label="Spoken request" />
+                    )}
                     <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-stone-800 px-4 py-2.5 text-[15px] leading-6 text-stone-50 dark:bg-stone-200 dark:text-stone-900">
                       {turn.user}
                     </div>

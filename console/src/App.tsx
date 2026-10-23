@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppWindow, ChartColumn, ChartGantt, FlaskConical, MessagesSquare, Monitor, Moon, Radar, Sun } from "lucide-react";
 import { api, AuthError, getWake, setWake, type SessionInfo, type Stats } from "./api";
 import { cx } from "./components/ui";
-import { WakeCaption, WakeChip } from "./components/WakeChip";
+import { Caption, SpeakSwitch, WakeChip, greetingCaption } from "./components/WakeChip";
 import { BootSequence } from "./hud/BootSequence";
 import { FalconMark } from "./hud/FalconMark";
 import { storageGet, storageSet, useLook, type Look } from "./hud/useLook";
@@ -199,6 +199,7 @@ export function App() {
           </span>
           <div className="flex items-center gap-2 md:flex-col md:items-stretch">
             <WakeChip status={chat.wakeStatus} onToggle={toggleWake} />
+            {chat.wakeStatus.available && chat.wakeStatus.talk && <SpeakSwitch on={chat.speakAnswers} onChange={chat.setSpeakAnswers} />}
             <LookSwitch look={look} setLook={setLook} />
             {look === "classic" && <ThemeSwitch theme={theme} setTheme={setTheme} />}
           </div>
@@ -215,7 +216,8 @@ export function App() {
         )}
       </main>
       {look === "hud" && <BootSequence session={session} connection={chat.state} />}
-      {look === "classic" && <WakeCaption wake={chat.wake} />}
+      {look === "classic" && <Caption item={greetingCaption(chat.wake)} />}
+      <Caption item={chat.voiceNote} />
     </div>
   );
 }
