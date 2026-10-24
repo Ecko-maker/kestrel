@@ -20,6 +20,7 @@ from kestrel.wake.normalize import normalize, raw_words, word_errors
 from kestrel.wake.power import NullPower
 from kestrel.wake.talk import (
     APPROVAL_SENTENCE,
+    CHECK_ON_SCREEN,
     DIDNT_CATCH,
     END_SILENCE_S,
     MAX_REQUEST_S,
@@ -31,7 +32,15 @@ from kestrel.wake.talk import (
     guard,
     spoken_answer,
 )
-from kestrel.wake.transcribe import Transcript, WhisperCppTranscriber, talk_model_file
+from kestrel.wake.transcribe import (
+    MAX_PROMPT_CHARS,
+    VOCAB_WORDS,
+    Transcript,
+    WhisperCppTranscriber,
+    read_vocab,
+    talk_model_file,
+    talk_prompt,
+)
 from kestrel.web.app import WebConfig, create_app
 
 TOKEN = "test-token-123"
@@ -128,6 +137,8 @@ def make(tmp_path, *, script=(), recogniser=None, voice=None, talk=True):
     requests: list[str] = []
     service.emit = events.append
     service.on_request = requests.append
+    service.checked = []  # type: ignore[attr-defined]  # low-confidence transcripts sent for checking
+    service.on_check = service.checked.append  # type: ignore[attr-defined]
     return service, voice, recogniser, mic, events, requests
 
 
@@ -178,15 +189,28 @@ def test_the_noise_floor_follows_quiet_fast_and_loud_slowly():
 # --- the hallucination guard -----------------------------------------------------------------------
 
 
-def test_guard_drops_low_confidence():
-    assert guard("Turn off the lights.", 0.30, 2.0, 0.45) == (None, "low confidence")
-    assert guard("Turn off the lights.", 0.60, 2.0, 0.45) == ("Turn off the lights.", "ok")
-    assert guard("Turn off the lights.", None, 2.0, 0.45)[0] == "Turn off the lights."  # unknown: kept
+def test_guard_three_paths_send_check_drop():
+    sent = guard("Turn off the lights.", 0.60, 2.0, 0.45)
+    assert (sent.action, sent.text, sent.reason) == ("send", "Turn off the lights.", "ok")
+    check = guard("Turn off the lights.", 0.30, 2.0, 0.45)
+    assert (check.action, check.text, check.reason) == ("check", "Turn off the lights.", "low confidence")
+    dropped = guard("Turn off the lights.", 0.9, 0.2, 0.45)
+    assert (dropped.action, dropped.text, dropped.reason) == ("drop", None, "too little speech")
+    assert guard("Turn off the lights.", None, 2.0, 0.45).action == "send"  # confidence unknown: sent
 
 
 def test_guard_drops_under_0_4_seconds_of_speech():
-    assert guard("Hello there", 0.9, 0.3, 0.45) == (None, "too little speech")
-    assert guard("Hello there", 0.9, 0.4, 0.45)[0] == "Hello there"
+    assert guard("Hello there", 0.9, 0.3, 0.45).action == "drop"
+    assert guard("Hello there", 0.9, 0.4, 0.45).text == "Hello there"
+    assert guard("Hello there", 0.1, 0.3, 0.45).action == "drop", "a hard drop wins over 'check first'"
+
+
+def test_guard_drops_the_vocabulary_hint_echoed_back():
+    prompt = talk_prompt(["Priya"])
+    assert guard("todo list, workspace, file", 0.9, 2.0, 0.45, prompt).reason == "prompt echo"
+    assert guard("Names: Priya.", 0.9, 2.0, 0.45, prompt).reason == "prompt echo"
+    assert guard("Email Priya about the workspace", 0.9, 2.0, 0.45, prompt).action == "send"  # real request
+    assert guard("weather", 0.9, 2.0, 0.45, prompt).action == "send"  # one word isn't taken for an echo
 
 
 @pytest.mark.parametrize(
@@ -194,18 +218,19 @@ def test_guard_drops_under_0_4_seconds_of_speech():
     ["Thank you for watching!", "thanks for watching.", "You", "you.", "...", "?", "[BLANK_AUDIO]", "(dramatic music)"],
 )
 def test_guard_drops_filler_hallucinations(text):
-    sent, why = guard(text, 0.9, 2.0, 0.45)
-    assert sent is None and why in ("filler", "empty")
+    verdict = guard(text, 0.9, 2.0, 0.45)
+    assert verdict.action == "drop" and verdict.text is None and verdict.reason in ("filler", "empty")
+    assert guard(text, 0.1, 2.0, 0.45).action == "drop", "low confidence never rescues a filler"
 
 
 def test_fillers_match_the_whole_transcript_only():
     assert (
-        guard("Thank you for watching the match with me", 0.9, 2.0, 0.45)[0]
+        guard("Thank you for watching the match with me", 0.9, 2.0, 0.45).text
         == "Thank you for watching the match with me"
     )
-    assert guard("Tell you what, list my files", 0.9, 2.0, 0.45)[0] == "Tell you what, list my files"
+    assert guard("Tell you what, list my files", 0.9, 2.0, 0.45).text == "Tell you what, list my files"
     assert (
-        guard("[BLANK_AUDIO] List my files", 0.9, 2.0, 0.45)[0] == "List my files"
+        guard("[BLANK_AUDIO] List my files", 0.9, 2.0, 0.45).text == "List my files"
     )  # the label goes, the request stays
 
 
@@ -524,3 +549,77 @@ def test_raw_and_normalised_word_errors():
     ref, hyp = "what is seventeen percent", "What's 17%?"
     assert word_errors(raw_words(ref), raw_words(hyp)) == 4  # raw: every word differs
     assert word_errors(normalize(ref).split(), normalize(hyp).split()) == 0
+
+
+# --- "check first" and the vocabulary hint -----------------------------------------------------------------
+
+
+def test_low_confidence_goes_to_check_not_to_the_agent(tmp_path):
+    service, voice, _, _, _events, requests = make(
+        tmp_path, script=spoken_request(), recogniser=FakeRecogniser("List the files in my workspace.", 0.2)
+    )
+    service.start()
+    try:
+        wait_for(lambda: CHECK_ON_SCREEN in voice.said)
+    finally:
+        service.stop()
+    assert requests == []  # nothing sent
+    assert service.checked == ["List the files in my workspace."]  # type: ignore[attr-defined]
+    assert DIDNT_CATCH not in voice.said
+
+
+def test_a_check_goes_to_the_most_recent_console_and_the_agent_gets_nothing(tmp_path):
+    llm = SpyLLM()  # no replies: any model call would fail the test
+    app, service, _voice = app_with(tmp_path, llm)
+    with TestClient(app, base_url=BASE) as client, client.websocket_connect(f"/ws?token={TOKEN}") as ws:
+        ws.receive_json()
+        service.on_check("Email Priya the notes.")
+        assert until(ws, "voice_check") == {"type": "voice_check", "text": "Email Priya the notes."}
+        time.sleep(0.1)
+    assert llm.inputs == []
+
+
+def test_the_vocabulary_prompt_is_short_and_built_from_kestrel_words_and_the_name_list(tmp_path):
+    base = talk_prompt()
+    assert base.startswith("Kestrel: ") and all(word in base for word in VOCAB_WORDS)
+    assert len(base) < MAX_PROMPT_CHARS
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_text("# contacts\nPriya\n\nSam  # work\nPriya\n" + "x" * 50 + "\n", encoding="utf-8")
+    assert read_vocab(vocab) == ["Priya", "Sam"]  # comments, blanks, duplicates and long lines left out
+    assert read_vocab(tmp_path / "missing.txt") == []
+    with_names = talk_prompt(read_vocab(vocab))
+    assert with_names.endswith("Names: Priya, Sam.")
+    many = talk_prompt([f"Person{i}" for i in range(100)])
+    assert len(many) <= MAX_PROMPT_CHARS and "Person0" in many and "Person99" not in many
+
+
+def test_the_vocabulary_file_comes_from_the_setting(tmp_path, monkeypatch):
+    vocab = tmp_path / "names.txt"
+    vocab.write_text("Priya\n", encoding="utf-8")
+    monkeypatch.setenv("KESTREL_TALK_VOCAB_FILE", str(vocab))
+    assert WakeSettings.from_env().talk_prompt.endswith("Names: Priya.")
+
+
+def test_the_hint_is_passed_to_whisper_cpp_and_can_be_turned_off():
+    calls = []
+
+    class FakeModel:
+        def transcribe(self, audio, **params):
+            calls.append(params)
+            return []
+
+    stt = object.__new__(WhisperCppTranscriber)
+    stt.model, stt.prompt = FakeModel(), talk_prompt()
+    stt.transcribe(b"\x00\x10" * 16000)
+    stt.prompt = None
+    stt.transcribe(b"\x00\x10" * 16000)
+    # always passed explicitly ("" = none): pywhispercpp keeps parameters from one call to the next
+    assert calls[0]["initial_prompt"] == talk_prompt() and calls[1]["initial_prompt"] == ""
+
+
+def test_the_vocabulary_hint_can_be_switched_off(monkeypatch):
+    monkeypatch.delenv("KESTREL_TALK_HINT", raising=False)
+    assert WakeSettings.from_env().talk_prompt.startswith("Kestrel: ")
+    monkeypatch.setenv("KESTREL_TALK_HINT", "off")
+    assert WakeSettings.from_env().talk_prompt == ""
+    assert guard("todo list, workspace, file", 0.9, 2.0, 0.45, "").action == "send"  # no hint: no echo rule

@@ -1,22 +1,29 @@
 """Measure spoken requests with the same code the live listener uses (docs/voice-wake.md, "Talking to Kestrel").
 
-1. Your requests (scripts/talk_record.py: WAVs + refs.tsv): word error rate, raw and normalised
-   (kestrel.wake.normalize: case, punctuation, contractions, numbers and units), latency per request,
-   Whisper's confidence, and what the hallucination guard would do with each.
-2. Background-only audio (a podcast, TV; no requests in it): the audio is streamed in 0.1 s chunks
-   through the same end-of-speech detector as if Kestrel were listening the whole time; every
-   segment it cuts is transcribed and guarded. Segments that pass would have become requests the
-   agent never got from you: reported as false requests per hour of listening (an upper bound:
-   the live listener only records right after a wake).
+1. Your requests (scripts/talk_record.py: WAVs + refs.tsv), each transcribed twice: without and with the
+   vocabulary hint (kestrel.wake.transcribe.talk_prompt, the server's own prompt). For both: word error
+   rate, raw and normalised (kestrel.wake.normalize: case, punctuation, contractions, numbers and units),
+   latency, Whisper's confidence, and what the guard would do: send, check first (low confidence:
+   shown unsent, "Did I hear that right?") or drop ("I didn't catch that").
+2. Background-only audio (a podcast, TV; no requests in it), with the hint, as the server runs: the
+   audio is streamed in 0.1 s chunks through the same end-of-speech detector as if Kestrel were
+   listening the whole time; every segment it cuts is transcribed and guarded. Segments that would be
+   sent are false requests; segments sent for checking are false prompts. Per hour of listening (an
+   upper bound: the live listener only records right after a wake).
 
-    uv run --no-sync python scripts/talk_eval.py --requests data/talk/requests --background data/wake/background
-    uv run --no-sync python scripts/talk_eval.py --requests data/talk/requests --model tiny.en-q5_1
+The confidence threshold (KESTREL_TALK_MIN_CONFIDENCE) is chosen from these numbers on your real
+requests plus background audio; the script reports at the one you pass.
+
+    uv run --no-sync python scripts/talk_eval.py                        # data/talk/requests
+    uv run --no-sync python scripts/talk_eval.py --set new              # data/talk/requests-new
+    uv run --no-sync python scripts/talk_eval.py --background data/wake/background --model tiny.en-q5_1
 """
 
 import argparse
 import json
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -27,10 +34,20 @@ from kestrel.wake.detector import SAMPLE_RATE
 from kestrel.wake.normalize import normalize, raw_words, word_errors
 from kestrel.wake.service import loudness
 from kestrel.wake.talk import DEFAULT_MIN_CONFIDENCE, Endpointer, NoiseFloor, guard
-from kestrel.wake.transcribe import DEFAULT_TALK_MODEL, TALK_MODELS, WhisperCppTranscriber, talk_model_file
+from kestrel.wake.transcribe import (
+    DEFAULT_TALK_MODEL,
+    TALK_MODELS,
+    WhisperCppTranscriber,
+    read_vocab,
+    talk_model_file,
+    talk_prompt,
+    vocab_file,
+)
 
 AUDIO = {".wav", ".flac", ".ogg", ".mp3"}
 CHUNK_BYTES = CHUNK_FRAMES * 2
+SETS = {"first": Path("data") / "talk" / "requests", "new": Path("data") / "talk" / "requests-new"}
+MODES = ("no hint", "hint")
 
 
 def load_pcm(path: Path) -> bytes:
@@ -48,8 +65,7 @@ def speech_seconds(pcm: bytes, floor_from: float = 0.5) -> float:
     """Speech above the noise floor, as the live guard sees it (floor learned on the first 0.5 s)."""
     floor = NoiseFloor()
     chunks = [pcm[i : i + CHUNK_BYTES] for i in range(0, len(pcm), CHUNK_BYTES)]
-    lead = int(floor_from / 0.1)
-    for c in chunks[:lead]:
+    for c in chunks[: int(floor_from / 0.1)]:
         floor.update(loudness(c))
     endpoint = Endpointer(floor=floor.value)
     for c in chunks:
@@ -57,67 +73,67 @@ def speech_seconds(pcm: bytes, floor_from: float = 0.5) -> float:
     return endpoint.speech_s
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--requests", type=Path, required=True, help="folder with req-*.wav and refs.tsv")
-    parser.add_argument("--background", type=Path, nargs="*", default=[], help="audio with no requests in it")
-    parser.add_argument("--model", default=DEFAULT_TALK_MODEL, choices=sorted(TALK_MODELS))
-    parser.add_argument("--min-confidence", type=float, default=DEFAULT_MIN_CONFIDENCE)
-    parser.add_argument("--json", type=Path, help="also write the numbers here")
-    args = parser.parse_args()
-
-    stt = WhisperCppTranscriber(talk_model_file(args.model))
+def score_requests(stt: WhisperCppTranscriber, folder: Path, prompt: str, min_conf: float) -> list[dict]:
     refs = dict(
         line.split("\t", 1)
-        for line in (args.requests / "refs.tsv").read_text(encoding="utf-8-sig").splitlines()
+        for line in (folder / "refs.tsv").read_text(encoding="utf-8-sig").splitlines()
         if "\t" in line
     )
     rows = []
     for name, ref in sorted(refs.items()):
-        pcm = load_pcm(args.requests / name)
-        start = time.perf_counter()
-        t = stt.transcribe(pcm)
-        latency = time.perf_counter() - start
-        sent, why = guard(t.text, t.confidence, speech_seconds(pcm), args.min_confidence)
-        raw_ref, raw_hyp = raw_words(ref), raw_words(t.text)
-        norm_ref, norm_hyp = normalize(ref).split(), normalize(t.text).split()
-        rows.append(
-            {
-                "file": name,
-                "reference": ref,
+        pcm = load_pcm(folder / name)
+        speech_s = speech_seconds(pcm)
+        row: dict = {"file": name, "reference": ref, "audio_s": round(len(pcm) / 2 / SAMPLE_RATE, 2)}
+        for mode in MODES:
+            stt.prompt = prompt if mode == "hint" else None
+            start = time.perf_counter()
+            t = stt.transcribe(pcm)
+            latency = time.perf_counter() - start
+            verdict = guard(t.text, t.confidence, speech_s, min_conf, prompt if mode == "hint" else "")
+            row[mode] = {
                 "transcript": t.text,
-                "confidence": t.confidence,
+                "confidence": None if t.confidence is None else round(t.confidence, 3),
                 "latency_s": round(latency, 3),
-                "audio_s": round(len(pcm) / 2 / SAMPLE_RATE, 2),
-                "raw_errors": word_errors(raw_ref, raw_hyp),
-                "raw_words": len(raw_ref),
-                "norm_errors": word_errors(norm_ref, norm_hyp),
-                "norm_words": len(norm_ref),
-                "guard": why,
-                "sent": sent is not None,
+                "raw_errors": word_errors(raw_words(ref), raw_words(t.text)),
+                "raw_words": len(raw_words(ref)),
+                "norm_errors": word_errors(normalize(ref).split(), normalize(t.text).split()),
+                "norm_words": len(normalize(ref).split()),
+                "path": verdict.action,
+                "reason": verdict.reason,
             }
-        )
-        print(f"{name}: {t.text!r} (conf {t.confidence}, {latency:.2f} s, guard: {why})")
+        hinted = row["hint"]
+        print(f"{name}: {hinted['transcript']!r} (conf {hinted['confidence']}, {hinted['path']})")
+        rows.append(row)
+    return rows
+
+
+def summary(rows: list[dict], mode: str) -> dict:
+    cells = [r[mode] for r in rows]
 
     def total(key: str) -> int:
-        return sum(r[key] for r in rows)
+        return sum(c[key] for c in cells)
 
-    raw_wer = total("raw_errors") / max(total("raw_words"), 1)
-    norm_wer = total("norm_errors") / max(total("norm_words"), 1)
-    per_request = bootstrap_ci([r["norm_errors"] / max(r["norm_words"], 1) for r in rows])
-    latencies = sorted(r["latency_s"] for r in rows)
-    print(f"\n{len(rows)} requests, model {args.model}")
-    print(f"  WER raw {100 * raw_wer:.1f}%, normalised {100 * norm_wer:.1f}%", end="")
-    if per_request:
-        ci = f"{100 * per_request.low:.1f}-{100 * per_request.high:.1f}%"
-        print(f" (per-request mean {100 * per_request.value:.1f}%, 95% CI {ci})")
-    print(f"  latency median {latencies[len(latencies) // 2]:.2f} s, max {latencies[-1]:.2f} s")
-    dropped = [r for r in rows if not r["sent"]]
-    reasons = ", ".join(f"{r['file']}: {r['guard']}" for r in dropped)
-    print(f"  dropped by the guard: {len(dropped)} of {len(rows)}" + (f" ({reasons})" if dropped else ""))
+    per_request = bootstrap_ci([c["norm_errors"] / max(c["norm_words"], 1) for c in cells])
+    latencies = sorted(c["latency_s"] for c in cells)
+    confidences = sorted(c["confidence"] for c in cells if c["confidence"] is not None)
+    return {
+        "wer_raw": total("raw_errors") / max(total("raw_words"), 1),
+        "wer_normalised": total("norm_errors") / max(total("norm_words"), 1),
+        "per_request_ci": None if per_request is None else [per_request.low, per_request.high],
+        "latency_median_s": latencies[len(latencies) // 2] if latencies else None,
+        "latency_max_s": latencies[-1] if latencies else None,
+        "paths": dict(Counter(c["path"] for c in cells)),
+        "drop_reasons": dict(Counter(c["reason"] for c in cells if c["path"] == "drop")),
+        "confidence_min": confidences[0] if confidences else None,
+        "confidence_median": confidences[len(confidences) // 2] if confidences else None,
+    }
 
-    false_requests, listened = [], 0.0
-    for path in [f for p in args.background for f in (sorted(p.rglob("*")) if p.is_dir() else [p])]:
+
+def background(stt: WhisperCppTranscriber, paths: list[Path], prompt: str, min_conf: float) -> dict:
+    stt.prompt = prompt
+    found: list[dict] = []
+    listened = 0.0
+    for path in [f for p in paths for f in (sorted(p.rglob("*")) if p.is_dir() else [p])]:
         if path.suffix.lower() not in AUDIO:
             continue
         pcm = load_pcm(path)
@@ -132,38 +148,89 @@ def main() -> int:
             state = endpoint.feed(level)
             if state in ("waiting", "speaking"):
                 continue
-            if state != "no_speech":
-                t = stt.transcribe(bytes(segment))
-                sent, why = guard(t.text, t.confidence, endpoint.speech_s, args.min_confidence)
-                if sent is not None:
-                    false_requests.append({"file": path.name, "at_s": round(i / 2 / SAMPLE_RATE, 1), "text": sent})
-            else:
+            if state == "no_speech":
                 floor.update(level)
+            else:
+                t = stt.transcribe(bytes(segment))
+                verdict = guard(t.text, t.confidence, endpoint.speech_s, min_conf, prompt)
+                if verdict.action != "drop":
+                    found.append(
+                        {
+                            "file": path.name,
+                            "at_s": round(i / 2 / SAMPLE_RATE, 1),
+                            "path": verdict.action,
+                            "text": verdict.text,
+                        }
+                    )
             endpoint = None
-    if listened:
-        per_hour = len(false_requests) / (listened / 3600)
-        hours = listened / 3600
-        print(
-            f"\nbackground: {hours:.2f} h, {len(false_requests)} false requests = {per_hour:.1f} per hour of listening"
+    hours = listened / 3600
+    sends = sum(f["path"] == "send" for f in found)
+    checks = sum(f["path"] == "check" for f in found)
+    return {
+        "hours": round(hours, 3),
+        "false_requests": sends,
+        "false_checks": checks,
+        "false_requests_per_hour": round(sends / hours, 2) if hours else None,
+        "false_checks_per_hour": round(checks / hours, 2) if hours else None,
+        "segments": found,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--set", choices=sorted(SETS), default="first", help="which recorded set (talk_record.py --set)"
+    )
+    parser.add_argument("--requests", type=Path, help="a folder with req-*.wav and refs.tsv (overrides --set)")
+    parser.add_argument("--background", type=Path, nargs="*", default=[], help="audio with no requests in it")
+    parser.add_argument("--model", default=DEFAULT_TALK_MODEL, choices=sorted(TALK_MODELS))
+    parser.add_argument("--min-confidence", type=float, default=DEFAULT_MIN_CONFIDENCE)
+    parser.add_argument("--vocab-file", type=Path, default=vocab_file(), help="names for the hint (git-ignored)")
+    parser.add_argument("--json", type=Path, help="also write the numbers here")
+    args = parser.parse_args()
+
+    folder = args.requests or SETS[args.set]
+    prompt = talk_prompt(read_vocab(args.vocab_file))
+    print(f"set: {folder}; model {args.model}; min confidence {args.min_confidence}\nhint: {prompt!r}\n")
+    stt = WhisperCppTranscriber(talk_model_file(args.model))
+    rows = score_requests(stt, folder, prompt, args.min_confidence)
+    results = {"set": str(folder), "model": args.model, "min_confidence": args.min_confidence, "prompt": prompt}
+    print(f"\n{len(rows)} requests")
+    head = ("", "WER raw", "WER norm", "95% CI (norm, per request)", "latency", "send", "check", "drop")
+    widths = (10, 8, 9, 27, 8, 5, 6, 5)
+    print(" ".join(f"{h:>{w}}" if i else f"{h:{w}}" for i, (h, w) in enumerate(zip(head, widths, strict=True))))
+    for mode in MODES:
+        s = summary(rows, mode)
+        results[mode] = s
+        ci = (
+            "-"
+            if s["per_request_ci"] is None
+            else f"{100 * s['per_request_ci'][0]:.1f}-{100 * s['per_request_ci'][1]:.1f}%"
         )
-        for f in false_requests[:20]:
-            print(f"  {f['file']} @ {f['at_s']} s: {f['text']!r}")
+        paths = s["paths"]
+        counts = f"{paths.get('send', 0):>5} {paths.get('check', 0):>6} {paths.get('drop', 0):>5}"
+        wer = f"{100 * s['wer_raw']:>7.1f}% {100 * s['wer_normalised']:>8.1f}%"
+        print(f"{mode:10} {wer} {ci:>27} {s['latency_median_s'] or 0:>7.2f}s {counts}")
+    hinted = results["hint"]
+    print(f"\nconfidence with the hint: min {hinted['confidence_min']}, median {hinted['confidence_median']}")
+    print("(the threshold is chosen from these plus the background numbers)")
+    changed = [r for r in rows if r["no hint"]["norm_errors"] != r["hint"]["norm_errors"]]
+    if changed:
+        print("\nrequests the hint changed (normalised errors without -> with):")
+        for r in changed:
+            before, after = r["no hint"]["norm_errors"], r["hint"]["norm_errors"]
+            print(f"  {r['file']}: {before} -> {after}  {r['hint']['transcript']!r}")
+    if args.background:
+        bg = background(stt, args.background, prompt, args.min_confidence)
+        results["background"] = bg
+        print(f"\nbackground (with the hint): {bg['hours']:.2f} h")
+        print(f"  {bg['false_requests']} false requests ({bg['false_requests_per_hour']} per hour)")
+        print(f"  {bg['false_checks']} false checks ({bg['false_checks_per_hour']} per hour)")
+        for f in bg["segments"][:20]:
+            print(f"  {f['file']} @ {f['at_s']} s [{f['path']}]: {f['text']!r}")
+    results["requests"] = rows
     if args.json:
-        args.json.write_text(
-            json.dumps(
-                {
-                    "model": args.model,
-                    "min_confidence": args.min_confidence,
-                    "wer_raw": raw_wer,
-                    "wer_normalised": norm_wer,
-                    "requests": rows,
-                    "background_hours": listened / 3600,
-                    "false_requests": false_requests,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+        args.json.write_text(json.dumps(results, indent=2), encoding="utf-8")
     return 0
 
 

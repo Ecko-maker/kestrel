@@ -33,6 +33,7 @@ from kestrel.wake.greeting import clean_name, greeting
 from kestrel.wake.power import Decision, Power, decide
 from kestrel.wake.speech import Speaker
 from kestrel.wake.talk import (
+    CHECK_ON_SCREEN,
     DEFAULT_MIN_CONFIDENCE,
     DIDNT_CATCH,
     MAX_REQUEST_S,
@@ -42,7 +43,7 @@ from kestrel.wake.talk import (
     for_speech,
     guard,
 )
-from kestrel.wake.transcribe import DEFAULT_TALK_MODEL, Transcriber
+from kestrel.wake.transcribe import DEFAULT_TALK_MODEL, Transcriber, read_vocab, talk_prompt, vocab_file
 
 COOLDOWN_S = 10.0
 POWER_CHECK_S = 5.0  # how often the power state is read (one GetSystemPowerStatus call)
@@ -102,6 +103,9 @@ class WakeSettings:
     talk: bool = True  # KESTREL_TALK=off: a wake only greets (no spoken requests)
     talk_model: str = DEFAULT_TALK_MODEL  # KESTREL_TALK_MODEL: base.en-q5_1 or tiny.en-q5_1
     min_confidence: float = DEFAULT_MIN_CONFIDENCE  # KESTREL_TALK_MIN_CONFIDENCE
+    talk_prompt: str = (
+        talk_prompt()
+    )  # the vocabulary hint (KESTREL_TALK_HINT=off: ""); names from KESTREL_TALK_VOCAB_FILE
 
     @classmethod
     def from_env(cls) -> WakeSettings:
@@ -117,6 +121,7 @@ class WakeSettings:
             talk=_flag("KESTREL_TALK", "on"),
             talk_model=os.getenv("KESTREL_TALK_MODEL", DEFAULT_TALK_MODEL),
             min_confidence=float(os.getenv("KESTREL_TALK_MIN_CONFIDENCE", DEFAULT_MIN_CONFIDENCE)),
+            talk_prompt=talk_prompt(read_vocab(vocab_file())) if _flag("KESTREL_TALK_HINT", "on") else "",
         )
 
 
@@ -150,6 +155,7 @@ class WakeService:
         self.wall = wall
         self.emit: Callable[[dict], None] = lambda event: None  # set by the web app (broadcast)
         self.on_request: Callable[[str], None] = lambda text: None  # set by the web app: one console
+        self.on_check: Callable[[str], None] = lambda text: None  # low confidence: into the message box, unsent
         self.greeting = greeting(settings.user_name)
         self._enabled = settings.enabled
         self._listening = False
@@ -355,11 +361,16 @@ class WakeService:
             return
         finally:
             del audio  # the recording's last reference: it goes now
-        text, reason = guard(transcript.text, transcript.confidence, speech_s, self.settings.min_confidence)
-        if text is None:
-            self._ignored(reason)
-            return
-        self.on_request(text)
+        verdict = guard(
+            transcript.text, transcript.confidence, speech_s, self.settings.min_confidence, self.settings.talk_prompt
+        )
+        if verdict.action == "drop" or verdict.text is None:
+            self._ignored(verdict.reason)
+        elif verdict.action == "check":
+            self.on_check(verdict.text)  # shown unsent: "Did I hear that right?"; nothing reaches the agent
+            self.say(CHECK_ON_SCREEN)
+        else:
+            self.on_request(verdict.text)
 
     def _ignored(self, reason: str) -> None:
         """Nothing usable was heard: say so; nothing reaches the agent."""

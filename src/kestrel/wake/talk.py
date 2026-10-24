@@ -5,13 +5,15 @@ sent to the console as if typed. This module holds the pure parts (docs/voice-wa
   (wake.service.loudness): speech is loudness above the room's noise floor; the request ends after
   1 s of quiet, after 20 s, or with nothing heard if no speech starts within 3 s.
 - guard(): Whisper can invent text on silence or noise, which would reach the agent as if you had
-  said it. A transcript is dropped (like an empty one: "I didn't catch that") when its confidence is
-  low, when there was under 0.4 s of speech, or when it is a known filler hallucination.
+  said it. Three outcomes: "send" (as if typed); "check" (low confidence: the text goes unsent into
+  the console's message box, "Did I hear that right?"); "drop" ("I didn't catch that": under 0.4 s
+  of speech, empty, a known filler hallucination, or the vocabulary hint echoed back).
 - spoken_answer() and the fixed sentences: what Kestrel says back. Never an approval card's details.
 """
 
 import re
 from dataclasses import dataclass, field
+from typing import Literal
 
 CHUNK_S = 0.1
 START_TIMEOUT_S = 3.0  # nothing said within this after the greeting: "I didn't catch that"
@@ -23,6 +25,7 @@ DEFAULT_MIN_CONFIDENCE = 0.45  # provisional; scripts/talk_eval.py reports confi
 
 APPROVAL_SENTENCE = "I need your approval on screen."
 DIDNT_CATCH = "I didn't catch that."
+CHECK_ON_SCREEN = "Please check what I heard on screen."
 REST_ON_SCREEN = "The rest is on screen."
 NO_CONSOLE = "Open the console first."  # never "Kestrel": it would wake itself
 SPOKEN_SENTENCES = 2
@@ -108,16 +111,34 @@ def filler_key(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9' ]+", " ", strip_annotations(text).lower()).split())
 
 
-def guard(text: str, confidence: float | None, speech_s: float, min_confidence: float) -> tuple[str | None, str]:
-    """(the request to send, "ok") or (None, why it was dropped)."""
+@dataclass(frozen=True)
+class Verdict:
+    action: Literal["send", "check", "drop"]
+    text: str | None  # what to send or show; None when dropped
+    reason: str
+
+
+def echoes_prompt(text: str, prompt: str) -> bool:
+    """Whisper sometimes returns its initial prompt on near-silence. Two or more words that appear,
+    in order, inside the vocabulary hint are taken for that echo, not a request."""
+    words = filler_key(text)
+    return bool(prompt) and len(words.split()) >= 2 and f" {words} " in f" {filler_key(prompt)} "
+
+
+def guard(text: str, confidence: float | None, speech_s: float, min_confidence: float, prompt: str = "") -> Verdict:
+    """send, check (low confidence: you confirm on screen) or drop ("I didn't catch that")."""
     if speech_s < MIN_SPEECH_S:
-        return None, "too little speech"
-    if confidence is not None and confidence < min_confidence:
-        return None, "low confidence"  # 1 - confidence stands in for whisper.cpp's no-speech probability
+        return Verdict("drop", None, "too little speech")
     cleaned = strip_annotations(text)
-    if filler_key(cleaned) in FILLERS:
-        return None, "empty" if not filler_key(cleaned) else "filler"
-    return cleaned, "ok"
+    key = filler_key(cleaned)
+    if key in FILLERS:
+        return Verdict("drop", None, "filler" if key else "empty")
+    if echoes_prompt(cleaned, prompt):
+        return Verdict("drop", None, "prompt echo")
+    if confidence is not None and confidence < min_confidence:
+        # 1 - confidence stands in for whisper.cpp's no-speech probability (not exposed by pywhispercpp)
+        return Verdict("check", cleaned, "low confidence")
+    return Verdict("send", cleaned, "ok")
 
 
 # --- what Kestrel says ------------------------------------------------------------------------------

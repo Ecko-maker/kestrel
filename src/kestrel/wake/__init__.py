@@ -27,7 +27,7 @@ def build_wake_service(record_wake) -> WakeService | None:
 
         model_file = talk_model_file(settings.talk_model)
         if model_file.is_file():
-            make_transcriber = lambda: WhisperCppTranscriber(model_file)  # noqa: E731 (loaded on first request)
+            make_transcriber = lambda: WhisperCppTranscriber(model_file, prompt=settings.talk_prompt)  # noqa: E731
         else:
             print(f"[wake] spoken requests off: no talk model at {model_file} (scripts/get_talk_model.py)")
     return WakeService(
