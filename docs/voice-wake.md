@@ -183,7 +183,7 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 | Setting | Default | Meaning |
 |---|---|---|
 | `KESTREL_TALK` | on | `off`: a wake only greets |
-| `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech |
+| `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech; `small.en-q5_1` (190 MB): a little more accurate, ~3 s per request (not the default, see below) |
 | `KESTREL_TALK_MIN_CONFIDENCE` | 0.45 | below it: "check first" instead of sending (provisional; chosen from your requests + background) |
 | `KESTREL_TALK_HINT` | off | the vocabulary hint; `on` to use it (off since 2026-10-24: it was worse, see below) |
 | `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
@@ -286,6 +286,20 @@ owner's vocab file (one name), base.en 5-bit, word-weighted over all 31 requests
 Net +9 errors with the hint (+10 on set 1, -1 on set 2), so it loses. The code and the switch stay
 (`KESTREL_TALK_HINT=on`); known issue #49 records it. Confidences (set 1, with the hint): min 0.425,
 median 0.642; the threshold is still provisional.
+
+**Decision (owner, 2026-10-24): base.en stays the default; small.en is an option.** The rule was fixed
+before small.en was scored: switch only if pooled normalised WER over both sets, without the hint,
+drops by at least 3 points versus base.en AND the median latency stays under 2.0 s on this laptop
+(Ryzen 7 8840HS, 8 threads). whisper.cpp small.en 5-bit (MIT, 190 MB, SHA-256 pinned, owner-approved
+download):
+
+| No hint, both sets (31 requests, 261 words) | Pooled normalised WER | Median latency | Set 1 / set 2 |
+|---|---|---|---|
+| base.en 5-bit | 37 errors = **14.18%** | **0.82 s** | 15.7% / 10.8% |
+| small.en 5-bit | 32 errors = **12.26%** | **3.12 s** (2.92-3.21 s) | 13.5% / 9.6% |
+
+A drop of 1.92 points (3 needed) at about 3.8 times the wait (under 2.0 s needed): both criteria fail.
+small.en stays available (`KESTREL_TALK_MODEL=small.en-q5_1`, `talk_eval.py --model small.en-q5_1`).
 
 Measured so far (research, 2026-10-23, synthetic Windows-voice requests padded to 5 s, Ryzen 7 8840HS,
 8 threads; a pipeline check, not an accuracy claim): base.en 5-bit 0.80 s per request, normalised WER
