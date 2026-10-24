@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, FlaskConical, Mic, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
+import { ArrowUp, FlaskConical, Mic, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert, X } from "lucide-react";
 import { rateTrace, type SessionInfo, type Stats } from "../api";
 import { AgentTrace } from "../components/AgentTrace";
 import { ApprovalCard } from "../components/ApprovalCard";
@@ -113,8 +113,10 @@ function AssistantTurn({ turn, onRespond, onRated }: { turn: Turn; onRespond: Ch
   );
 }
 
-function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
-  const [text, setText] = useState("");
+// check: a spoken request heard with low confidence. Its text starts in the box, unsent, under
+// "Did I hear that right?"; sending it (as heard or edited) sends it as a spoken request.
+function Composer({ chat, disabled, check }: { chat: Chat; disabled: boolean; check: { text: string } | null }) {
+  const [text, setText] = useState(check?.text ?? "");
   const ref = useRef<HTMLTextAreaElement>(null);
   const update = (value: string) => {
     setText(value);
@@ -127,17 +129,33 @@ function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
   const submit = () => {
     const value = text.trim();
     if (!value || disabled) return;
-    chat.send(value);
+    chat.send(value, !!check);
+    if (check) chat.clearHeardCheck(); // the box goes back to normal typing
     setText("");
     if (ref.current) ref.current.style.height = "auto";
   };
 
   return (
     <div className="rounded-2xl bg-white p-2 ring-1 ring-stone-300 shadow-sm focus-within:ring-2 focus-within:ring-accent-500 dark:bg-stone-900 dark:ring-stone-700">
+      {check && (
+        <div role="status" className="mb-1 flex items-center gap-2 px-2 pt-1 text-[13px]">
+          <Mic className="size-3.5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+          <span className="font-semibold text-amber-800 dark:text-amber-300">Did I hear that right?</span>
+          <span className="text-stone-600 dark:text-stone-400">Edit it if not, then send. Nothing is sent until you do.</span>
+          <button
+            onClick={chat.clearHeardCheck}
+            className="ml-auto rounded-md p-1 text-stone-500 hover:bg-stone-100 hover:text-stone-800 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+            aria-label="Discard what I heard"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       <div className="flex items-end gap-2">
         <textarea
           ref={ref}
-          rows={1}
+          rows={check ? 2 : 1}
+          autoFocus={!!check}
           value={text}
           onChange={(e) => update(e.target.value)}
           onKeyDown={(e) => {
@@ -272,7 +290,12 @@ export function ChatPage({
                   <Button size="sm" onClick={chat.reconnect}><RefreshCw className="size-3.5" /> New conversation</Button>
                 </div>
               )}
-              <Composer chat={chat} disabled={chat.running || chat.state !== "open" || !!unavailable} />
+              <Composer
+                key={chat.heardCheck?.key ?? "typed"}
+                chat={chat}
+                check={chat.heardCheck}
+                disabled={chat.running || chat.state !== "open" || !!unavailable}
+              />
               <p className="text-center text-[11px] text-stone-400">
                 Enter to send · Shift+Enter for a new line · runs locally, approvals required for actions
               </p>

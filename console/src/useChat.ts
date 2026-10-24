@@ -280,6 +280,8 @@ export function useChat(onTurnDone?: () => void) {
   const [dismissedWake, setDismissedWake] = useState<string | null>(null); // a wake ended by typing
   const [speakAnswers, setSpeak] = useState(readSpeak);
   const [voiceNote, setVoiceNote] = useState<{ key: string; text: string } | null>(null);
+  // A spoken request heard with low confidence: shown unsent in the message box to check first.
+  const [heardCheck, setHeardCheck] = useState<{ key: string; text: string } | null>(null);
   const speakRef = useRef(speakAnswers);
   const wakeKey = useRef<string | null>(null);
   const sendRef = useRef<(text: string, voice?: boolean) => void>(() => undefined);
@@ -308,6 +310,10 @@ export function useChat(onTurnDone?: () => void) {
       // A spoken request, already transcribed by the server: sent exactly like typed text.
       if (event.type === "voice_request") return sendRef.current(event.text as string, true);
       if (event.type === "wake_end") return setDismissedWake(wakeKey.current); // the request was recorded
+      if (event.type === "voice_check") {
+        wakes.current += 1;
+        return setHeardCheck({ key: `check-${wakes.current}`, text: event.text as string });
+      }
       if (event.type === "voice_ignored") {
         wakes.current += 1;
         return setVoiceNote({ key: `note-${wakes.current}`, text: "I didn't catch that." });
@@ -394,5 +400,7 @@ export function useChat(onTurnDone?: () => void) {
     speakAnswers,
     setSpeakAnswers,
     voiceNote,
+    heardCheck,
+    clearHeardCheck: useCallback(() => setHeardCheck(null), []),
   };
 }

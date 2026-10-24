@@ -116,11 +116,21 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
             return
         target({"type": "voice_request", "text": text})
 
+    def deliver_check(text: str) -> None:
+        """Low confidence: the same console gets the text to check; it stays unsent until you send it."""
+        target = active[-1] if active and active[-1] in clients else None
+        if target is None:
+            if wake is not None:
+                wake.say(NO_CONSOLE)
+            return
+        target({"type": "voice_check", "text": text})
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if wake is not None:
             wake.emit = broadcast
             wake.on_request = deliver_request
+            wake.on_check = deliver_check
             wake.start()
         try:
             yield

@@ -280,3 +280,5 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** base.en roughly halves tiny.en's errors on real speech for half a second more, from a 57 MB file and a 1.4 MB library. The guard exists because a transcript is sent to the agent as if the user had said it: inventing a request is worse than missing one.
 
+**Revised (owner, 2026-10-24):** low confidence no longer drops a transcript: it goes unsent into the console's message box ("Did I hear that right?") for the user to send, edit or discard ("check first"); the hard drops stay. A vocabulary hint (whisper.cpp initial prompt, <= 200 characters) from general Kestrel words and a local name list, never from the evaluation sentences, plus a drop rule for the hint echoed back. On the first set of 21 recorded requests it helped Kestrel words but was worse overall (15.7% -> 19.7% normalised WER, overlapping intervals); it stays on as specified, behind `KESTREL_TALK_HINT`, until the unseen second set decides (known issue #49).
+
