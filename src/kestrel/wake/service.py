@@ -103,9 +103,9 @@ class WakeSettings:
     talk: bool = True  # KESTREL_TALK=off: a wake only greets (no spoken requests)
     talk_model: str = DEFAULT_TALK_MODEL  # KESTREL_TALK_MODEL: base.en-q5_1 or tiny.en-q5_1
     min_confidence: float = DEFAULT_MIN_CONFIDENCE  # KESTREL_TALK_MIN_CONFIDENCE
-    talk_prompt: str = (
-        talk_prompt()
-    )  # the vocabulary hint (KESTREL_TALK_HINT=off: ""); names from KESTREL_TALK_VOCAB_FILE
+    # The vocabulary hint: off by default (KESTREL_TALK_HINT=on to use it; known issue #49: pooled over
+    # 31 recorded requests it was worse, 17.62% vs 14.18% normalised WER). Names: KESTREL_TALK_VOCAB_FILE.
+    talk_prompt: str = ""
 
     @classmethod
     def from_env(cls) -> WakeSettings:
@@ -121,7 +121,7 @@ class WakeSettings:
             talk=_flag("KESTREL_TALK", "on"),
             talk_model=os.getenv("KESTREL_TALK_MODEL", DEFAULT_TALK_MODEL),
             min_confidence=float(os.getenv("KESTREL_TALK_MIN_CONFIDENCE", DEFAULT_MIN_CONFIDENCE)),
-            talk_prompt=talk_prompt(read_vocab(vocab_file())) if _flag("KESTREL_TALK_HINT", "on") else "",
+            talk_prompt=talk_prompt(read_vocab(vocab_file())) if _flag("KESTREL_TALK_HINT", "off") else "",
         )
 
 

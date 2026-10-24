@@ -185,7 +185,7 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 | `KESTREL_TALK` | on | `off`: a wake only greets |
 | `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech |
 | `KESTREL_TALK_MIN_CONFIDENCE` | 0.45 | below it: "check first" instead of sending (provisional; chosen from your requests + background) |
-| `KESTREL_TALK_HINT` | on | the vocabulary hint; `off` transcribes without it |
+| `KESTREL_TALK_HINT` | off | the vocabulary hint; `on` to use it (off since 2026-10-24: it was worse, see below) |
 | `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
 
 The console's **Speak answers** switch (remembered per browser) turns the spoken answers off.
@@ -195,7 +195,7 @@ while waiting for the wake word). The request starts at the first chunk 0.15 abo
 1 s of quiet, or at 20 s. Nothing said within 3 s of the greeting: "I didn't catch that". Kestrel's
 own voice (the greeting) is never recorded as your request.
 
-**The vocabulary hint.** whisper.cpp gets a short initial prompt (at most 200 characters, built by
+**The vocabulary hint (off by default).** With `KESTREL_TALK_HINT=on`, whisper.cpp gets a short initial prompt (at most 200 characters, built by
 `transcribe.talk_prompt`, the same function for the server and `talk_eval.py`): "Kestrel" and its
 tools in plain words (note, notes, todo list, workspace, file, folder, email, search, calculator,
 weather), then names from `KESTREL_TALK_VOCAB_FILE` until the limit. It is never built from the
@@ -218,6 +218,12 @@ hum came out as "(dramatic music)" in a test here). Before anything reaches the 
   token probabilities) stands for 1 - no-speech; whisper.cpp's own no-speech threshold (0.6) also
   stays on inside the model;
 - **send**: everything else, exactly like typed text.
+
+**Confidence doesn't catch every bad transcript.** Whisper can be wrong and sure of itself: on set 1,
+req-018 with the hint came out as "Draft a shorting human-saged to Priya." at confidence 0.931 and would
+have been sent. "Check first" catches some mishearings, not all. That is why a spoken request is only
+ever a request: voice can never approve anything, and every action stays behind the same approval
+cards as typed text (a misheard request can at worst ask for something you then reject on screen).
 
 **What is never spoken:** an approval card's details. When one appears during a spoken request,
 Kestrel says only "I need your approval on screen." Voice can't approve: a spoken "approve" is just
@@ -266,9 +272,20 @@ The hint did what it was for on Kestrel words ("List the files in my workspace" 
 "notes.txt" 6 -> 4, "Create a knot called a bloishary" -> "a note called Bloishary" 3 -> 1) but three
 other requests got worse ("What is 17? What is 17?" 1 -> 7, "$100 and $20" 0 -> 4, the Priya message
 1 -> 5, with Priya not yet in the vocab file). Net: worse on this set, with overlapping intervals on
-21 requests. The prompt was not re-worded against these sentences (that would fit the test set); the
-default (on) is decided on the unseen second set (known issue #49). Confidences with the hint: min
-0.425, median 0.642; the threshold is still provisional.
+21 requests. The prompt was not re-worded against these sentences (that would fit the test set).
+
+**Decision (owner, 2026-10-24): the hint is off by default.** The rule was fixed before set 2 was scored:
+pool both sets and keep the hint only if pooled normalised WER is lower with it. Re-scored with the
+owner's vocab file (one name), base.en 5-bit, word-weighted over all 31 requests (261 reference words):
+
+| | Set 1 (21) | Set 2 (10) | Pooled (31 requests, 261 words) |
+|---|---|---|---|
+| no hint | 15.7% | 10.8% | **37 errors = 14.18%** |
+| hint | 21.3% | 9.6% | **46 errors = 17.62%** |
+
+Net +9 errors with the hint (+10 on set 1, -1 on set 2), so it loses. The code and the switch stay
+(`KESTREL_TALK_HINT=on`); known issue #49 records it. Confidences (set 1, with the hint): min 0.425,
+median 0.642; the threshold is still provisional.
 
 Measured so far (research, 2026-10-23, synthetic Windows-voice requests padded to 5 s, Ryzen 7 8840HS,
 8 threads; a pipeline check, not an accuracy claim): base.en 5-bit 0.80 s per request, normalised WER

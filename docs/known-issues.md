@@ -278,7 +278,7 @@ not measured.
 Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
 recorded in docs/voice-wake.md.
 
-### 49. The vocabulary hint: better on Kestrel words, worse overall on the first set
+### 49. ~~The vocabulary hint: better on Kestrel words, worse overall~~ (decided 2026-10-24: off by default)
 **Labels:** `voice`, `medium`
 On the owner's first 21 recorded requests (2026-10-24, base.en 5-bit), the whisper.cpp vocabulary hint
 fixed Kestrel words ("files in my workspace", "a note called") but three other requests got worse (a
@@ -288,6 +288,11 @@ was not re-worded against those sentences, which would fit the test set.
 **Done when:** the second set (`talk_record.py --set new`, 10 requests not used for the hint) is
 scored with and without the hint (`talk_eval.py --set new`), with the owner's names in the vocab file,
 and the default is set from that result and recorded in docs/voice-wake.md.
+**Decided (owner, 2026-10-24).** Rule fixed before set 2 was scored: pool both sets, keep the hint only if
+pooled normalised WER is lower with it. Re-scored with the owner's vocab file, word-weighted over 31
+requests (261 words): **14.18% without (37 errors), 17.62% with (46 errors)**; +10 errors on set 1, -1 on
+set 2 (the largest single loss: set 1 req-003, a repeated phrase, 1 -> 7). The hint loses:
+`KESTREL_TALK_HINT` now defaults to off; the code and the switch stay for later experiments.
 
 ---
 
