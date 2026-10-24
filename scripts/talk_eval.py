@@ -5,14 +5,15 @@
    rate, raw and normalised (kestrel.wake.normalize: case, punctuation, contractions, numbers and units),
    latency, Whisper's confidence, and what the guard would do: send, check first (low confidence:
    shown unsent, "Did I hear that right?") or drop ("I didn't catch that").
-2. Background-only audio (a podcast, TV; no requests in it), with the hint, as the server runs: the
-   audio is streamed in 0.1 s chunks through the same end-of-speech detector as if Kestrel were
-   listening the whole time; every segment it cuts is transcribed and guarded. Segments that would be
-   sent are false requests; segments sent for checking are false prompts. Per hour of listening (an
-   upper bound: the live listener only records right after a wake).
-
-The confidence threshold (KESTREL_TALK_MIN_CONFIDENCE) is chosen from these numbers on your real
-requests plus background audio; the script reports at the one you pass.
+2. Background-only audio (a podcast, TV; no requests in it), transcribed the way the server runs (the
+   hint only if KESTREL_TALK_HINT=on; off by default): the audio is streamed in 0.1 s chunks through
+   the same end-of-speech detector as if Kestrel were listening the whole time; every segment it cuts
+   is transcribed and guarded. Segments that would be sent are false requests; segments sent for
+   checking are false prompts. Per hour of listening (an upper bound: the live listener only records
+   right after a wake).
+3. A threshold sweep, for choosing KESTREL_TALK_MIN_CONFIDENCE: at each candidate value, how many of
+   your requests would be sent, checked or dropped, how many sent ones were misheard, and how many false
+   requests and false checks per hour the background would produce.
 
     uv run --no-sync python scripts/talk_eval.py                        # data/talk/requests
     uv run --no-sync python scripts/talk_eval.py --set new              # data/talk/requests-new
@@ -26,9 +27,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
-
 from kestrel.bench.stats import bootstrap_ci
+from kestrel.wake import WakeSettings
 from kestrel.wake.audio import CHUNK_FRAMES
 from kestrel.wake.detector import SAMPLE_RATE
 from kestrel.wake.normalize import normalize, raw_words, word_errors
@@ -50,8 +50,12 @@ SETS = {"first": Path("data") / "talk" / "requests", "new": Path("data") / "talk
 MODES = ("no hint", "hint")
 
 
+SWEEP = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80)
+
+
 def load_pcm(path: Path) -> bytes:
-    import soundfile as sf  # optional dependency: uv sync --extra wake
+    import numpy as np  # optional dependencies (with soundfile): uv sync --extra wake
+    import soundfile as sf
 
     data, rate = sf.read(path, dtype="float32", always_2d=True)
     mono = data.mean(axis=1)
@@ -73,7 +77,9 @@ def speech_seconds(pcm: bytes, floor_from: float = 0.5) -> float:
     return endpoint.speech_s
 
 
-def score_requests(stt: WhisperCppTranscriber, folder: Path, prompt: str, min_conf: float) -> list[dict]:
+def score_requests(
+    stt: WhisperCppTranscriber, folder: Path, prompt: str, min_conf: float, shown: str = "no hint"
+) -> list[dict]:
     refs = dict(
         line.split("\t", 1)
         for line in (folder / "refs.tsv").read_text(encoding="utf-8-sig").splitlines()
@@ -83,7 +89,12 @@ def score_requests(stt: WhisperCppTranscriber, folder: Path, prompt: str, min_co
     for name, ref in sorted(refs.items()):
         pcm = load_pcm(folder / name)
         speech_s = speech_seconds(pcm)
-        row: dict = {"file": name, "reference": ref, "audio_s": round(len(pcm) / 2 / SAMPLE_RATE, 2)}
+        row: dict = {
+            "file": name,
+            "reference": ref,
+            "audio_s": round(len(pcm) / 2 / SAMPLE_RATE, 2),
+            "speech_s": round(speech_s, 1),
+        }
         for mode in MODES:
             stt.prompt = prompt if mode == "hint" else None
             start = time.perf_counter()
@@ -101,8 +112,8 @@ def score_requests(stt: WhisperCppTranscriber, folder: Path, prompt: str, min_co
                 "path": verdict.action,
                 "reason": verdict.reason,
             }
-        hinted = row["hint"]
-        print(f"{name}: {hinted['transcript']!r} (conf {hinted['confidence']}, {hinted['path']})")
+        cell = row[shown]
+        print(f"{name}: {cell['transcript']!r} (conf {cell['confidence']}, {cell['path']})")
         rows.append(row)
     return rows
 
@@ -130,8 +141,9 @@ def summary(rows: list[dict], mode: str) -> dict:
 
 
 def background(stt: WhisperCppTranscriber, paths: list[Path], prompt: str, min_conf: float) -> dict:
-    stt.prompt = prompt
+    stt.prompt = prompt or None
     found: list[dict] = []
+    heard: list[dict] = []  # every transcribed segment (for the threshold sweep)
     listened = 0.0
     for path in [f for p in paths for f in (sorted(p.rglob("*")) if p.is_dir() else [p])]:
         if path.suffix.lower() not in AUDIO:
@@ -152,6 +164,7 @@ def background(stt: WhisperCppTranscriber, paths: list[Path], prompt: str, min_c
                 floor.update(level)
             else:
                 t = stt.transcribe(bytes(segment))
+                heard.append({"text": t.text, "confidence": t.confidence, "speech_s": endpoint.speech_s})
                 verdict = guard(t.text, t.confidence, endpoint.speech_s, min_conf, prompt)
                 if verdict.action != "drop":
                     found.append(
@@ -173,7 +186,34 @@ def background(stt: WhisperCppTranscriber, paths: list[Path], prompt: str, min_c
         "false_requests_per_hour": round(sends / hours, 2) if hours else None,
         "false_checks_per_hour": round(checks / hours, 2) if hours else None,
         "segments": found,
+        "heard": heard,
     }
+
+
+def sweep(rows: list[dict], mode: str, heard: list[dict], hours: float, prompt: str) -> list[dict]:
+    """What each candidate threshold would do, on your requests (in mode) and on the background."""
+    out = []
+    for threshold in SWEEP:
+        paths = Counter()
+        misheard_sent = 0
+        for r in rows:
+            cell = r[mode]
+            verdict = guard(cell["transcript"], cell["confidence"], r["speech_s"], threshold, prompt)
+            paths[verdict.action] += 1
+            misheard_sent += verdict.action == "send" and cell["norm_errors"] > 0
+        bg = Counter(guard(h["text"], h["confidence"], h["speech_s"], threshold, prompt).action for h in heard)
+        out.append(
+            {
+                "threshold": threshold,
+                "send": paths["send"],
+                "check": paths["check"],
+                "drop": paths["drop"],
+                "misheard_sent": misheard_sent,
+                "false_requests_per_hour": round(bg["send"] / hours, 2) if hours else None,
+                "false_checks_per_hour": round(bg["check"] / hours, 2) if hours else None,
+            }
+        )
+    return out
 
 
 def main() -> int:
@@ -191,9 +231,11 @@ def main() -> int:
 
     folder = args.requests or SETS[args.set]
     prompt = talk_prompt(read_vocab(args.vocab_file))
+    server_prompt = WakeSettings.from_env().talk_prompt  # what the live server uses (KESTREL_TALK_HINT)
+    server_mode = "hint" if server_prompt else "no hint"
     print(f"set: {folder}; model {args.model}; min confidence {args.min_confidence}\nhint: {prompt!r}\n")
     stt = WhisperCppTranscriber(talk_model_file(args.model))
-    rows = score_requests(stt, folder, prompt, args.min_confidence)
+    rows = score_requests(stt, folder, prompt, args.min_confidence, shown=server_mode)
     results = {"set": str(folder), "model": args.model, "min_confidence": args.min_confidence, "prompt": prompt}
     print(f"\n{len(rows)} requests")
     head = ("", "WER raw", "WER norm", "95% CI (norm, per request)", "latency", "send", "check", "drop")
@@ -211,23 +253,37 @@ def main() -> int:
         counts = f"{paths.get('send', 0):>5} {paths.get('check', 0):>6} {paths.get('drop', 0):>5}"
         wer = f"{100 * s['wer_raw']:>7.1f}% {100 * s['wer_normalised']:>8.1f}%"
         print(f"{mode:10} {wer} {ci:>27} {s['latency_median_s'] or 0:>7.2f}s {counts}")
-    hinted = results["hint"]
-    print(f"\nconfidence with the hint: min {hinted['confidence_min']}, median {hinted['confidence_median']}")
-    print("(the threshold is chosen from these plus the background numbers)")
+    live = results[server_mode]
+    low, median = live["confidence_min"], live["confidence_median"]
+    print(f"\nconfidence ({server_mode}, as the server runs): min {low}, median {median}")
     changed = [r for r in rows if r["no hint"]["norm_errors"] != r["hint"]["norm_errors"]]
     if changed:
         print("\nrequests the hint changed (normalised errors without -> with):")
         for r in changed:
             before, after = r["no hint"]["norm_errors"], r["hint"]["norm_errors"]
             print(f"  {r['file']}: {before} -> {after}  {r['hint']['transcript']!r}")
+    hours, heard = 0.0, []
     if args.background:
-        bg = background(stt, args.background, prompt, args.min_confidence)
+        bg = background(stt, args.background, server_prompt, args.min_confidence)
+        hours, heard = bg["hours"], bg.pop("heard")
         results["background"] = bg
-        print(f"\nbackground (with the hint): {bg['hours']:.2f} h")
+        print(f"\nbackground ({server_mode}, as the server runs): {bg['hours']:.2f} h")
         print(f"  {bg['false_requests']} false requests ({bg['false_requests_per_hour']} per hour)")
         print(f"  {bg['false_checks']} false checks ({bg['false_checks_per_hour']} per hour)")
         for f in bg["segments"][:20]:
             print(f"  {f['file']} @ {f['at_s']} s [{f['path']}]: {f['text']!r}")
+    table = sweep(rows, server_mode, heard, hours, server_prompt)
+    results["sweep"] = table
+    print(
+        f"\nthreshold sweep ({server_mode}): requests sent / checked / dropped, misheard but sent; background per hour"
+    )
+    header = f"{'threshold':>9} {'send':>5} {'check':>6} {'drop':>5} {'misheard sent':>14}"
+    print(f"{header} {'false req/h':>12} {'false checks/h':>15}")
+    for t in table:
+        per_hour = "-" if t["false_requests_per_hour"] is None else f"{t['false_requests_per_hour']:.2f}"
+        checks_hour = "-" if t["false_checks_per_hour"] is None else f"{t['false_checks_per_hour']:.2f}"
+        row = f"{t['threshold']:>9.2f} {t['send']:>5} {t['check']:>6} {t['drop']:>5} {t['misheard_sent']:>14}"
+        print(f"{row} {per_hour:>12} {checks_hour:>15}")
     results["requests"] = rows
     if args.json:
         args.json.write_text(json.dumps(results, indent=2), encoding="utf-8")

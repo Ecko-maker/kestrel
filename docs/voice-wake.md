@@ -147,7 +147,11 @@ network, once, to fetch the model.
 1. **Positives:** `uv run python scripts/wake_record.py` records 30 clips of 2 s, Enter before each.
    Vary distance (desk, across the room), volume, speed and tone; include a few with background noise.
 2. **Background:** an hour or more of audio with no "Kestrel" in it: a podcast or TV, saved as WAV,
-   FLAC, OGG or MP3 in `data/wake/background/`. More hours give a tighter false-wake rate.
+   FLAC, OGG or MP3 (any sample rate, mono or stereo; every audio file under the folder is read, names
+   don't matter) in `data/wake/background/`. More hours give a tighter false-wake rate. Easiest, and
+   closest to real use: play a podcast out loud and record the room with
+   `uv run python scripts/wake_record.py --background` (60 min in 10-min `room-NNN.wav` files, a live
+   "recording, minute X of 60" line; Ctrl+C stops early and keeps what was recorded).
 3. **Run:** `uv run python scripts/wake_eval.py --positives data/wake/positives --background data/wake/background`.
    It uses the same detector code as the live service and reports, for each threshold: clips detected
    (with a 95% Clopper-Pearson interval), false wakes (with the 10-second cooldown) per hour, and CPU.
@@ -255,11 +259,15 @@ requests: the voice flag stays in the console and the server, never in the agent
    - **latency** per request (the time from the end of the recording to the transcript);
    - each request's confidence and its path: send, check first or drop (to set the confidence floor);
    - which requests the hint changed, better or worse;
-   - **false requests and false checks per hour** (with the hint, as the server runs): the background
+   - **false requests and false checks per hour** (as the server runs: the hint only if
+     `KESTREL_TALK_HINT=on`, off by default): the background
      is streamed through the same end-of-speech detector as if Kestrel were listening all the time;
      every segment it cuts is transcribed and guarded. Would-be sends are requests you never made;
      would-be checks are prompts you'd have to dismiss. An upper bound: the live listener only records
-     right after a wake.
+     right after a wake;
+   - **a threshold sweep** (0.30 to 0.80) for `KESTREL_TALK_MIN_CONFIDENCE`: at each value, your
+     requests sent / checked / dropped, how many sent ones were misheard, and the background's false
+     requests and false checks per hour.
 
 **First set, your recordings (2026-10-24, base.en 5-bit, 21 requests, no names in the vocab file yet):**
 
