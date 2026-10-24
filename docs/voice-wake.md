@@ -184,7 +184,9 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 |---|---|---|
 | `KESTREL_TALK` | on | `off`: a wake only greets |
 | `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech |
-| `KESTREL_TALK_MIN_CONFIDENCE` | 0.45 | the hallucination guard's floor (provisional; from your measurement) |
+| `KESTREL_TALK_MIN_CONFIDENCE` | 0.45 | below it: "check first" instead of sending (provisional; chosen from your requests + background) |
+| `KESTREL_TALK_HINT` | on | the vocabulary hint; `off` transcribes without it |
+| `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
 
 The console's **Speak answers** switch (remembered per browser) turns the spoken answers off.
 
@@ -193,17 +195,29 @@ while waiting for the wake word). The request starts at the first chunk 0.15 abo
 1 s of quiet, or at 20 s. Nothing said within 3 s of the greeting: "I didn't catch that". Kestrel's
 own voice (the greeting) is never recorded as your request.
 
-**The hallucination guard.** Whisper can invent text from silence or noise (a 100 Hz hum came out as
-"(dramatic music)" in a test here). Before anything reaches the agent, a transcript is dropped, and
-Kestrel says "I didn't catch that", when:
-- there was under 0.4 s of speech above the noise floor;
-- its confidence is under `KESTREL_TALK_MIN_CONFIDENCE`. whisper.cpp's per-segment no-speech
-  probability isn't exposed by pywhispercpp, so the closest signal is used: the segment confidence
-  (the geometric mean of its token probabilities) is used as 1 - no-speech; whisper.cpp's own
-  no-speech threshold (0.6) also stays on inside the model;
-- the whole normalised transcript is a known filler ("thank you for watching", "thanks for
-  watching", "you", "thank you", "bye", lone punctuation, sound labels such as "[BLANK_AUDIO]").
-  Only whole-transcript matches: "thank you for watching the match with me" is sent.
+**The vocabulary hint.** whisper.cpp gets a short initial prompt (at most 200 characters, built by
+`transcribe.talk_prompt`, the same function for the server and `talk_eval.py`): "Kestrel" and its
+tools in plain words (note, notes, todo list, workspace, file, folder, email, search, calculator,
+weather), then names from `KESTREL_TALK_VOCAB_FILE` until the limit. It is never built from the
+evaluation sentences. Note: pywhispercpp keeps parameters from one call to the next, so the prompt is
+passed on every call ("" for none); leaving it out would silently reuse the previous one.
+
+**Three paths, and the hallucination guard.** Whisper can invent text from silence or noise (a 100 Hz
+hum came out as "(dramatic music)" in a test here). Before anything reaches the agent:
+- **drop** (Kestrel says "I didn't catch that"; nothing is sent or shown): under 0.4 s of speech
+  above the noise floor; an empty transcript; a known filler as the whole normalised transcript
+  ("thank you for watching", "thanks for watching", "you", "thank you", "bye", lone punctuation,
+  sound labels such as "[BLANK_AUDIO]"; "thank you for watching the match with me" is kept); or the
+  vocabulary hint echoed back (two or more of its words, in order: Whisper can return its prompt on
+  near-silence);
+- **check first** (Kestrel says "Please check what I heard on screen."): confidence under
+  `KESTREL_TALK_MIN_CONFIDENCE`. The text goes into the most recently used console's message box,
+  unsent, under "Did I hear that right?"; you edit or send it (then it is a spoken request like any
+  other), or discard it. whisper.cpp's per-segment no-speech probability isn't exposed by
+  pywhispercpp, so the closest signal is used: the segment confidence (the geometric mean of its
+  token probabilities) stands for 1 - no-speech; whisper.cpp's own no-speech threshold (0.6) also
+  stays on inside the model;
+- **send**: everything else, exactly like typed text.
 
 **What is never spoken:** an approval card's details. When one appears during a spoken request,
 Kestrel says only "I need your approval on screen." Voice can't approve: a spoken "approve" is just
@@ -221,21 +235,40 @@ requests: the voice flag stays in the console and the server, never in the agent
 
 1. `uv run python scripts/talk_record.py`: 20 built-in requests (or `--prompts file.txt`); each one is
    shown, you press Enter, read it at your normal distance and pace, press Enter. WAVs and `refs.tsv`
-   go to `data/talk/requests/` (git-ignored).
+   go to `data/talk/requests/` (git-ignored). `--set new` records a second, separate set of 10
+   everyday requests into `data/talk/requests-new/` (written after the hint was fixed, not used for it).
 2. Background-only audio (podcast, TV) in `data/wake/background/`, as for the wake word.
-3. `uv run python scripts/talk_eval.py --requests data/talk/requests --background data/wake/background`
-   (`--model tiny.en-q5_1` to compare). It reports:
+3. `uv run python scripts/talk_eval.py --background data/wake/background` (`--set new` for the second
+   set, `--model tiny.en-q5_1` to compare). Every request is transcribed twice, without and with the
+   vocabulary hint, and it reports for both:
    - **word error rate, raw and normalised.** Raw: lower case and punctuation only. Normalised
      (`kestrel.wake.normalize`, a small Whisper-style English normaliser): contractions expanded,
      symbols and units as words (%, $, &), thousands separators removed, number words as digits
      ("seventeen and a half" = 17.5). "What's 17.5% of 2,340?" and "what is seventeen and a half
      percent of two thousand three hundred forty" score as identical;
    - **latency** per request (the time from the end of the recording to the transcript);
-   - each request's confidence and what the guard would do with it (to set the confidence floor);
-   - **false requests per hour**: the background is streamed through the same end-of-speech detector
-     as if Kestrel were listening all the time; every segment it cuts is transcribed and guarded, and
-     those that pass would have been requests you never made. An upper bound: the live listener only
-     records right after a wake.
+   - each request's confidence and its path: send, check first or drop (to set the confidence floor);
+   - which requests the hint changed, better or worse;
+   - **false requests and false checks per hour** (with the hint, as the server runs): the background
+     is streamed through the same end-of-speech detector as if Kestrel were listening all the time;
+     every segment it cuts is transcribed and guarded. Would-be sends are requests you never made;
+     would-be checks are prompts you'd have to dismiss. An upper bound: the live listener only records
+     right after a wake.
+
+**First set, your recordings (2026-10-24, base.en 5-bit, 21 requests, no names in the vocab file yet):**
+
+| | WER raw | WER normalised (95% CI, per request) | Median latency | Send / check / drop at 0.45 |
+|---|---|---|---|---|
+| no hint | 30.1% | **15.7%** (10.0-25.7%) | 0.82 s | 17 / 4 / 0 |
+| hint | 30.1% | **19.7%** (12.0-37.4%) | 0.85 s | 17 / 4 / 0 |
+
+The hint did what it was for on Kestrel words ("List the files in my workspace" 3 errors -> 0,
+"notes.txt" 6 -> 4, "Create a knot called a bloishary" -> "a note called Bloishary" 3 -> 1) but three
+other requests got worse ("What is 17? What is 17?" 1 -> 7, "$100 and $20" 0 -> 4, the Priya message
+1 -> 5, with Priya not yet in the vocab file). Net: worse on this set, with overlapping intervals on
+21 requests. The prompt was not re-worded against these sentences (that would fit the test set); the
+default (on) is decided on the unseen second set (known issue #49). Confidences with the hint: min
+0.425, median 0.642; the threshold is still provisional.
 
 Measured so far (research, 2026-10-23, synthetic Windows-voice requests padded to 5 s, Ryzen 7 8840HS,
 8 threads; a pipeline check, not an accuracy claim): base.en 5-bit 0.80 s per request, normalised WER

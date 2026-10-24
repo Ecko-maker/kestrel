@@ -6,6 +6,7 @@ which git ignores). This is the only talk code that saves audio, and only when y
 listener keeps requests in memory and never saves them.
 
     uv run --no-sync python scripts/talk_record.py                       # the 20 built-in requests
+    uv run --no-sync python scripts/talk_record.py --set new             # 10 more, a separate set
     uv run --no-sync python scripts/talk_record.py --prompts my_requests.txt
 """
 
@@ -39,6 +40,25 @@ DEFAULT_PROMPTS = [
     "Never mind, that's all for now.",
 ]
 
+# A second, separate set (2026-10-24): everyday requests not in the first 20, written after the
+# vocabulary hint was fixed and not used to build it (the hint is general Kestrel words + your names).
+NEW_PROMPTS = [
+    "What's the time in Sydney right now?",
+    "Make a note that the plumber is coming on Thursday.",
+    "How much is twelve percent of eight hundred and fifty?",
+    "Show me what's in the reports folder.",
+    "Look up how tall Mount Everest is.",
+    "Send a message to Alex saying the meeting moved to three o'clock.",
+    "Add batteries to my shopping list.",
+    "What did I save about the trip to Lisbon?",
+    "Is it going to rain in Paris tomorrow?",
+    "Read me the newest file in my workspace.",
+]
+SETS = {
+    "first": (Path("data") / "talk" / "requests", DEFAULT_PROMPTS),
+    "new": (Path("data") / "talk" / "requests-new", NEW_PROMPTS),
+}
+
 
 def record_until_enter() -> bytes:
     import sounddevice as sd  # optional dependency: uv sync --extra wake
@@ -60,8 +80,9 @@ def record_until_enter() -> bytes:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--out", type=Path, default=Path("data") / "talk" / "requests")
-    parser.add_argument("--prompts", type=Path, help="one request per line (default: 20 built-in ones)")
+    parser.add_argument("--set", choices=sorted(SETS), default="first", help="first: 20 requests; new: 10 more")
+    parser.add_argument("--out", type=Path, help="where to save (default: the set's folder under data/talk/)")
+    parser.add_argument("--prompts", type=Path, help="one request per line (default: the set's built-in ones)")
     args = parser.parse_args()
 
     import numpy as np
@@ -70,8 +91,9 @@ def main() -> int:
     prompts = (
         [line.strip() for line in args.prompts.read_text(encoding="utf-8").splitlines() if line.strip()]
         if args.prompts
-        else DEFAULT_PROMPTS
+        else SETS[args.set][1]
     )
+    args.out = args.out or SETS[args.set][0]
     args.out.mkdir(parents=True, exist_ok=True)
     refs = args.out / "refs.tsv"
     start = len(list(args.out.glob("req-*.wav")))
