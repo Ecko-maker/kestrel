@@ -597,6 +597,7 @@ def test_the_vocabulary_file_comes_from_the_setting(tmp_path, monkeypatch):
     vocab = tmp_path / "names.txt"
     vocab.write_text("Priya\n", encoding="utf-8")
     monkeypatch.setenv("KESTREL_TALK_VOCAB_FILE", str(vocab))
+    monkeypatch.setenv("KESTREL_TALK_HINT", "on")
     assert WakeSettings.from_env().talk_prompt.endswith("Names: Priya.")
 
 
@@ -617,8 +618,12 @@ def test_the_hint_is_passed_to_whisper_cpp_and_can_be_turned_off():
     assert calls[0]["initial_prompt"] == talk_prompt() and calls[1]["initial_prompt"] == ""
 
 
-def test_the_vocabulary_hint_can_be_switched_off(monkeypatch):
+def test_the_vocabulary_hint_is_off_by_default_and_can_be_switched_on(monkeypatch):
+    """Owner decision 2026-10-24 (known issue #49): pooled over both recorded sets the hint was worse."""
     monkeypatch.delenv("KESTREL_TALK_HINT", raising=False)
+    assert WakeSettings.from_env().talk_prompt == ""
+    assert WakeSettings().talk_prompt == ""
+    monkeypatch.setenv("KESTREL_TALK_HINT", "on")
     assert WakeSettings.from_env().talk_prompt.startswith("Kestrel: ")
     monkeypatch.setenv("KESTREL_TALK_HINT", "off")
     assert WakeSettings.from_env().talk_prompt == ""
