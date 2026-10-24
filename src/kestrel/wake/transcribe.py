@@ -23,6 +23,8 @@ from kestrel.wake.detector import SAMPLE_RATE
 TALK_MODELS = {  # name -> (SHA-256, bytes), fetched 2026-10-23 from huggingface.co/ggerganov/whisper.cpp
     "base.en-q5_1": ("4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f", 59_721_011),
     "tiny.en-q5_1": ("c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b", 32_166_155),
+    # 2026-10-24, owner-approved download (190 MB); hash from the Hugging Face listing, checked on download
+    "small.en-q5_1": ("bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30", 190_098_681),
 }
 DEFAULT_TALK_MODEL = "base.en-q5_1"
 NO_SPEECH_THOLD = 0.6  # whisper.cpp's own no-speech threshold (its default)
