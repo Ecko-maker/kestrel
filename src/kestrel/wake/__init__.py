@@ -13,13 +13,20 @@ def build_wake_service(record_wake) -> WakeService | None:
     from kestrel.wake.detector import RecognizerFactory, VoskDetector, vosk_recognizer_factory
     from kestrel.wake.power import default_power
     from kestrel.wake.speech import default_speaker
+    from kestrel.wake.talk import CANCEL_WORD
 
     factories: list[RecognizerFactory] = []  # the model is loaded once, on first use, then reused
 
-    def make_detector() -> VoskDetector:
+    def recognizers() -> RecognizerFactory:
         if not factories:
             factories.append(vosk_recognizer_factory(settings.model_dir))
-        return VoskDetector(factories[0], settings.threshold)
+        return factories[0]
+
+    def make_detector() -> VoskDetector:
+        return VoskDetector(recognizers(), settings.threshold)
+
+    def make_cancel() -> VoskDetector:  # fresh for each countdown; any confidence: a false cancel is harmless
+        return VoskDetector(recognizers(), 0.0, word=CANCEL_WORD, partial=True)
 
     make_transcriber = None
     if settings.talk:
@@ -38,6 +45,7 @@ def build_wake_service(record_wake) -> WakeService | None:
         default_speaker(),
         record_wake,
         make_transcriber=make_transcriber,
+        make_cancel=make_cancel if make_transcriber is not None else None,
     )
 
 

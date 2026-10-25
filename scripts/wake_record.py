@@ -4,9 +4,14 @@ This is the only Kestrel code that saves audio, and only when you run it: files 
 choose (defaults under data/, which git ignores). Nothing is sent anywhere. The live wake word never
 saves anything.
 
-    uv run --no-sync python scripts/wake_record.py                    # 30 clips of 2 s, Enter before each
+    uv run --no-sync python scripts/wake_record.py                    # 30 clips of 3 s, Enter before each
     uv run --no-sync python scripts/wake_record.py --count 10 --out data/wake/positives-far
     uv run --no-sync python scripts/wake_record.py --background        # 60 min of room audio, 10-min files
+
+Each clip: Enter, a short countdown ("3, 2, 1, now"; recording starts at "1", so an early start
+isn't cut), then 3 s. Each clip is checked right away: too quiet, or speech touching the start or the
+end of the clip (cut off), is shown with an offer to record it again. These were the causes of 9 of
+the first 10 missed clips (docs/voice-wake.md).
 
 --background records continuously (no Enter between files) into room-NNN.wav files of --chunk-minutes
 each, 16 kHz mono 16-bit, showing "recording, minute X of N". Ctrl+C stops early: the files already
@@ -14,6 +19,8 @@ finished are kept, and so is the part of the current file recorded so far.
 """
 
 import argparse
+import array
+import math
 import queue
 import sys
 import time
@@ -23,6 +30,50 @@ from pathlib import Path
 
 SAMPLE_RATE = 16_000
 BLOCK_S = 1  # the background recorder reads and writes one second at a time
+CHUNK_BYTES = 3200  # 0.1 s of 16-bit mono, the live service's chunk
+QUIET_DB = -45.0  # the loudest 0.1 s of a clip below this: too quiet (the four near-silent misses peaked lower)
+EDGE_S = 0.2  # speech in the first or last 0.2 s: probably cut off
+EDGE_DB = 15.0  # "speech" at an edge: within this of the clip's loudest 0.1 s
+
+
+def chunk_db(pcm: bytes) -> list[float]:
+    """RMS level of each 0.1 s, in dBFS."""
+    out = []
+    for i in range(0, len(pcm) - 1, CHUNK_BYTES):
+        samples = array.array("h")
+        samples.frombytes(pcm[i : i + CHUNK_BYTES][: (min(CHUNK_BYTES, len(pcm) - i) // 2) * 2])
+        rms = math.sqrt(sum(x * x for x in samples) / max(len(samples), 1))
+        out.append(20 * math.log10(max(rms, 1e-3) / 32768))
+    return out
+
+
+def clip_problem(pcm: bytes) -> str | None:
+    """Why a 'Kestrel' clip is likely unusable, or None. Only a hint for re-recording; never edits it."""
+    levels = chunk_db(pcm)
+    if not levels:
+        return "empty"
+    loudest = max(levels)
+    if loudest < QUIET_DB:
+        return f"too quiet (loudest {loudest:.0f} dBFS): speak closer or louder"
+    edge = max(1, round(EDGE_S / 0.1))
+    if max(levels[:edge]) >= loudest - EDGE_DB:
+        return "speech at the very start: it may be cut off (wait for 'now')"
+    if max(levels[-edge:]) >= loudest - EDGE_DB:
+        return "speech at the very end: it may be cut off (say it right after 'now')"
+    return None
+
+
+def countdown(
+    show: Callable[[str], None], start: Callable[[], None], sleep: Callable[[float], None] = time.sleep
+) -> None:
+    """3, 2, then recording starts at 1 (a short lead-in), then 'now'."""
+    for label in ("3", "2"):
+        show(label)
+        sleep(0.5)
+    start()
+    show("1")
+    sleep(0.5)
+    show("now: say 'Kestrel'")
 
 
 def next_index(folder: Path, prefix: str) -> int:
@@ -103,7 +154,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, help="default data/wake/positives (or data/wake/background)")
     parser.add_argument("--count", type=int, default=30)
-    parser.add_argument("--seconds", type=float, default=2.0)
+    parser.add_argument("--seconds", type=float, default=3.0)
     parser.add_argument("--background", action="store_true", help="record continuously: room audio, no Enter")
     parser.add_argument("--minutes", type=float, default=60.0, help="--background: how long in all")
     parser.add_argument("--chunk-minutes", type=float, default=10.0, help="--background: minutes per file")
@@ -129,15 +180,26 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     start_index = len(list(out.glob("kestrel-*.wav")))
     print(f"Recording {args.count} clips of {args.seconds:g} s into {out}. Vary distance, volume and tone.")
-    for i in range(start_index, start_index + args.count):
-        if (
-            input(f"[{i - start_index + 1}/{args.count}] Enter, then say 'Kestrel' (q + Enter to stop): ").strip()
-            == "q"
-        ):
+    i = start_index
+    while i < start_index + args.count:
+        prompt = f"[{i - start_index + 1}/{args.count}] Enter, then say 'Kestrel' at 'now' (q + Enter to stop): "
+        if input(prompt).strip() == "q":
             break
-        clip = sd.rec(int(args.seconds * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype="int16")
+        frames = int(args.seconds * SAMPLE_RATE)
+        holder: list = []
+        countdown(
+            lambda label: print(f"  {label}", flush=True),
+            lambda holder=holder, frames=frames: holder.append(
+                sd.rec(frames, samplerate=SAMPLE_RATE, channels=1, dtype="int16")
+            ),
+        )
         sd.wait()
+        clip = holder[0]
+        problem = clip_problem(clip.tobytes())
+        if problem and input(f"  {problem}. Record it again? (Enter = again, k + Enter = keep): ").strip() != "k":
+            continue
         sf.write(out / f"kestrel-{i:03d}.wav", clip, SAMPLE_RATE, subtype="PCM_16")
+        i += 1
     print(f"done: {len(list(out.glob('kestrel-*.wav')))} clips in {out}")
     return 0
 

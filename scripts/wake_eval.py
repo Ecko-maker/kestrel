@@ -21,7 +21,7 @@ import numpy as np
 
 from kestrel.bench.stats import clopper_pearson
 from kestrel.wake.audio import CHUNK_FRAMES
-from kestrel.wake.detector import SAMPLE_RATE, grammar_json, vosk_recognizer_factory, wake_confidence
+from kestrel.wake.detector import SAMPLE_RATE, after_cooldown, vosk_recognizer_factory, wake_events
 from kestrel.wake.service import COOLDOWN_S, default_model_dir
 
 AUDIO = {".wav", ".flac", ".ogg", ".mp3"}
@@ -46,27 +46,6 @@ def load_pcm(path: Path) -> bytes:
     return (np.clip(mono, -1, 1) * 32767).astype("<i2").tobytes()
 
 
-def wake_events(make_recognizer, pcm: bytes) -> list[tuple[float, float]]:
-    """(seconds into the audio, confidence) for every "kestrel" the recognizer reports."""
-    rec = make_recognizer(grammar_json())
-    events: list[tuple[float, float]] = []
-    step = CHUNK_FRAMES * 2  # bytes
-    for i in range(0, len(pcm), step):
-        if rec.AcceptWaveform(pcm[i : i + step]) and (conf := wake_confidence(rec.Result())) is not None:
-            events.append(((i + step) / 2 / SAMPLE_RATE, conf))
-    if (conf := wake_confidence(rec.FinalResult())) is not None:  # an utterance still open at the end
-        events.append((len(pcm) / 2 / SAMPLE_RATE, conf))
-    return events
-
-
-def with_cooldown(times: list[float]) -> int:
-    count, last = 0, None
-    for t in sorted(times):
-        if last is None or t - last >= COOLDOWN_S:
-            count, last = count + 1, t
-    return count
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--positives", type=Path, nargs="+", required=True, help="clips that each say 'Kestrel'")
@@ -85,7 +64,7 @@ def main() -> int:
         pcm = load_pcm(path)
         audio_s += len(pcm) / 2 / SAMPLE_RATE
         start = time.process_time()
-        events = wake_events(make_recognizer, pcm)
+        events = wake_events(make_recognizer, pcm, CHUNK_FRAMES * 2)
         cpu += time.process_time() - start
         return events
 
@@ -97,7 +76,7 @@ def main() -> int:
     for t in thresholds:
         hit = sum(any(c >= t for _, c in ev) for ev in positives.values())
         rate = clopper_pearson(hit, len(positives))
-        false = sum(with_cooldown([s for s, c in ev if c >= t]) for ev in background.values())
+        false = sum(len(after_cooldown([s for s, c in ev if c >= t], COOLDOWN_S)) for ev in background.values())
         rows.append(
             {
                 "threshold": t,

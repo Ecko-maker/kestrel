@@ -22,6 +22,7 @@ import os
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,7 @@ from kestrel.wake.talk import (
     DEFAULT_MIN_CONFIDENCE,
     DIDNT_CATCH,
     MAX_REQUEST_S,
+    SEND_COUNTDOWN_S,
     START_TIMEOUT_S,
     Endpointer,
     NoiseFloor,
@@ -69,13 +71,21 @@ def loudness(pcm: bytes) -> float:
     return max(0.0, min(1.0, (db - LEVEL_FLOOR_DB) / -LEVEL_FLOOR_DB))
 
 
+def _later(delay: float, action: Callable[[], object]) -> None:
+    timer = threading.Timer(delay, action)
+    timer.daemon = True
+    timer.start()
+
+
 def smooth(previous: float, current: float) -> float:
     """Fast rise, slower fall, so the ring follows speech without flicker."""
     weight = 0.6 if current > previous else 0.25
     return previous + weight * (current - previous)
 
 
-DEFAULT_THRESHOLD = 0.5  # provisional until measured with scripts/wake_eval.py (docs/voice-wake.md)
+# Provisional (owner, 2026-10-24): 19/30 of the owner's clips, 1 false wake per hour on 1 h of podcast,
+# chosen on the same data; 10 of the 11 misses were recording problems (docs/voice-wake.md).
+DEFAULT_THRESHOLD = 0.9
 MODEL_NAME = "vosk-model-small-en-us-0.15"
 
 
@@ -106,6 +116,7 @@ class WakeSettings:
     # The vocabulary hint: off by default (KESTREL_TALK_HINT=on to use it; known issue #49: pooled over
     # 31 recorded requests it was worse, 17.62% vs 14.18% normalised WER). Names: KESTREL_TALK_VOCAB_FILE.
     talk_prompt: str = ""
+    send_countdown_s: float = SEND_COUNTDOWN_S  # fixed; a field so tests can shorten it
 
     @classmethod
     def from_env(cls) -> WakeSettings:
@@ -142,6 +153,7 @@ class WakeService:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         make_transcriber: Callable[[], Transcriber] | None = None,
+        make_cancel: Callable[[], Detector] | None = None,
     ):
         self.settings = settings
         self.make_transcriber = make_transcriber  # None: a wake only greets
@@ -156,6 +168,12 @@ class WakeService:
         self.emit: Callable[[dict], None] = lambda event: None  # set by the web app (broadcast)
         self.on_request: Callable[[str], None] = lambda text: None  # set by the web app: one console
         self.on_check: Callable[[str], None] = lambda text: None  # low confidence: into the message box, unsent
+        # The send countdown (set by the web app): on_pending shows "Sending: ..." in one console and
+        # returns False if none is open; on_cancelled puts the text back in that console's message box.
+        self.on_pending: Callable[[str, str, float], bool] = lambda request_id, text, seconds: True
+        self.on_cancelled: Callable[[str, str, str], None] = lambda request_id, text, by: None
+        self.make_cancel = make_cancel  # None: no spoken "cancel" (Esc and the button still work)
+        self.schedule: Callable[[float, Callable[[], object]], None] = _later
         self.greeting = greeting(settings.user_name)
         self._enabled = settings.enabled
         self._listening = False
@@ -170,6 +188,9 @@ class WakeService:
         self._recording: bytearray | None = None  # the spoken request, in memory only
         self._endpoint: Endpointer | None = None
         self._last_wake: float | None = None
+        self._pending: tuple[str, str] | None = None  # (id, text) during the send countdown
+        self._cancel_detector: Detector | None = None  # listens for "cancel" during the countdown only
+        self._pending_lock = threading.Lock()
         self._changed = threading.Event()
         self._stopping = threading.Event()
         self._lock = threading.Lock()
@@ -189,6 +210,8 @@ class WakeService:
         if self._thread is not None:
             self._thread.join(timeout)
             self._thread = None
+        with self._pending_lock:  # a countdown still running when the server stops is dropped
+            self._pending = self._cancel_detector = None
         self._release()  # even if the thread didn't finish in time
         self.speaker.close()
 
@@ -279,6 +302,7 @@ class WakeService:
                 if chunk is not None:
                     heard = self.clock()
                     level = loudness(chunk)
+                    self._hear_cancel(chunk)
                     woke = detector.feed(chunk) is not None and self.on_wake()
                     if self._recording is not None and not woke:
                         self._record(chunk, level)
@@ -370,7 +394,55 @@ class WakeService:
             self.on_check(verdict.text)  # shown unsent: "Did I hear that right?"; nothing reaches the agent
             self.say(CHECK_ON_SCREEN)
         else:
-            self.on_request(verdict.text)
+            self._hold_request(verdict.text)
+
+    # --- the send countdown ------------------------------------------------------------------------
+
+    def _hold_request(self, text: str) -> None:
+        """'Sending: <text>' for SEND_COUNTDOWN_S; then it goes to the agent unless cancelled."""
+        request_id = uuid.uuid4().hex[:12]
+        with self._pending_lock:
+            self._pending = (request_id, text)
+            self._cancel_detector = self.make_cancel() if self.make_cancel is not None else None
+        if not self.on_pending(request_id, text, self.settings.send_countdown_s):  # no console: said so
+            with self._pending_lock:
+                self._pending = self._cancel_detector = None
+            return
+        self.schedule(self.settings.send_countdown_s, lambda: self.commit(request_id))
+
+    def _take(self, request_id: str) -> str | None:
+        with self._pending_lock:
+            if self._pending is None or self._pending[0] != request_id:
+                return None  # already sent, cancelled, or another request
+            text = self._pending[1]
+            self._pending = self._cancel_detector = None
+            return text
+
+    def pending(self) -> str | None:
+        """The id of the request in its countdown, if any."""
+        with self._pending_lock:
+            return self._pending[0] if self._pending else None
+
+    def commit(self, request_id: str) -> bool:
+        """The countdown ran out: the request goes to the agent."""
+        text = self._take(request_id)
+        if text is not None:
+            self.on_request(text)
+        return text is not None
+
+    def cancel(self, request_id: str, by: str) -> bool:
+        """Esc, the Cancel button or a spoken "cancel": nothing is sent; the text goes back to the
+        message box. Only a pending spoken request can be cancelled this way, never an approval."""
+        text = self._take(request_id)
+        if text is not None:
+            self.on_cancelled(request_id, text, by)
+        return text is not None
+
+    def _hear_cancel(self, chunk: bytes) -> None:
+        with self._pending_lock:
+            detector, pending = self._cancel_detector, self._pending
+        if detector is not None and pending is not None and detector.feed(chunk) is not None:
+            self.cancel(pending[0], "voice")
 
     def _ignored(self, reason: str) -> None:
         """Nothing usable was heard: say so; nothing reaches the agent."""

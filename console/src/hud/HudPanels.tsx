@@ -22,6 +22,7 @@ const PHASE_TEXT: Record<Phase, string> = {
   error: "text-red-300",
   offline: "text-stone-400",
   waking: "text-accent-100",
+  sending: "text-[color:var(--hud-listening)]",
 };
 
 export function HudFrame({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
