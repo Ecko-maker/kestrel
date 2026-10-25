@@ -253,6 +253,39 @@ def test_without_unk_other_speech_would_be_forced_onto_the_wake_word():
     assert wake_confidence(forced.Result()) == 1.0
 
 
+def test_the_cancel_detector_uses_its_own_grammar_and_acts_on_partial_results():
+    class PartialRecognizer:
+        def __init__(self, grammar: str):
+            self.grammar = json.loads(grammar)
+            self.data = b""
+
+        def AcceptWaveform(self, data: bytes) -> bool:
+            self.data = data
+            return False  # the utterance is still open
+
+        def Result(self) -> str:
+            return "{}"
+
+        def FinalResult(self) -> str:
+            return "{}"
+
+        def PartialResult(self) -> str:
+            word = self.data.decode()
+            return json.dumps({"partial": word if word in self.grammar else "[unk]"})
+
+    cancel = VoskDetector(PartialRecognizer, 0.0, word="cancel", partial=True)
+    assert cancel.recognizer.grammar == ["cancel", "[unk]"]  # type: ignore[attr-defined]
+    assert cancel.feed(b"cancel") == 1.0
+    assert cancel.feed(b"cancer") is None
+    wake = VoskDetector(PartialRecognizer, 0.5)  # the wake word never acts on a partial result
+    assert wake.feed(b"kestrel") is None
+
+
+def test_the_wake_threshold_default_is_0_90(monkeypatch):
+    monkeypatch.delenv("KESTREL_WAKE_THRESHOLD", raising=False)
+    assert WakeSettings.from_env().threshold == 0.9  # provisional (owner, 2026-10-24)
+
+
 def test_the_threshold_is_applied_to_the_wake_words_confidence():
     result = json.dumps({"result": [{"word": "[unk]", "conf": 1.0}, {"word": "kestrel", "conf": 0.42}]})
     assert wake_confidence(result) == 0.42

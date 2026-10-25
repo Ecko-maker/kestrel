@@ -120,18 +120,19 @@ def spoken_request(quiet_before: int = 3, speech: int = 8) -> list[bytes]:
     return [QUIET] * 10 + [WAKE] + [QUIET] * quiet_before + [LOUD] * speech + [QUIET] * 15
 
 
-def make(tmp_path, *, script=(), recogniser=None, voice=None, talk=True):
+def make(tmp_path, *, script=(), recogniser=None, voice=None, talk=True, countdown=0.05, cancel=None):
     voice = voice or FakeVoice()
     recogniser = recogniser or FakeRecogniser()
     mic = ScriptedMic(list(script))
     service = WakeService(
-        WakeSettings(enabled=True, model_dir=tmp_path),
+        WakeSettings(enabled=True, model_dir=tmp_path, send_countdown_s=countdown),
         FakeDetector,
         lambda: mic,
         NullPower(),
         voice,
         lambda at: None,
         make_transcriber=(lambda: recogniser) if talk else None,
+        make_cancel=cancel,
     )
     events: list[dict] = []
     requests: list[str] = []
@@ -384,8 +385,10 @@ def say(text):
     return {"role": "assistant", "content": text}
 
 
-def app_with(tmp_path, llm, registry=None, script=(), recogniser=None):
-    service, voice, recogniser, _mic, _events, _ = make(tmp_path, script=script, recogniser=recogniser)
+def app_with(tmp_path, llm, registry=None, script=(), recogniser=None, countdown=0.05):
+    service, voice, recogniser, _mic, _events, _ = make(
+        tmp_path, script=script, recogniser=recogniser, countdown=countdown
+    )
     tracer = Tracer(tmp_path / "traces.db", record_content=True, prices={})
 
     def make_agent(on_event, approver):
@@ -526,7 +529,7 @@ def test_talk_settings(monkeypatch):
     for name in ("KESTREL_TALK", "KESTREL_TALK_MODEL", "KESTREL_TALK_MIN_CONFIDENCE"):
         monkeypatch.delenv(name, raising=False)
     s = WakeSettings.from_env()
-    assert (s.talk, s.talk_model, s.min_confidence) == (True, "base.en-q5_1", 0.45)
+    assert (s.talk, s.talk_model, s.min_confidence) == (True, "base.en-q5_1", 0.50)  # owner, 2026-10-24
     monkeypatch.setenv("KESTREL_TALK_MODEL", "tiny.en-q5_1")
     assert WakeSettings.from_env().talk_model == "tiny.en-q5_1"
 
@@ -628,3 +631,112 @@ def test_the_vocabulary_hint_is_off_by_default_and_can_be_switched_on(monkeypatc
     monkeypatch.setenv("KESTREL_TALK_HINT", "off")
     assert WakeSettings.from_env().talk_prompt == ""
     assert guard("todo list, workspace, file", 0.9, 2.0, 0.45, "").action == "send"  # no hint: no echo rule
+
+
+# --- the send countdown ---------------------------------------------------------------------------------
+
+
+class FakeCancel:
+    """Hears "cancel" on the chunk b"cancel"; records every chunk it was fed."""
+
+    def __init__(self):
+        self.fed: list[bytes] = []
+
+    def feed(self, pcm: bytes) -> float | None:
+        self.fed.append(pcm)
+        return 1.0 if pcm == b"cancel" else None
+
+
+def test_the_countdown_shows_sending_then_sends(tmp_path):
+    llm = SpyLLM(say("It is 9 pm."))
+    app, _service, _ = app_with(tmp_path, llm, script=spoken_request(), countdown=0.5)
+    with TestClient(app, base_url=BASE) as client, client.websocket_connect(f"/ws?token={TOKEN}") as ws:
+        pending = until(ws, "voice_pending")
+        shown = time.monotonic()
+        assert (pending["text"], pending["seconds"]) == ("What time is it in Tokyo?", 0.5)
+        assert until(ws, "voice_request") == {"type": "voice_request", "text": "What time is it in Tokyo?"}
+        assert time.monotonic() - shown >= 0.4  # not before the countdown ran out
+    assert llm.inputs == []  # the console sends it (like typed text); nothing went to the model on its own
+
+
+@pytest.mark.parametrize("by", ["esc", "button"])
+def test_esc_or_the_cancel_button_stops_the_countdown_and_returns_the_text(tmp_path, by):
+    llm = SpyLLM()  # no replies: any model call would fail the test
+    app, service, _ = app_with(tmp_path, llm, script=spoken_request(), countdown=1.0)
+    with TestClient(app, base_url=BASE) as client, client.websocket_connect(f"/ws?token={TOKEN}") as ws:
+        pending = until(ws, "voice_pending")
+        ws.send_json({"type": "voice_cancel", "id": pending["id"], "by": by})
+        cancelled = until(ws, "voice_cancelled")
+        assert cancelled == {
+            "type": "voice_cancelled",
+            "id": pending["id"],
+            "text": "What time is it in Tokyo?",
+            "by": by,
+        }
+        time.sleep(1.2)  # past the end of the countdown
+        assert service.pending() is None
+        assert service.commit(pending["id"]) is False  # the timer finds nothing to send
+    assert llm.inputs == []
+
+
+def test_saying_cancel_stops_the_countdown_and_listens_only_during_it(tmp_path):
+    cancel = FakeCancel()
+    made: list[int] = []
+
+    def make_cancel():
+        made.append(1)
+        return cancel
+
+    script = spoken_request() + [QUIET] * 3 + [b"cancel"]
+    service, _, _, _, _, requests = make(tmp_path, script=script, countdown=5.0, cancel=make_cancel)
+    cancelled: list[tuple[str, str]] = []
+    service.on_cancelled = lambda request_id, text, by: cancelled.append((text, by))
+    service.start()
+    try:
+        wait_for(lambda: cancelled)
+    finally:
+        service.stop()
+    assert cancelled == [("What time is it in Tokyo?", "voice")]
+    assert requests == [] and service.pending() is None
+    assert made == [1]  # one recognizer, made when the countdown started
+    assert WAKE not in cancel.fed and LOUD not in cancel.fed  # it never heard the wake or the request
+
+
+def test_with_no_console_the_countdown_never_starts(tmp_path):
+    app, service, voice = app_with(tmp_path, SpyLLM())
+    with TestClient(app, base_url=BASE):
+        service._hold_request("List my files.")
+        assert service.pending() is None
+    assert voice.said == ["Open the console first."]
+
+
+def test_cancel_can_never_answer_an_approval_card(tmp_path):
+    ran: list[str] = []
+    registry = ToolRegistry()
+
+    @registry.register(risk="confirm", preview=lambda a: f"+{a['text']}")
+    def save(text: str) -> str:
+        """Save text."""
+        ran.append(text)
+        return "saved"
+
+    call = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "save", "arguments": '{"text": "x"}'}}],
+    }
+    llm = SpyLLM(call, say("Saved."))
+    app, service, _ = app_with(tmp_path, llm, registry=registry)
+    with TestClient(app, base_url=BASE) as client, client.websocket_connect(f"/ws?token={TOKEN}") as ws:
+        ws.send_json({"type": "user_message", "text": "save x", "voice": True, "speak": True})
+        card = until(ws, "approval_required")
+        # the card's own id sent as a voice cancel, and a spoken "cancel": neither answers the card
+        ws.send_json({"type": "voice_cancel", "id": card["approval_id"], "by": "esc"})
+        assert service.cancel(card["approval_id"], "voice") is False
+        time.sleep(0.3)
+        assert ran == []
+        ws.send_json({"type": "approval_response", "approval_id": card["approval_id"], "decision": "approve"})
+        resolved = until(ws, "approval_resolved")
+        assert resolved["decision"] == "approved"  # resolved by the click, the only way
+        until(ws, "done")
+    assert ran == ["x"]

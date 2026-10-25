@@ -270,6 +270,21 @@ requests (261 words): **14.18% without (37 errors), 17.62% with (46 errors)**; +
 set 2 (the largest single loss: set 1 req-003, a repeated phrase, 1 -> 7). The hint loses:
 `KESTREL_TALK_HINT` now defaults to off; the code and the switch stay for later experiments.
 
+### 50. The spoken "cancel" and the wake threshold are not measured on your voice yet
+**Labels:** `voice`, `medium`
+The spoken "cancel" during the 2 s send countdown (design decision 20) is tested only with fakes: how
+often it hears your "cancel" in time, and how often a podcast word triggers it, are unknown. A miss
+sends the request (it can still be rejected at its approval card); a false hit puts the text back in
+the box. `KESTREL_WAKE_THRESHOLD=0.9` was chosen on the same 30 clips and 1 h of background it was
+measured on, and 10 of the 11 clips missed at 0.9 were recording problems (too quiet, or cut off at
+the start or end), so the detection rate is understated and the choice may move. Vosk's confidence
+also varies slightly between runs on the same audio (one podcast moment: 0.891, 0.905, 1.0), so the
+false-wake count at 0.90 is 1 or 2 per hour on the same recording.
+**Done when:** the clips are re-recorded with the 3 s countdown (`wake_record.py`), `wake_eval.py` and
+`talk_eval.py --background` are re-run, the threshold is chosen from that and recorded in
+docs/voice-wake.md, and "cancel" is tried live (said 10 times in a countdown, plus a podcast during
+countdowns) with the result recorded there.
+
 ---
 
 ## Process

@@ -79,20 +79,83 @@ def test_sweep_counts_requests_and_background_per_threshold():
         {"text": "and then the host said", "confidence": 0.6, "speech_s": 2.0},
         {"text": "welcome back to the show", "confidence": 0.4, "speech_s": 2.0},
     ]
-    table = {t["threshold"]: t for t in talk_eval.sweep(rows, "no hint", heard, 0.5, "")}
+    e2e = heard[:1]  # only one of them came after a false wake
+    table = {t["threshold"]: t for t in talk_eval.sweep(rows, "no hint", heard, 0.5, "", e2e, 0.5)}
     assert [t for t in talk_eval.SWEEP] == sorted(table)
     low, mid, high = table[0.30], table[0.50], table[0.80]
     assert (low["send"], low["check"], low["drop"], low["misheard_sent"]) == (3, 0, 1, 1)
     assert (mid["send"], mid["check"], mid["drop"], mid["misheard_sent"]) == (2, 1, 1, 1)
     assert (high["send"], high["check"], high["drop"], high["misheard_sent"]) == (1, 2, 1, 0)
-    assert (low["false_requests_per_hour"], low["false_checks_per_hour"]) == (4.0, 0.0)
-    assert (mid["false_requests_per_hour"], mid["false_checks_per_hour"]) == (2.0, 2.0)
-    assert (high["false_requests_per_hour"], high["false_checks_per_hour"]) == (0.0, 4.0)
+    # if every segment were recorded (the old number, renamed)
+    assert (low["if_recorded_requests_per_hour"], low["if_recorded_checks_per_hour"]) == (4.0, 0.0)
+    assert (mid["if_recorded_requests_per_hour"], mid["if_recorded_checks_per_hour"]) == (2.0, 2.0)
+    assert (high["if_recorded_requests_per_hour"], high["if_recorded_checks_per_hour"]) == (0.0, 4.0)
+    # end to end: only the recording after the false wake counts
+    assert (low["false_requests_per_hour"], low["false_checks_per_hour"]) == (2.0, 0.0)
+    assert (high["false_requests_per_hour"], high["false_checks_per_hour"]) == (0.0, 2.0)
 
 
 def test_sweep_without_background_has_no_hourly_rates():
     table = talk_eval.sweep([row("what time is it", 0.9)], "no hint", [], 0.0, "")
-    assert all(t["false_requests_per_hour"] is None for t in table)
+    assert all(t["false_requests_per_hour"] is None and t["if_recorded_requests_per_hour"] is None for t in table)
+
+
+# --- end to end: what the live service records after a false wake --------------------------------------
+
+QUIET = b"\x08\x00" * 1600  # one 0.1 s chunk, loudness 0
+LOUD = b"\x00\x40" * 1600  # one 0.1 s chunk of "speech"
+
+
+def test_after_cooldown_keeps_one_wake_per_ten_seconds():
+    from kestrel.wake.detector import after_cooldown
+
+    assert after_cooldown([30.0, 1.0, 5.0, 11.0, 12.0], 10.0) == [1.0, 11.0, 30.0]
+    assert after_cooldown([], 10.0) == []
+
+
+def test_wake_events_are_timed_at_the_end_of_the_chunk_the_live_detector_fires_on():
+    import json
+
+    from kestrel.wake.detector import wake_events
+
+    class Rec:
+        def __init__(self, grammar):
+            self.last = b""
+
+        def AcceptWaveform(self, data):
+            self.last = data
+            return data == LOUD
+
+        def Result(self):
+            return json.dumps({"result": [{"word": "kestrel", "conf": 0.93}]})
+
+        def FinalResult(self):
+            return "{}"
+
+    pcm = QUIET * 4 + LOUD + QUIET * 5
+    assert wake_events(Rec, pcm, len(QUIET)) == [(0.5, 0.93)]
+
+
+def test_after_a_wake_the_recording_follows_the_end_of_speech_rule():
+    # 2 s of quiet, a wake at 2.0 s, 1 s of speech, then quiet: recorded until 1 s of quiet after the speech
+    pcm = QUIET * 20 + LOUD * 10 + QUIET * 30
+    [seg] = talk_eval.wake_segments(pcm, [2.0])
+    assert (seg["at_s"], seg["state"], seg["speech_s"]) == (2.0, "done", 1.0)
+    assert len(seg["audio"]) == len(QUIET) * 20  # 1 s of speech + 1 s of quiet that ended it
+
+
+def test_a_wake_followed_by_quiet_records_nothing():
+    [seg] = talk_eval.wake_segments(QUIET * 60, [1.0])
+    assert seg["state"] == "no_speech"
+
+
+def test_a_recording_stops_at_twenty_seconds():
+    [seg] = talk_eval.wake_segments(QUIET * 10 + LOUD * 300, [1.0])
+    assert seg["state"] == "max" and len(seg["audio"]) == len(QUIET) * 200
+
+
+def test_no_wake_means_no_recording():
+    assert talk_eval.wake_segments(QUIET * 10 + LOUD * 50, []) == []
 
 
 def test_background_is_scored_like_the_server(monkeypatch):
@@ -107,3 +170,30 @@ def test_voice_scripts_never_import_network_modules(name):
     source = (ROOT / "scripts" / f"{name}.py").read_text(encoding="utf-8")
     for module in ("httpx", "requests", "urllib", "socket", "http.client", "ddgs"):
         assert f"import {module}" not in source and f"from {module}" not in source
+
+
+# --- wake_record.py: 3 s clips, a countdown and a check for the problems found in the first misses -----
+
+
+def tone(chunks: int, value: int = 0x2000) -> bytes:
+    return int(value).to_bytes(2, "little", signed=True) * 1600 * chunks
+
+
+def test_a_good_clip_has_no_problem():
+    pcm = tone(5, 4) + tone(10) + tone(15, 4)  # quiet, the word, quiet
+    assert wake_record.clip_problem(pcm) is None
+
+
+def test_a_near_silent_clip_is_too_quiet():
+    assert wake_record.clip_problem(tone(30, 40)).startswith("too quiet")  # about -58 dBFS
+
+
+def test_speech_at_either_edge_is_flagged_as_cut_off():
+    assert "start" in wake_record.clip_problem(tone(4) + tone(26, 4))
+    assert "end" in wake_record.clip_problem(tone(26, 4) + tone(4))
+
+
+def test_the_countdown_starts_recording_before_now():
+    shown: list[str] = []
+    wake_record.countdown(shown.append, lambda: shown.append("<recording starts>"), sleep=lambda s: None)
+    assert shown == ["3", "2", "<recording starts>", "1", "now: say 'Kestrel'"]

@@ -137,6 +137,7 @@
 .reactor[data-phase="standby"] { --phase: var(--hud-standby); }
 .reactor[data-phase="standby"] .rings { opacity: 0.55; } /* dim */
 .reactor[data-phase="attending"] { --phase: var(--hud-listening); }
+.reactor[data-phase="sending"] { --phase: var(--hud-listening); } /* the countdown: still listening for "cancel" */
 .reactor[data-phase="streaming"] { --phase: var(--hud-answering); } /* the wake: brighter; the only cue under reduced motion */
 .reactor .spin, .reactor .spin-rev, .reactor .breath, .reactor .rings, .reactor .seg { transform-box: fill-box; transform-origin: center; }
 .reactor .glow { filter: drop-shadow(0 0 5px var(--phase)); }
