@@ -116,3 +116,11 @@ test("reduced motion: the new rings and poses stop, colour and label stay", () =
     assert.ok(css.includes(`.reactor[data-phase="${phase}"] { --phase: var(${color}); }`), `${phase} has its own colour`);
   }
 });
+
+test("sending: the countdown shows as its own mode, but agent work and approvals still win", () => {
+  assert.equal(PHASE_LABEL.sending, "Sending…");
+  assert.equal(mode([], { sending: true, attending: true }), "sending");
+  assert.equal(hudPhase("approval", { ...quiet, sending: true }), "approval");
+  assert.equal(hudPhase("thinking", { ...quiet, sending: true }), "thinking");
+  assert.equal(mode([], { sending: false }), "standby");
+});

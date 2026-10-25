@@ -7,8 +7,9 @@
     POST /api/traces/{id}/rating      {"rating": "good"|"bad", "note": "..."}
     GET  /api/wake                    the wake word's status (docs/voice-wake.md)
     POST /api/wake                    {"enabled": true|false}: the console's listening toggle
-    WS   /ws                          chat: the browser sends messages and approval answers,
-                                      the server streams the agent's events back
+    WS   /ws                          chat: the browser sends messages, approval answers and
+                                      voice_cancel (a spoken request's send countdown); the
+                                      server streams the agent's events back
 
 Security: the server only listens on 127.0.0.1. Every request needs the access token
 printed at startup, either once in the URL (?token=..., exchanged for an HttpOnly cookie)
@@ -108,13 +109,31 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
     # exactly like typed text). Only its text travels; the audio never left the wake service.
     active: list[Callable[[dict], None]] = []
 
-    def deliver_request(text: str) -> None:
+    # The send countdown is shown in that console, and the request then goes to the same one.
+    held: list[Callable[[dict], None]] = []
+
+    def deliver_pending(request_id: str, text: str, seconds: float) -> bool:
         target = active[-1] if active and active[-1] in clients else None
         if target is None:
             if wake is not None:
                 wake.say(NO_CONSOLE)
+            return False
+        held[:] = [target]
+        target({"type": "voice_pending", "id": request_id, "text": text, "seconds": seconds})
+        return True
+
+    def deliver_request(text: str) -> None:
+        target = held.pop() if held else (active[-1] if active else None)
+        if target is None or target not in clients:
+            if wake is not None:
+                wake.say(NO_CONSOLE)
             return
         target({"type": "voice_request", "text": text})
+
+    def deliver_cancelled(request_id: str, text: str, by: str) -> None:
+        target = held.pop() if held else None
+        if target is not None and target in clients:
+            target({"type": "voice_cancelled", "id": request_id, "text": text, "by": by})
 
     def deliver_check(text: str) -> None:
         """Low confidence: the same console gets the text to check; it stays unsent until you send it."""
@@ -131,6 +150,8 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
             wake.emit = broadcast
             wake.on_request = deliver_request
             wake.on_check = deliver_check
+            wake.on_pending = deliver_pending
+            wake.on_cancelled = deliver_cancelled
             wake.start()
         try:
             yield
@@ -316,6 +337,11 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
                     voice["on"] = bool(message.get("voice"))
                     voice["speak"] = message.get("speak", True) is not False
                     running = asyncio.create_task(asyncio.to_thread(agent.run, text))
+                elif kind == "voice_cancel" and wake is not None:
+                    # Esc or the Cancel button during "Sending: ...". It can only stop a spoken request
+                    # in its countdown; it never touches an approval (those need approval_response).
+                    by = "esc" if message.get("by") == "esc" else "button"
+                    wake.cancel(str(message.get("id", "")), by)
                 elif kind == "approval_response":
                     approver.resolve(str(message.get("approval_id")), message)
         except WebSocketDisconnect, RuntimeError:

@@ -5,7 +5,8 @@ sent to the console as if typed. This module holds the pure parts (docs/voice-wa
   (wake.service.loudness): speech is loudness above the room's noise floor; the request ends after
   1 s of quiet, after 20 s, or with nothing heard if no speech starts within 3 s.
 - guard(): Whisper can invent text on silence or noise, which would reach the agent as if you had
-  said it. Three outcomes: "send" (as if typed); "check" (low confidence: the text goes unsent into
+  said it. Three outcomes: "send" (as if typed, after a 2-second "Sending: ..." countdown that Esc,
+  the Cancel button or saying "cancel" stops); "check" (low confidence: the text goes unsent into
   the console's message box, "Did I hear that right?"); "drop" ("I didn't catch that": under 0.4 s
   of speech, empty, a known filler hallucination, or the vocabulary hint echoed back).
 - spoken_answer() and the fixed sentences: what Kestrel says back. Never an approval card's details.
@@ -21,7 +22,9 @@ END_SILENCE_S = 1.0  # this much quiet after speech ends the request
 MAX_REQUEST_S = 20.0
 SPEECH_MARGIN = 0.15  # loudness above the noise floor that counts as speech (0-1 scale, ~9 dB)
 MIN_SPEECH_S = 0.4  # less speech than this: dropped (guard)
-DEFAULT_MIN_CONFIDENCE = 0.45  # provisional; scripts/talk_eval.py reports confidences
+DEFAULT_MIN_CONFIDENCE = 0.50  # provisional (owner, 2026-10-24); scripts/talk_eval.py sweeps it
+SEND_COUNTDOWN_S = 2.0  # "Sending: <transcript>": this long to cancel before it reaches the agent
+CANCEL_WORD = "cancel"  # said during the countdown (a two-entry Vosk grammar: "cancel", "[unk]")
 
 APPROVAL_SENTENCE = "I need your approval on screen."
 DIDNT_CATCH = "I didn't catch that."

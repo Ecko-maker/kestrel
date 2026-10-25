@@ -49,7 +49,7 @@ Install the console as an Edge app window and let it start with Windows:
 | `KESTREL_WAKE_ON_BATTERY` | on | An override: `off` never listens on battery ("Paused: on battery (KESTREL_WAKE_ON_BATTERY=off)"). |
 | `KESTREL_USER_NAME` | none | The name in the greeting (printable characters, at most 40). |
 | `KESTREL_WAKE_LISTEN_SECONDS` | 8 | How long the HUD stays in Listening after a wake, unless you type or send first (1-60). |
-| `KESTREL_WAKE_THRESHOLD` | 0.5 | Minimum Vosk confidence for "kestrel". Provisional: choose it from your measurement below. |
+| `KESTREL_WAKE_THRESHOLD` | 0.9 | Minimum Vosk confidence for "kestrel". **Provisional** (owner, 2026-10-24): chosen on the same 30 clips and 1 h of background it was measured on, 10 of whose 11 misses were recording problems; re-measure after re-recording (below). |
 | `KESTREL_WAKE_MODEL` | `%LOCALAPPDATA%\kestrel\models\vosk-model-small-en-us-0.15` | The model folder. |
 
 The console's switch (`POST /api/wake`) turns listening off and on while the server runs. It needs the
@@ -66,6 +66,7 @@ hidden by a wake. Screenshots: `docs/screenshots/theme/hud-mode-*.png`.
 | Standby | wake word on, mic open, nothing happening | perched, eyes softly glowing | one slow, faint ripple | dim teal | "Standby" |
 | (fly-in) | the moment "Kestrel" is heard | flies in from outside the rings, wings open | a soft ring | bright | "Hello" + the greeting |
 | Listening | after a wake, until you type, send, or `KESTREL_WAKE_LISTEN_SECONDS` pass | wings half raised, slow beats | a ring that swells with the live mic level | green | "Listening…" |
+| Sending | a spoken request's 2 s countdown, before it reaches the agent | wings half raised | as Listening | green | "Sending…" |
 | Thinking | waiting for the model | flapping, lifted | rotating segments | cyan | "Thinking…" |
 | Answering | the answer's text arriving | wings fully open, a steady glide | a pulse per ~40 characters, at most every 0.45 s | warm white-gold | "Answering…" |
 | Done | 1.4 s after an answer | swoops back, wings open | the answer burst | cyan | "Done" |
@@ -144,8 +145,11 @@ network, once, to fetch the model.
 
 ## Measuring it (no numbers are claimed until this is done)
 
-1. **Positives:** `uv run python scripts/wake_record.py` records 30 clips of 2 s, Enter before each.
-   Vary distance (desk, across the room), volume, speed and tone; include a few with background noise.
+1. **Positives:** `uv run python scripts/wake_record.py` records 30 clips of 3 s: Enter, then a short
+   countdown ("3, 2, 1, now"; recording starts at "1"), then say "Kestrel" at "now". Each clip is
+   checked at once: too quiet (loudest 0.1 s under -45 dBFS) or speech in the first or last 0.2 s
+   (within 15 dB of the clip's loudest part: probably cut off) is shown, with an offer to record it
+   again. Vary distance (desk, across the room), volume, speed and tone; include a few with background noise.
 2. **Background:** an hour or more of audio with no "Kestrel" in it: a podcast or TV, saved as WAV,
    FLAC, OGG or MP3 (any sample rate, mono or stereo; every audio file under the folder is read, names
    don't matter) in `data/wake/background/`. More hours give a tighter false-wake rate. Easiest, and
@@ -172,7 +176,35 @@ detector sits behind an interface (`kestrel.wake.detector.Detector`), and openWa
   **1.3% of one core** on average; per minute 0.2% to 5.5% (more while people talk, when Vosk decodes more).
 - Keep-awake request in `powercfg /requests`: not checked yet (needs an elevated prompt; known issue #47).
   Without elevation, Windows granted the request and released it on demand (`keep_awake` returned True, then False).
-- Accuracy and false wakes per hour: **not measured yet** (waiting for your recordings).
+- **Your voice and room (2026-10-24, 30 clips of 2 s, 1.00 h of a podcast played aloud and recorded
+  in the room, `wake_eval.py`):**
+
+  | Threshold | Detected (95% CI) | False wakes per hour |
+  |---|---|---|
+  | 0.50 | 20/30, 67% (47-83%) | 8 |
+  | 0.70 | 20/30, 67% (47-83%) | 3 |
+  | 0.80 | 19/30, 63% (44-80%) | 3 |
+  | **0.90 (default, provisional)** | **19/30, 63% (44-80%)** | **1** (1-2, see below) |
+  | 0.95 | 19/30, 63% (44-80%) | 1 |
+
+  CPU 2.9% of one core (offline, faster than real time). 10 clips are never heard at any threshold.
+- **Why clips were missed (2026-10-24, before changing anything).** Each clip's loudness, where the
+  speech sits and the energy at its edges, per 0.1 s:
+
+  | Pattern | Missed clips | What the audio shows |
+  |---|---|---|
+  | Near silent | 000, 012, 017, 029 | loudest 0.1 s between -93 and -67 dBFS (spoken clips: about -25); the word isn't there |
+  | Started late, cut at the end | 004, 015, 025 (and 023, heard at 0.79 only) | speech starts at 1.3-1.5 s and is still loud in the last 0.1 s of the 2 s clip |
+  | Started early, cut at the start | 006, 008 | already loud in the first 0.1-0.2 s, quiet after 0.4 s: "Kes-" before recording began |
+  | No visible cause | 028 | 1.5 s of loud speech, complete; listen to it (another word, or a real detector miss) |
+
+  So 10 of the 11 clips missed at 0.90 are recording problems (Enter-then-speak timing and level), not
+  the detector, and the detection rate above is understated. `wake_record.py` now records 3 s clips
+  with a countdown and checks each clip at once (the same check flags all 10; it also flags 8 clips
+  that were detected despite being clipped). The detector is unchanged until re-recorded clips are measured.
+- **Vosk's confidence varies a little between runs on the same audio** (the same recognizer settings
+  and file): one podcast moment scored 0.891, 0.905 and 1.0 in three runs, so at 0.90 the hour gives
+  1 or 2 false wakes. Thresholds near a cluster of scores are noisy; read neighbouring rows too.
 
 ## Talking to Kestrel
 
@@ -188,7 +220,7 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 |---|---|---|
 | `KESTREL_TALK` | on | `off`: a wake only greets |
 | `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech; `small.en-q5_1` (190 MB): a little more accurate, ~3 s per request (not the default, see below) |
-| `KESTREL_TALK_MIN_CONFIDENCE` | 0.45 | below it: "check first" instead of sending (provisional; chosen from your requests + background) |
+| `KESTREL_TALK_MIN_CONFIDENCE` | 0.50 | below it: "check first" instead of sending (provisional, owner 2026-10-24; `talk_eval.py` sweeps it) |
 | `KESTREL_TALK_HINT` | off | the vocabulary hint; `on` to use it (off since 2026-10-24: it was worse, see below) |
 | `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
 
@@ -221,7 +253,17 @@ hum came out as "(dramatic music)" in a test here). Before anything reaches the 
   pywhispercpp, so the closest signal is used: the segment confidence (the geometric mean of its
   token probabilities) stands for 1 - no-speech; whisper.cpp's own no-speech threshold (0.6) also
   stays on inside the model;
-- **send**: everything else, exactly like typed text.
+- **send**: everything else, after a **2-second countdown**. The console (both looks) shows
+  "Sending: <what I heard>" with a bar that empties and a Cancel button; the HUD shows "Sending…".
+  **Esc**, **Cancel**, or **saying "cancel"** stops it: nothing is sent, and the text goes into the
+  message box ("Not sent. Edit it and send, or discard it."). Only when the bar is empty does the
+  console send it, exactly like typed text. The server owns the timer (`WakeService._hold_request`),
+  so a slow or closed browser can't send it early or twice; it goes to the console that showed the
+  countdown, or, if that one closed, Kestrel says "Open the console first." The spoken "cancel" is a
+  second Vosk recognizer with the grammar `["cancel", "[unk]"]`, created when the countdown starts
+  and fed audio only until it ends; it acts on Vosk's partial result (faster than waiting for the end
+  of the word) at any confidence, because a false cancel is harmless (the text is kept). Cancelling
+  can only stop this request: it can't answer an approval card (tested).
 
 **Confidence doesn't catch every bad transcript.** Whisper can be wrong and sure of itself: on set 1,
 req-018 with the hint came out as "Draft a shorting human-saged to Priya." at confidence 0.931 and would
@@ -259,15 +301,43 @@ requests: the voice flag stays in the console and the server, never in the agent
    - **latency** per request (the time from the end of the recording to the transcript);
    - each request's confidence and its path: send, check first or drop (to set the confidence floor);
    - which requests the hint changed, better or worse;
-   - **false requests and false checks per hour** (as the server runs: the hint only if
-     `KESTREL_TALK_HINT=on`, off by default): the background
-     is streamed through the same end-of-speech detector as if Kestrel were listening all the time;
-     every segment it cuts is transcribed and guarded. Would-be sends are requests you never made;
-     would-be checks are prompts you'd have to dismiss. An upper bound: the live listener only records
-     right after a wake;
+   - **false requests per hour (end to end)**, the number that matters, for each wake threshold:
+     the wake detector (`wake_eval.py`'s code) runs over the background; after each false wake, with
+     the 10 s cooldown, the audio the live service would record (from the next 0.1 s chunk, the same
+     end-of-speech rule, at most 20 s) is transcribed and guarded as the server runs (the hint only if
+     `KESTREL_TALK_HINT=on`). Columns: false wakes (and per hour), recordings with no speech within
+     3 s, then send / check / drop; false requests and false checks per hour. One simplification: live,
+     the greeting plays first and its audio is skipped, so the recording starts 1-3 s later than here;
+   - **background speech that would pass the guard if recorded** (the old "false requests per hour",
+     renamed): every speech segment in the background is cut by the end-of-speech rule, transcribed
+     and guarded, as if Kestrel recorded all the time. It measures the guard alone. Real use records
+     only after a wake, so it is far higher than the end-to-end number and is not a rate you would see;
    - **a threshold sweep** (0.30 to 0.80) for `KESTREL_TALK_MIN_CONFIDENCE`: at each value, your
-     requests sent / checked / dropped, how many sent ones were misheard, and the background's false
-     requests and false checks per hour.
+     requests sent / checked / dropped, how many sent ones were misheard, and both background numbers
+     per hour (end to end at the server's `KESTREL_WAKE_THRESHOLD`, and if recorded).
+
+**End to end on your room (2026-10-24, set 1, base.en 5-bit, no hint, 1.00 h of podcast, `talk_eval.py
+--background`).** At wake threshold 0.90 and confidence 0.50: 2 false wakes in the hour; both
+recordings were real podcast sentences (Whisper confidence 0.53 and 0.75), so both would have been
+sent: **2 false requests per hour** (the run-to-run variation above makes it 1-2). With the countdown
+they show as "Sending: ..." first. By wake threshold: 0.50 -> 5 per hour, 0.60-0.80 -> 3, 0.90-0.95 -> 2.
+For comparison, the old number ("background speech that would pass the guard if recorded") was 544
+would-be sends and 36 checks in the same hour: a measure of the guard, not of real use.
+
+Threshold sweep, set 1 (21 requests) plus the end-to-end background at wake 0.90:
+
+| Confidence | Your requests sent / checked | Misheard but sent | False requests / checks per hour (end to end) |
+|---|---|---|---|
+| 0.45 | 17 / 4 | 10 | 2 / 0 |
+| **0.50 (default)** | **15 / 6** | **9** | **2 / 0** |
+| 0.55 | 14 / 7 | 8 | 1 / 1 |
+| 0.60 | 10 / 11 | 5 | 1 / 1 |
+| 0.65 | 3 / 18 | 1 | 1 / 1 |
+| 0.80 | 0 / 21 | 0 | 0 / 2 |
+
+Confidence separates misheard from correct requests poorly: cutting misheard-but-sent to 1 needs 0.65,
+which sends 18 of 21 requests to "check first". The send countdown (design decision 20) is the answer
+to that, not a higher floor. ("Misheard" counts any normalised word error, including small ones.)
 
 **First set, your recordings (2026-10-24, base.en 5-bit, 21 requests, no names in the vocab file yet):**
 

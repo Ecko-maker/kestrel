@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { WakeStatus } from "./api";
+import { boxAfterCancel, cancelMessage, isCancelKey, pendingAfter, type CancelBy, type PendingSend } from "./sending.ts"; // .ts: node --test loads useChat.ts directly
 
 export type ApprovalStatus = "pending" | "approved" | "edited" | "rejected";
 
@@ -280,8 +281,11 @@ export function useChat(onTurnDone?: () => void) {
   const [dismissedWake, setDismissedWake] = useState<string | null>(null); // a wake ended by typing
   const [speakAnswers, setSpeak] = useState(readSpeak);
   const [voiceNote, setVoiceNote] = useState<{ key: string; text: string } | null>(null);
-  // A spoken request heard with low confidence: shown unsent in the message box to check first.
-  const [heardCheck, setHeardCheck] = useState<{ key: string; text: string } | null>(null);
+  // A spoken request heard with low confidence ("check"), or one whose send countdown was cancelled:
+  // shown unsent in the message box.
+  const [heardCheck, setHeardCheck] = useState<{ key: string; text: string; why: "check" | "cancelled" } | null>(null);
+  // A spoken request in its 2-second "Sending: ..." countdown (sending.ts).
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const speakRef = useRef(speakAnswers);
   const wakeKey = useRef<string | null>(null);
   const sendRef = useRef<(text: string, voice?: boolean) => void>(() => undefined);
@@ -308,11 +312,20 @@ export function useChat(onTurnDone?: () => void) {
       if (event.type === "wake_status") return setWakeStatus(event as unknown as WakeStatus);
       if (event.type === "wake_level") return micLevel.set(event.level as number);
       // A spoken request, already transcribed by the server: sent exactly like typed text.
-      if (event.type === "voice_request") return sendRef.current(event.text as string, true);
+      if (event.type === "voice_pending") return setPendingSend((p) => pendingAfter(p, event, Date.now()));
+      if (event.type === "voice_cancelled") {
+        setPendingSend((p) => pendingAfter(p, event, Date.now()));
+        wakes.current += 1;
+        return setHeardCheck({ key: `cancel-${wakes.current}`, ...boxAfterCancel(event) });
+      }
+      if (event.type === "voice_request") {
+        setPendingSend(null);
+        return sendRef.current(event.text as string, true);
+      }
       if (event.type === "wake_end") return setDismissedWake(wakeKey.current); // the request was recorded
       if (event.type === "voice_check") {
         wakes.current += 1;
-        return setHeardCheck({ key: `check-${wakes.current}`, text: event.text as string });
+        return setHeardCheck({ key: `check-${wakes.current}`, text: event.text as string, why: "check" });
       }
       if (event.type === "voice_ignored") {
         wakes.current += 1;
@@ -375,6 +388,26 @@ export function useChat(onTurnDone?: () => void) {
     if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "wake_dismiss" }));
   }, [wake, dismissedWake]);
 
+  // Esc or the Cancel button: the server stops the countdown and returns the text (voice_cancelled).
+  const cancelSend = useCallback(
+    (by: CancelBy) => {
+      if (pendingSend && socket.current?.readyState === WebSocket.OPEN) {
+        socket.current.send(JSON.stringify(cancelMessage(pendingSend, by)));
+      }
+    },
+    [pendingSend],
+  );
+  useEffect(() => {
+    if (!pendingSend) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isCancelKey(e.key)) return;
+      e.preventDefault();
+      cancelSend("esc");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingSend, cancelSend]);
+
   const answerApproval = useCallback(
     (approvalId: string, response: { decision: "approve" | "edit" | "reject"; args?: unknown; reason?: string; for_session?: boolean }) => {
       socket.current?.send(JSON.stringify({ type: "approval_response", approval_id: approvalId, ...response }));
@@ -402,5 +435,7 @@ export function useChat(onTurnDone?: () => void) {
     voiceNote,
     heardCheck,
     clearHeardCheck: useCallback(() => setHeardCheck(null), []),
+    pendingSend,
+    cancelSend,
   };
 }
