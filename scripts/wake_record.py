@@ -6,12 +6,17 @@ saves anything.
 
     uv run --no-sync python scripts/wake_record.py                    # 30 clips of 3 s, Enter before each
     uv run --no-sync python scripts/wake_record.py --count 10 --out data/wake/positives-far
+    uv run --no-sync python scripts/wake_record.py --phrases           # 5 clips each of 5 phrases, 3 s
     uv run --no-sync python scripts/wake_record.py --background        # 60 min of room audio, 10-min files
 
 Each clip: Enter, a short countdown ("3, 2, 1, now"; recording starts at "1", so an early start
 isn't cut), then 3 s. Each clip is checked right away: too quiet, or speech touching the start or the
-end of the clip (cut off), is shown with an offer to record it again. These were the causes of 9 of
-the first 10 missed clips (docs/voice-wake.md).
+end of the clip (cut off), is shown with an offer to record it again. These were the causes of 10 of
+the 11 clips first missed at 0.90 (docs/voice-wake.md).
+
+--phrases prompts a fixed list ("Kestrel", "Hi Kestrel", "Hello Kestrel", "Hey Kestrel", "Shalom
+Kestrel"), --count clips each (default 5), into data/wake/phrases/ as hi-kestrel-000.wav etc., for
+wake_eval.py --phrases (detection per phrase, and whether the greeting was heard right).
 
 --background records continuously (no Enter between files) into room-NNN.wav files of --chunk-minutes
 each, 16 kHz mono 16-bit, showing "recording, minute X of N". Ctrl+C stops early: the files already
@@ -63,8 +68,19 @@ def clip_problem(pcm: bytes) -> str | None:
     return None
 
 
+PHRASES = ("Kestrel", "Hi Kestrel", "Hello Kestrel", "Hey Kestrel", "Shalom Kestrel")
+
+
+def slug(phrase: str) -> str:
+    """'Hi Kestrel' -> 'hi-kestrel' (the file prefix wake_eval.py reads the phrase back from)."""
+    return "-".join(phrase.lower().split())
+
+
 def countdown(
-    show: Callable[[str], None], start: Callable[[], None], sleep: Callable[[float], None] = time.sleep
+    show: Callable[[str], None],
+    start: Callable[[], None],
+    sleep: Callable[[float], None] = time.sleep,
+    say: str = "Kestrel",
 ) -> None:
     """3, 2, then recording starts at 1 (a short lead-in), then 'now'."""
     for label in ("3", "2"):
@@ -73,7 +89,7 @@ def countdown(
     start()
     show("1")
     sleep(0.5)
-    show("now: say 'Kestrel'")
+    show(f"now: say '{say}'")
 
 
 def next_index(folder: Path, prefix: str) -> int:
@@ -152,8 +168,9 @@ def mic_seconds() -> tuple[Callable[[], bytes], Callable[[], None]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--out", type=Path, help="default data/wake/positives (or data/wake/background)")
-    parser.add_argument("--count", type=int, default=30)
+    parser.add_argument("--out", type=Path, help="default data/wake/positives (or .../phrases, .../background)")
+    parser.add_argument("--count", type=int, help="clips (default 30; with --phrases, 5 per phrase)")
+    parser.add_argument("--phrases", action="store_true", help="5 phrases ('Hi Kestrel'...), --count clips each")
     parser.add_argument("--seconds", type=float, default=3.0)
     parser.add_argument("--background", action="store_true", help="record continuously: room audio, no Enter")
     parser.add_argument("--minutes", type=float, default=60.0, help="--background: how long in all")
@@ -173,35 +190,50 @@ def main() -> int:
         print(f"\ndone: {len(files)} file(s), {(time.monotonic() - start) / 60:.1f} min in {out}")
         return 0
 
+    if args.phrases:
+        out = args.out or Path("data") / "wake" / "phrases"
+        count = args.count or 5
+        print(f"{len(PHRASES)} phrases x {count} clips of {args.seconds:g} s into {out}. Say each one naturally.")
+        for phrase in PHRASES:
+            print(f"\n== {phrase} ==")
+            if not record_clips(out, slug(phrase), phrase, count, args.seconds):
+                break
+        return 0
+    out = args.out or Path("data") / "wake" / "positives"
+    record_clips(out, "kestrel", "Kestrel", args.count or 30, args.seconds)
+    return 0
+
+
+def record_clips(out: Path, prefix: str, phrase: str, count: int, seconds: float) -> bool:
+    """count clips of prefix-NNN.wav, each after a countdown and checked at once. False if stopped (q)."""
     import sounddevice as sd  # optional dependencies: uv sync --extra wake
     import soundfile as sf
 
-    out = args.out or Path("data") / "wake" / "positives"
     out.mkdir(parents=True, exist_ok=True)
-    start_index = len(list(out.glob("kestrel-*.wav")))
-    print(f"Recording {args.count} clips of {args.seconds:g} s into {out}. Vary distance, volume and tone.")
-    i = start_index
-    while i < start_index + args.count:
-        prompt = f"[{i - start_index + 1}/{args.count}] Enter, then say 'Kestrel' at 'now' (q + Enter to stop): "
+    first = next_index(out, prefix)
+    i = first
+    while i < first + count:
+        prompt = f"[{i - first + 1}/{count}] Enter, then say '{phrase}' at 'now' (q + Enter to stop): "
         if input(prompt).strip() == "q":
-            break
-        frames = int(args.seconds * SAMPLE_RATE)
+            return False
+        frames = int(seconds * SAMPLE_RATE)
         holder: list = []
         countdown(
             lambda label: print(f"  {label}", flush=True),
             lambda holder=holder, frames=frames: holder.append(
                 sd.rec(frames, samplerate=SAMPLE_RATE, channels=1, dtype="int16")
             ),
+            say=phrase,
         )
         sd.wait()
         clip = holder[0]
         problem = clip_problem(clip.tobytes())
         if problem and input(f"  {problem}. Record it again? (Enter = again, k + Enter = keep): ").strip() != "k":
             continue
-        sf.write(out / f"kestrel-{i:03d}.wav", clip, SAMPLE_RATE, subtype="PCM_16")
+        sf.write(out / f"{prefix}-{i:03d}.wav", clip, SAMPLE_RATE, subtype="PCM_16")
         i += 1
-    print(f"done: {len(list(out.glob('kestrel-*.wav')))} clips in {out}")
-    return 0
+    print(f"done: {len(list(out.glob(f'{prefix}-*.wav')))} '{phrase}' clips in {out}")
+    return True
 
 
 if __name__ == "__main__":

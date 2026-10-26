@@ -1,8 +1,14 @@
 """Wake-word detection behind a small interface, so the engine can be swapped (docs/voice-wake.md).
 
-VoskDetector runs the Vosk small English model restricted to a two-entry grammar:
-"kestrel" and "[unk]". The "[unk]" entry matters: with a grammar of only "kestrel", every
-utterance would be forced onto the wake word. With it, other speech comes out as "[unk]".
+VoskDetector runs the Vosk small English model restricted to a small grammar: "kestrel", a few
+greetings ("hi", "hello", "hey", "shalom", "good morning"; all in the model's vocabulary) and
+"[unk]". The "[unk]" entry matters: with a grammar of only "kestrel", every utterance would be forced
+onto the wake word. With it, other speech comes out as "[unk]".
+
+The rule: a wake is "kestrel" anywhere in the recognised utterance, at or above the threshold
+(wake_confidence). So "hi kestrel", "shalom kestrel", "[unk] kestrel" and a longer sentence that
+contains "kestrel" all wake; that last one is accepted behaviour (docs/voice-wake.md). The greetings
+are there only so Kestrel can greet back with the same word (heard_greeting); they never wake it.
 The same class, with the word "cancel", listens for a spoken cancel during the 2-second send
 countdown (talk.CANCEL_WORD): only then, and acting on Vosk's partial result so it is fast enough.
 
@@ -15,7 +21,9 @@ from pathlib import Path
 from typing import Protocol
 
 WAKE_WORD = "kestrel"
-GRAMMAR = (WAKE_WORD, "[unk]")
+GREETINGS = ("hi", "hello", "hey", "shalom", "good morning")  # checked in the model: vosk_model_find_word
+GRAMMAR = (WAKE_WORD, *GREETINGS, "[unk]")
+KESTREL_ONLY = (WAKE_WORD, "[unk]")  # the grammar before greetings (2026-10-26), kept for wake_eval
 SAMPLE_RATE = 16_000
 
 
@@ -37,8 +45,11 @@ class Recognizer(Protocol):
 RecognizerFactory = Callable[[str], Recognizer]  # grammar JSON -> recognizer
 
 
-def grammar_json(word: str = WAKE_WORD) -> str:
-    return json.dumps([word, "[unk]"])
+def grammar_json(word: str = WAKE_WORD, grammar: tuple[str, ...] | None = None) -> str:
+    """The wake word's grammar (GRAMMAR), or any other single word with "[unk]" (the spoken cancel)."""
+    if grammar is None:
+        grammar = GRAMMAR if word == WAKE_WORD else (word, "[unk]")
+    return json.dumps(list(grammar))
 
 
 def vosk_recognizer_factory(model_dir: Path) -> RecognizerFactory:
@@ -66,17 +77,33 @@ def wake_confidence(result_json: str, word: str = WAKE_WORD) -> float | None:
     return max(confs) if confs else None
 
 
-def wake_events(make_recognizer: RecognizerFactory, pcm: bytes, chunk_bytes: int) -> list[tuple[float, float]]:
-    """Offline (scripts/wake_eval.py, talk_eval.py): (seconds into the audio, confidence) for every
-    "kestrel" the recognizer reports, fed in the live service's chunk size. The time is the end of the
-    chunk where the live detector would fire."""
-    rec = make_recognizer(grammar_json())
-    events: list[tuple[float, float]] = []
+def heard_greeting(result_json: str) -> str | None:
+    """The first greeting in one Vosk result ("hi", "good morning"...), or None."""
+    words = [w.get("word") for w in json.loads(result_json or "{}").get("result", [])]
+    for i in range(len(words)):
+        for greeting in GREETINGS:
+            parts = greeting.split()
+            if words[i : i + len(parts)] == parts:
+                return greeting
+    return None
+
+
+def wake_events(
+    make_recognizer: RecognizerFactory, pcm: bytes, chunk_bytes: int, grammar: tuple[str, ...] = GRAMMAR
+) -> list[tuple[float, float, str | None]]:
+    """Offline (scripts/wake_eval.py, talk_eval.py): (seconds into the audio, confidence, greeting heard)
+    for every "kestrel" the recognizer reports, fed in the live service's chunk size. The time is the
+    end of the chunk where the live detector would fire."""
+    rec = make_recognizer(grammar_json(grammar=grammar))
+    events: list[tuple[float, float, str | None]] = []
     for i in range(0, len(pcm), chunk_bytes):
-        if rec.AcceptWaveform(pcm[i : i + chunk_bytes]) and (conf := wake_confidence(rec.Result())) is not None:
-            events.append((min(i + chunk_bytes, len(pcm)) / 2 / SAMPLE_RATE, conf))
-    if (conf := wake_confidence(rec.FinalResult())) is not None:  # an utterance still open at the end
-        events.append((len(pcm) / 2 / SAMPLE_RATE, conf))
+        if rec.AcceptWaveform(pcm[i : i + chunk_bytes]):
+            result = rec.Result()
+            if (conf := wake_confidence(result)) is not None:
+                events.append((min(i + chunk_bytes, len(pcm)) / 2 / SAMPLE_RATE, conf, heard_greeting(result)))
+    final = rec.FinalResult()
+    if (conf := wake_confidence(final)) is not None:  # an utterance still open at the end
+        events.append((len(pcm) / 2 / SAMPLE_RATE, conf, heard_greeting(final)))
     return events
 
 
@@ -99,6 +126,7 @@ class VoskDetector:
         self.threshold = threshold
         self.word = word
         self.partial = partial
+        self.greeting: str | None = None  # the greeting heard with the last wake, for the reply
         self.recognizer = make_recognizer(grammar_json(word))
 
     def feed(self, pcm: bytes) -> float | None:
@@ -109,5 +137,9 @@ class VoskDetector:
             ):
                 return 1.0
             return None
-        conf = wake_confidence(self.recognizer.Result(), self.word)
-        return conf if conf is not None and conf >= self.threshold else None
+        result = self.recognizer.Result()
+        conf = wake_confidence(result, self.word)
+        if conf is None or conf < self.threshold:
+            return None
+        self.greeting = heard_greeting(result)
+        return conf
