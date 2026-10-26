@@ -8,6 +8,36 @@ answer an approval: approvals stay clicks.
 Everything is local and free: Vosk for detection, Windows' own speech voices for the greeting.
 No audio, text or event leaves the PC.
 
+**Greetings before "Kestrel"** (2026-10-26). The rule is: "kestrel" anywhere in what Vosk recognises,
+at or above the threshold, wakes it. So "Hi Kestrel", "Hello Kestrel", "Hey Kestrel", "Shalom Kestrel",
+"Good morning Kestrel" and any unknown word followed by "Kestrel" (Vosk returns `[unk] kestrel`) all
+wake it, with the same threshold and the same 10 s cooldown. This was already how the detector
+decided (it looks for the word in the result, never an exact match); the change is the grammar:
+`["kestrel", "hi", "hello", "hey", "shalom", "good morning", "[unk]"]`. All five greetings are in the
+small model's vocabulary (checked with `vosk_model_find_word`; "shalom" is there too), so none relies
+on `[unk]`. When one of them is heard with the wake word, Kestrel greets back with it:
+"Hello, {name}. I'm here, what do you need?" ("Hi", "Hey", "Shalom", "Good morning"; no name set:
+"Hello. I'm here, what do you need?"). Otherwise the normal greeting. A greeting alone never wakes it.
+
+**Accepted behaviour:** "kestrel" inside a longer sentence ("I saw a kestrel over the field") wakes it
+too. That is the same rule, and it is on purpose: requiring the word on its own or at the start
+would also reject "hi Kestrel". The cost shows up as false wakes per hour in `wake_eval.py`.
+
+**Old vs new grammar on your existing recordings** (2026-10-26, 30 plain "Kestrel" clips of 2 s,
+1.00 h of podcast in the room; no greeting clips recorded yet):
+
+| Threshold | Detected, new / old | False wakes per hour, new / old |
+|---|---|---|
+| 0.50 | 20/30 / 20/30 | 3 / 8 |
+| 0.70 | 19/30 / 20/30 | 2 / 3 |
+| **0.90** | **19/30 / 19/30** | **2 / 3** |
+| 0.95 | 19/30 / 19/30 | 1 / 2 |
+
+The greetings didn't cost detection on plain "Kestrel" and gave fewer false wakes at low thresholds
+(podcast speech that was forced onto "kestrel" now lands on a greeting or `[unk]`). At 0.90 the
+difference (2 vs 3) is within Vosk's run-to-run variation: the old grammar gave 1 per hour on the
+same hour in an earlier run. Per-phrase detection waits for `wake_record.py --phrases`.
+
 ## Turn it on
 
 1. Install the optional dependencies (about 16 MB): `uv sync --extra wake`
@@ -156,10 +186,15 @@ network, once, to fetch the model.
    closest to real use: play a podcast out loud and record the room with
    `uv run python scripts/wake_record.py --background` (60 min in 10-min `room-NNN.wav` files, a live
    "recording, minute X of 60" line; Ctrl+C stops early and keeps what was recorded).
-3. **Run:** `uv run python scripts/wake_eval.py --positives data/wake/positives --background data/wake/background`.
+3. **Phrases (greetings):** `uv run python scripts/wake_record.py --phrases` prompts "Kestrel",
+   "Hi Kestrel", "Hello Kestrel", "Hey Kestrel" and "Shalom Kestrel", 5 clips each (3 s, the same
+   countdown and check), into `data/wake/phrases/` (`hi-kestrel-000.wav`...).
+4. **Run:** `uv run python scripts/wake_eval.py --positives data/wake/positives --phrases data/wake/phrases --background data/wake/background`.
    It uses the same detector code as the live service and reports, for each threshold: clips detected
-   (with a 95% Clopper-Pearson interval), false wakes (with the 10-second cooldown) per hour, and CPU.
-4. **Choose the threshold:** the highest one that still detects at least 90% of your clips, then
+   (with a 95% Clopper-Pearson interval), false wakes (with the 10-second cooldown) per hour, and CPU,
+   each for the new grammar and the old one (`kestrel` + `[unk]` only) side by side; then per phrase:
+   clips detected and how often the greeting was heard right (so the reply echoes it).
+5. **Choose the threshold:** the highest one that still detects at least 90% of your clips, then
    check its false wakes per hour. Targets: under 1 per hour of TV/podcast audio. Set it as
    `KESTREL_WAKE_THRESHOLD` and record the table in this file.
 
@@ -388,12 +423,12 @@ LibriSpeech test-clean WER: base.en about 4.3%, tiny.en 8.4%, Vosk small 9.85%.
 
 | File | Role |
 |---|---|
-| `src/kestrel/wake/detector.py` | `Detector` interface; `VoskDetector` with the grammar `["kestrel", "[unk]"]` |
+| `src/kestrel/wake/detector.py` | `Detector` interface; `VoskDetector` with the grammar `kestrel` + five greetings + `[unk]`; `heard_greeting` |
 | `src/kestrel/wake/audio.py` | Microphone (sounddevice) as in-memory chunks |
 | `src/kestrel/wake/service.py` | The flow: cooldown, display, window, greeting, `wake` event, trace |
 | `src/kestrel/wake/power.py` | Windows calls through ctypes: power state and the battery rule (`decide`), keep-awake, display, window |
 | `src/kestrel/wake/speech.py` | The greeting through SAPI 5 (comtypes) on its own thread |
-| `src/kestrel/wake/greeting.py` | The fixed greeting and the name's cleaning |
+| `src/kestrel/wake/greeting.py` | The fixed greeting, the echoed one ("Hello, {name}. ..."), and the name's cleaning |
 | `console/src/hud/useHud.ts` | `waking` phase and `arrive` pose; the fly-in plays once per wake |
 | `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator; "Speak answers" |
 | `src/kestrel/wake/talk.py` | End of speech, the hallucination guard, what is spoken |

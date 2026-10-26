@@ -303,7 +303,7 @@ class WakeService:
                     heard = self.clock()
                     level = loudness(chunk)
                     self._hear_cancel(chunk)
-                    woke = detector.feed(chunk) is not None and self.on_wake()
+                    woke = detector.feed(chunk) is not None and self.on_wake(getattr(detector, "greeting", None))
                     if self._recording is not None and not woke:
                         self._record(chunk, level)
                     elif self._recording is None:
@@ -451,8 +451,9 @@ class WakeService:
 
     # --- a wake -----------------------------------------------------------------------
 
-    def on_wake(self) -> bool:
-        """The detector heard the wake word. Returns False if it was within the cooldown."""
+    def on_wake(self, heard: str | None = None) -> bool:
+        """The detector heard the wake word (heard: a greeting said with it, echoed back).
+        Returns False if it was within the cooldown."""
         now = self.clock()
         if self._last_wake is not None and now - self._last_wake < self.settings.cooldown_s:
             return False
@@ -469,6 +470,7 @@ class WakeService:
         else:
             window = self.settings.listen_seconds
         self._attend_until = now + window
-        self.emit({"type": "wake", "at": at, "greeting": self.greeting, "listen_seconds": window})
-        self.say(self.greeting)
+        reply = greeting(self.settings.user_name, heard) if heard else self.greeting
+        self.emit({"type": "wake", "at": at, "greeting": reply, "listen_seconds": window})
+        self.say(reply)
         return True

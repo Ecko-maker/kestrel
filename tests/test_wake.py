@@ -20,7 +20,15 @@ from kestrel.tools import ToolRegistry
 from kestrel.tracing import WAKE_ATTRIBUTES, Tracer
 from kestrel.wake import WakeService, WakeSettings, build_wake_service
 from kestrel.wake import service as service_module
-from kestrel.wake.detector import GRAMMAR, VoskDetector, grammar_json, wake_confidence
+from kestrel.wake.detector import (
+    GRAMMAR,
+    GREETINGS,
+    KESTREL_ONLY,
+    VoskDetector,
+    grammar_json,
+    heard_greeting,
+    wake_confidence,
+)
 from kestrel.wake.greeting import MAX_NAME_CHARS, clean_name, greeting
 from kestrel.wake.power import (
     INPUT,
@@ -235,8 +243,11 @@ def test_the_greeting_comes_from_the_setting(monkeypatch, tmp_path):
 
 
 def test_the_grammar_includes_unk_next_to_the_wake_word():
-    assert GRAMMAR == ("kestrel", "[unk]")
-    assert json.loads(grammar_json()) == ["kestrel", "[unk]"]
+    # 2026-10-26: greetings added (all five checked in the model's vocabulary, "shalom" included)
+    assert GRAMMAR == ("kestrel", "hi", "hello", "hey", "shalom", "good morning", "[unk]")
+    assert json.loads(grammar_json()) == list(GRAMMAR)
+    assert "[unk]" in GRAMMAR and KESTREL_ONLY == ("kestrel", "[unk]")
+    assert json.loads(grammar_json("cancel")) == ["cancel", "[unk]"]  # the spoken cancel keeps its own
 
 
 def test_a_non_matching_phrase_gives_no_wake_with_the_real_grammar():
@@ -935,3 +946,139 @@ def test_level_code_never_writes_or_logs_audio():
         body = inspect.getsource(fn)
         for banned in ("open(", "print(", "logging", "write", "record_wake"):
             assert banned not in body, f"{fn.__name__} contains {banned}"
+
+
+# --- greetings before "Kestrel" (2026-10-26) ----------------------------------------------------------
+
+
+class GrammarRecognizer:
+    """Like Vosk with a grammar of words and phrases: words from the grammar come out as themselves
+    (a phrase like "good morning" as two words), anything else as "[unk]". "kestrel" gets conf 0.95."""
+
+    def __init__(self, grammar: str):
+        self.words = {w for entry in json.loads(grammar) for w in entry.split()}
+        self.pending = b""
+
+    def AcceptWaveform(self, data: bytes) -> bool:
+        self.pending = data
+        return True
+
+    def Result(self) -> str:
+        tokens = [t.strip(".,!?") for t in self.pending.decode().lower().split()]
+        words = [t if t in self.words else "[unk]" for t in tokens]
+        return json.dumps({"result": [{"word": w, "conf": 0.95 if w == "kestrel" else 1.0} for w in words]})
+
+
+@pytest.mark.parametrize(
+    ("said", "greeting_heard"),
+    [
+        ("Kestrel", None),
+        ("Hi Kestrel", "hi"),
+        ("Hello Kestrel", "hello"),
+        ("Hey Kestrel", "hey"),
+        ("Shalom Kestrel", "shalom"),
+        ("Good morning Kestrel", "good morning"),
+        ("Howdy Kestrel", None),  # not in the grammar: "[unk] kestrel" still wakes, plain greeting
+    ],
+)
+def test_each_phrase_wakes(said, greeting_heard):
+    detector = VoskDetector(GrammarRecognizer, threshold=0.9)
+    assert detector.feed(said.encode()) == 0.95
+    assert detector.greeting == greeting_heard
+
+
+def test_the_wake_rule_is_kestrel_anywhere_in_the_utterance():
+    """What Vosk returns for "hi kestrel" said with an unknown greeting, and for a known one."""
+    unk_then_kestrel = json.dumps({"result": [{"word": "[unk]", "conf": 1.0}, {"word": "kestrel", "conf": 0.93}]})
+    hello_kestrel = json.dumps({"result": [{"word": "hello", "conf": 1.0}, {"word": "kestrel", "conf": 0.97}]})
+    assert wake_confidence(unk_then_kestrel) == 0.93
+    assert wake_confidence(hello_kestrel) == 0.97
+    assert heard_greeting(unk_then_kestrel) is None and heard_greeting(hello_kestrel) == "hello"
+
+
+def test_kestrel_inside_a_longer_sentence_still_wakes():
+    """Accepted behaviour (docs/voice-wake.md): the word anywhere in an utterance wakes Kestrel."""
+    detector = VoskDetector(GrammarRecognizer, threshold=0.9)
+    assert detector.feed(b"I saw a kestrel over the field today") == 0.95
+    assert detector.greeting is None
+
+
+def test_a_greeting_without_kestrel_never_wakes():
+    detector = VoskDetector(GrammarRecognizer, threshold=0.5)
+    for said in (b"hello", b"hi there", b"good morning everyone", b"shalom"):
+        assert detector.feed(said) is None
+
+
+def test_the_threshold_still_applies_with_a_greeting():
+    detector = VoskDetector(GrammarRecognizer, threshold=0.96)  # kestrel comes out at 0.95
+    assert detector.feed(b"hello kestrel") is None
+
+
+def test_heard_greeting_needs_the_whole_phrase():
+    def result(*words):
+        return json.dumps({"result": [{"word": w, "conf": 1.0} for w in words]})
+
+    assert heard_greeting(result("good", "morning", "kestrel")) == "good morning"
+    assert heard_greeting(result("good", "kestrel")) is None
+    assert heard_greeting(result("[unk]", "hey", "kestrel")) == "hey"
+    assert heard_greeting("") is None
+    assert set(GREETINGS) == {"hi", "hello", "hey", "shalom", "good morning"}
+
+
+def test_the_echoed_greeting_with_and_without_a_name():
+    assert greeting("Sam", "hello") == "Hello, Sam. I'm here, what do you need?"
+    assert greeting("Sam", "hi") == "Hi, Sam. I'm here, what do you need?"
+    assert greeting("Sam", "hey") == "Hey, Sam. I'm here, what do you need?"
+    assert greeting(None, "shalom") == "Shalom. I'm here, what do you need?"
+    assert greeting("  ", "good morning") == "Good morning. I'm here, what do you need?"
+    assert greeting("Sam", None) == "I'm here, Sam. What do you need?"  # no greeting heard: unchanged
+    assert "kestrel" not in greeting("Sam", "hello").lower()  # it would wake itself
+
+
+class GreetingDetector:
+    """Fires on b"kestrel" like FakeDetector, and reports a greeting heard with it."""
+
+    def __init__(self, heard):
+        self.heard = heard
+        self.greeting = None
+
+    def feed(self, pcm: bytes) -> float | None:
+        if pcm != b"kestrel":
+            return None
+        self.greeting = self.heard
+        return 1.0
+
+
+def test_a_greeted_wake_is_answered_with_the_same_greeting(tmp_path):
+    service, _, events, _, _, speaker, _ = make_service(tmp_path, chunks=[b"kestrel"], name="Sam")
+    service.make_detector = lambda: GreetingDetector("hello")
+    service.start()
+    try:
+        wait_for(lambda: speaker.said)
+    finally:
+        service.stop()
+    assert speaker.said == ["Hello, Sam. I'm here, what do you need?"]
+    assert [e["greeting"] for e in events if e["type"] == "wake"] == ["Hello, Sam. I'm here, what do you need?"]
+
+
+def test_a_plain_wake_keeps_the_normal_greeting(tmp_path):
+    service, _, _, _, _, speaker, _ = make_service(tmp_path, chunks=[b"kestrel"])
+    service.make_detector = lambda: GreetingDetector(None)
+    service.start()
+    try:
+        wait_for(lambda: speaker.said)
+    finally:
+        service.stop()
+    assert speaker.said == ["I'm here. What do you need?"]
+
+
+def test_the_cooldown_is_unchanged_for_greeted_wakes(tmp_path):
+    now = [100.0]
+    service, _, events, *_ = make_service(tmp_path, clock=lambda: now[0])
+    assert service_module.COOLDOWN_S == 10.0
+    assert service.on_wake("hello") is True
+    now[0] += 9.9
+    assert service.on_wake("hi") is False and service.on_wake() is False
+    now[0] += 0.1
+    assert service.on_wake("hey") is True
+    assert len([e for e in events if e["type"] == "wake"]) == 2

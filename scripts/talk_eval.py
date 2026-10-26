@@ -241,7 +241,7 @@ def end_to_end(
         events = wake_events(make_recognizer, pcm, CHUNK_BYTES)
         cache: dict[float, dict] = {}  # a segment heard at several thresholds is transcribed once
         for t in thresholds:
-            times = after_cooldown([s for s, c in events if c >= t], COOLDOWN_S)
+            times = after_cooldown([s for s, c, _ in events if c >= t], COOLDOWN_S)
             per[t]["wakes"] += len(times)
             for seg in wake_segments(pcm, times):
                 if seg["state"] == "no_speech":

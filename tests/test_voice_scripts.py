@@ -133,7 +133,7 @@ def test_wake_events_are_timed_at_the_end_of_the_chunk_the_live_detector_fires_o
             return "{}"
 
     pcm = QUIET * 4 + LOUD + QUIET * 5
-    assert wake_events(Rec, pcm, len(QUIET)) == [(0.5, 0.93)]
+    assert wake_events(Rec, pcm, len(QUIET)) == [(0.5, 0.93, None)]
 
 
 def test_after_a_wake_the_recording_follows_the_end_of_speech_rule():
@@ -197,3 +197,38 @@ def test_the_countdown_starts_recording_before_now():
     shown: list[str] = []
     wake_record.countdown(shown.append, lambda: shown.append("<recording starts>"), sleep=lambda s: None)
     assert shown == ["3", "2", "<recording starts>", "1", "now: say 'Kestrel'"]
+
+
+# --- greetings: wake_record.py --phrases and wake_eval.py per phrase -----------------------------------
+
+
+def test_the_phrase_list_and_file_names():
+    assert wake_record.PHRASES == ("Kestrel", "Hi Kestrel", "Hello Kestrel", "Hey Kestrel", "Shalom Kestrel")
+    assert [wake_record.slug(p) for p in wake_record.PHRASES[:2]] == ["kestrel", "hi-kestrel"]
+    shown: list[str] = []
+    wake_record.countdown(shown.append, lambda: None, sleep=lambda s: None, say="Hi Kestrel")
+    assert shown[-1] == "now: say 'Hi Kestrel'"
+
+
+wake_eval = load("wake_eval")
+
+
+def test_wake_eval_reads_the_phrase_back_from_the_file_name():
+    assert wake_eval.phrase_of("hi-kestrel-003.wav") == "hi kestrel"
+    assert wake_eval.phrase_of("kestrel-012.wav") == "kestrel"
+    assert wake_eval.phrase_of("shalom-kestrel-000.wav") == "shalom kestrel"
+    assert wake_eval.expected_greeting("shalom kestrel") == "shalom"
+    assert wake_eval.expected_greeting("kestrel") is None
+
+
+def test_wake_eval_counts_detection_greetings_and_false_wakes():
+    clips = {
+        "hello-kestrel-000.wav": [(1.0, 0.95, "hello")],
+        "hello-kestrel-001.wav": [(1.0, 0.95, None)],  # woke, greeting not heard
+        "hello-kestrel-002.wav": [(1.0, 0.60, "hello")],  # below 0.9
+        "hello-kestrel-003.wav": [],
+    }
+    assert wake_eval.detected(clips, 0.9) == 2 and wake_eval.detected(clips, 0.5) == 3
+    assert wake_eval.greeted(clips, 0.9) == 1 and wake_eval.greeted(clips, 0.5) == 2
+    background = {"room-000.wav": [(10.0, 0.95, None), (15.0, 0.95, None), (30.0, 0.95, None)]}
+    assert wake_eval.false_wakes(background, 0.9) == 2  # the 10 s cooldown, as live
