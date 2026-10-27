@@ -4,11 +4,23 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-26 22:00 EDT (2026-10-27 02:00 UTC), from a read-only check of every branch, process and results file.
+2026-10-27 16:00 EDT (20:00 UTC), from the day's sessions on `main` and `phase3/tiers-v2` (log below).
 
 ## Now
 
-Phase 3 is closing on permission tiers v2.1. Its safety gate passed (strict system-level ASR 0/29, `evals/reports/safety-after-v2.1.md` on `phase3/tiers-v2`). The last measurement is running: the main-suite non-inferiority check under rule C (main suite ×3 against the two pinned baselines, `docs/tiers-v2-design.md` §5 on `phase3/tiers-v2`). It runs on Groq in a standalone PowerShell window in `..\kestrel-runs` (PID 13464, `evals\results\main-after-v21-x3.json`, `--wait-for-quota`). On 10-26 it stood at 198/300 tasks and was waiting for the rolling quota; it should finish around 10-28. Runs pause in Modern Standby, so keep the laptop on mains power and awake. **The single next step:** when the run ends, compute the rule C verdict offline (no model calls) and record it on `phase3/tiers-v2`; then the owner decides the Phase 3 gate.
+Phase 3 is closing on permission tiers v2.1. Its safety gate passed (strict system-level ASR 0/29, `evals/reports/safety-after-v2.1.md` on `phase3/tiers-v2`). The last measurement is running: the main-suite non-inferiority check under rule C (main suite ×3 against the two pinned baselines, `docs/tiers-v2-design.md` §5 on `phase3/tiers-v2`). It runs on Groq in a standalone PowerShell window in `..\kestrel-runs` (PID 13464, `evals\results\main-after-v21-x3.json`, `--wait-for-quota`). Last read 10-27 08:02: 198/300, waiting for the rolling quota; expected finish 10-27 evening to 10-28 midday. Runs pause in Modern Standby, so keep the laptop on mains power and awake. What each rule C outcome leads to is recorded and **frozen** (`a29c5f3`). **The single next step:** when the run ends, run `scripts/rule_c_verdict.py` (offline, no model calls; plus `--escalation-review` if any task was escalated) with `--out evals/reports/rule-c-verdict.md`, and commit the report on `phase3/tiers-v2`.
+
+## 2026-10-27
+
+In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked).
+1. **Approvals log** merged to `main` (PR #20, `0960cf8`): the Groq table below.
+2. **Stale `main` hash** fixed here: `main` = `0960cf8`, not `880d601`.
+3. **#36 (teacher terms, Groq §6.3(e)):** a follow-up to the 10-18 question is drafted, **not sent yet** (the owner sends it). Decision date: 10-31 or after the phase4 rebase, whichever is later. Already decided: no public hosting of the student. Publishing the weights (LoRA adapter): decided later, at that date.
+4. **Rule C verdict script** (`c937cad`): `scripts/rule_c_verdict.py` + tests; report template `evals/reports/rule-c-verdict.md`. A partial dry run was a plumbing check only, not a verdict.
+5. **Rule C outcomes recorded** (`0d3c3c0`), then **amended** before the result (`2df47f8`, `130134d`): PASS → merge after #14; FAIL → no merge, fix, re-measure; gate not met → (a) 0 `escalated_by` entries: merge after #14, report "non-inferiority not shown at 6 points", open `KI-pending-main-suite-drift`; (b) 1 or more: review each escalated task, no merge if a card plausibly changed an outcome. Rule and margin unchanged. Superseded options, the reasons, and the disclosure of the partial data seen are in §5.
+6. **Fingerprint diff** (`558035a`): `cc5c16377662` → `35fac5ba6277` changes only the tiers-v2 cards (capabilities + approval rules); `evals/reports/fingerprint-diff-v1.1-to-v2.1.md`.
+7. **Freeze** (`a29c5f3`): the 2df47f8 reason corrected (A was the owner's choice; it was left because of the fingerprint diff); no further changes to the rule C consequences before the final result.
+8. **Voice CI:** still red. Last run 10-26 (`40406346377`, `voice/talk`): mypy can't find `pywhispercpp.model` and `numpy` in `src/kestrel/wake/transcribe.py`, on Ubuntu and Windows. No voice push since.
 
 ## Phases
 
@@ -27,13 +39,15 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | Branch | Phase | State | Next action |
 |---|---|---|---|
 | `phase3/results-analysis` | 3 | PR #14 into `phase3/tiers-v2`, 1 commit, CI green, evals not run | merge into tiers-v2 (no evals) |
-| `phase3/tiers-v2` | 3 | safety gate PASS; rule A part 1 not met as written; rule C running | merge to `main` after the rule C verdict and the owner's gate call (~56k) |
+| `phase3/tiers-v2` | 3 | safety gate PASS; rule A part 1 not met as written; rule C running, consequences frozen (`a29c5f3`, CI green) | verdict report; then merge to `main` per §5 and the owner's gate call (~56k) |
 | `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | last: rebase onto `main` after voice; fix #42 and the main-meta test; then merge (~56k) |
-| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; mypy/numpy fail CI | fix CI; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
+| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI red (mypy imports in `wake/transcribe.py`, run `40406346377`) | fix CI; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
 | `console/hud-theme` | console | stacked on tiers-v2 `75ce54c`; console only | rebase onto `main` after tiers-v2; merge (no evals) |
 | `labels/judge-calibration` | 2 | 3 owner labels | merged to `main` via PR (2026-10-26) |
 | `docs/merge-plan` | – | merge-rehearsal report (stale on memory-rag and the phase4 tip) | merge whenever (no evals) |
 | `docs/status-2026-10-26` | – | this file, `progress.md`, CLAUDE.md rewrite | merged to `main` as PR #18 (2026-10-26) |
+| `docs/approvals-2026-10-26` | – | Groq approvals log | merged to `main` as PR #20 (2026-10-27) |
+| `docs/status-2026-10-27` | – | this update | merge to `main` (no evals) |
 | `phase3/memory-rag` | 3 | memory + hybrid RAG design, parked (option B) | park until after the Phase 4 measurements |
 | `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
 | `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
@@ -41,7 +55,7 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `phase3/memory-safety` | 3 | tip = tag `safety-before`; its content is in tiers-v2 | proposed: delete (tag exists) |
 | `phase4/trace-dataset-v0` | 4 | first distill attempt, replaced | proposed: archive as tag, delete |
 | `dev`, `phase2/kestrelbench`, `master` | 1–2 | fully merged into `main` | proposed: delete |
-| `main` | – | = `origin/main` `880d601` | – |
+| `main` | – | = `origin/main` `0960cf8` (before this PR) | – |
 
 Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates); they cost no evals.
 
@@ -75,11 +89,12 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 
 ## Owner decisions open
 
-1. **Phase 3 tiers gate**, after the rule C verdict. The gate requires no drop in the benign pass rate (decision A, `docs/tiers-v2-design.md` §5), and rule A part 1 is not met as written (`evals/reports/rule-a-power.md` on tiers-v2 reads it as noise). It includes **`ben-note-from-mcp`**: it still fails 1 of 3 strict runs on v2.1 (`docs__lookup` ran, `create_note` didn't), and the reports give rule A with and without it. Ship or not.
+1. **Phase 3 tiers gate**, after the rule C verdict (what each outcome leads to: §5, frozen). The gate requires no drop in the benign pass rate (decision A, `docs/tiers-v2-design.md` §5), and rule A part 1 is not met as written (`evals/reports/rule-a-power.md` on tiers-v2 reads it as noise). It includes **`ben-note-from-mcp`**: it still fails 1 of 3 strict runs on v2.1 (`docs__lookup` ran, `create_note` didn't), and the reports give rule A with and without it. Ship or not.
 2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). It is recorded only on unmerged branches (`phase4/trace-dataset` CLAUDE.md, `docs/memory-rag-design.md`); it lands with them.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
-5. Also waiting: the teacher decision (#36, Groq §6.3(e)); labels for #21; `docs/phase4-plan.md` open question 13 (power of the quality claim); tiers-v2 §6 questions 4–8.
+5. **Teacher decision (#36, Groq §6.3(e))**: on 10-31 or after the phase4 rebase, whichever is later; send the follow-up first (log item 3). Publishing the weights is decided then.
+6. Also waiting: labels for #21; `docs/phase4-plan.md` open question 13 (power of the quality claim); tiers-v2 §6 questions 4–8.
 
 ## Docs on unmerged branches
 
