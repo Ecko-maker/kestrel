@@ -34,6 +34,24 @@ the student with escalation to the teacher (section 1).
 
 Design decision 25 records the same.
 
+## Owner decision (2026-10-26): Phase 4 before long-term memory
+
+Long-term memory (`docs/memory-rag-design.md` on `phase3/memory-rag`, option B there) is built and measured **after** Phase 4. Phase 3 closes on tiers v2.1 and its merge. Phase 4 is collected, trained and measured on that system, with no memory tools. Accepted costs: about 835k more Groq tokens overall (a second collection and Phase 4 runs for a memory-on system later), and the first student doesn't know the memory tools.
+
+**Router rule until a student is retrained with memory.** The pre-route rule (section 1) sends a whole turn to the teacher whenever the tools Kestrel sends differ from the student's `lineage.json` fingerprint. With memory tools registered, that is every turn, so a "routed" run would measure the teacher alone (the same mechanism as known issue #41 for MCP). **Rule: any routed setup runs with memory off, with its tools not registered**, until a student trained with the memory tools exists. Known issue #51.
+- **Today** there is nothing to configure: memory isn't on main or on this branch, so no routed setup can register its tools.
+- **When memory merges** (after the Phase 4 measurements), it must come with:
+  - an off switch, `KESTREL_MEMORY=off`, read like `KESTREL_MCP=off`;
+  - in bench, `--memory-backend none`, which is the default;
+  - a router guard: `build_router` raises `RouterSetupError` when memory tools would be registered and the student's lineage doesn't contain them. A routed setup with memory on then fails at start-up instead of silently sending every turn to the teacher.
+  - Results meta records `memory_backend`, so a routed results file shows it ran without memory.
+- **MCP follows the same rule** (#41): routed runs use `KESTREL_MCP=off`.
+- **Planned follow-up: retrain with memory.** After memory's own measurements:
+  - distill set d1.3 with memory tasks;
+  - collection with `--memory-backend sqlite`;
+  - training, export, and the routed runs again, on the memory-on system.
+  - `docs/memory-rag-design.md` section 6 lists what in `distill/` changes.
+
 ## 1. Router options
 
 The router lives in the model layer, behind `llm.complete()` (key decision 2), like `FallbackLLM`: the
