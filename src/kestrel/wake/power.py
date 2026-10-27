@@ -35,13 +35,15 @@ UNKNOWN = 255
 RESUME_MARGIN = 5  # after a low-battery pause, listening resumes at the minimum + 5 points
 
 
+# Windows' LONG/DWORD/ULONG are 32-bit on every platform, but c_long/c_ulong are 64-bit on 64-bit
+# Linux; fixed-width types keep these layouts right wherever the tests run.
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [
-        ("dx", ctypes.c_long),
-        ("dy", ctypes.c_long),
-        ("mouseData", ctypes.c_ulong),
-        ("dwFlags", ctypes.c_ulong),
-        ("time", ctypes.c_ulong),
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
         ("dwExtraInfo", ctypes.c_size_t),
     ]
 
@@ -52,7 +54,7 @@ class _INPUTUNION(ctypes.Union):
 
 class INPUT(ctypes.Structure):
     _anonymous_ = ("u",)
-    _fields_ = [("type", ctypes.c_ulong), ("u", _INPUTUNION)]
+    _fields_ = [("type", ctypes.c_uint32), ("u", _INPUTUNION)]
 
 
 class SYSTEM_POWER_STATUS(ctypes.Structure):
@@ -61,13 +63,13 @@ class SYSTEM_POWER_STATUS(ctypes.Structure):
         ("BatteryFlag", ctypes.c_ubyte),
         ("BatteryLifePercent", ctypes.c_ubyte),
         ("SystemStatusFlag", ctypes.c_ubyte),
-        ("BatteryLifeTime", ctypes.c_ulong),
-        ("BatteryFullLifeTime", ctypes.c_ulong),
+        ("BatteryLifeTime", ctypes.c_uint32),
+        ("BatteryFullLifeTime", ctypes.c_uint32),
     ]
 
 
 class REASON_CONTEXT(ctypes.Structure):
-    _fields_ = [("Version", ctypes.c_ulong), ("Flags", ctypes.c_ulong), ("SimpleReasonString", ctypes.c_wchar_p)]
+    _fields_ = [("Version", ctypes.c_uint32), ("Flags", ctypes.c_uint32), ("SimpleReasonString", ctypes.c_wchar_p)]
 
 
 @dataclass(frozen=True)
