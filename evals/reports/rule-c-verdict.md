@@ -10,7 +10,7 @@ Rule C (`docs/tiers-v2-design.md` section 5, owner decision 2026-10-21, fixed be
 What each outcome leads to (owner decision 2026-10-27, recorded in section 5 before the final result, after the partial 198/300 dry run had been seen):
 - **PASS:** tiers-v2 merges into `main`, after PR #14.
 - **FAIL:** no merge; fix the cause, re-measure.
-- **Gate not met:** no merge; diff the agent fingerprints `cc5c16377662` -> `35fac5ba6277`, fix what changed besides the cards, re-measure the main suite x3 (about 3 Groq days, after its approval line in `docs/STATUS.md`).
+- **Gate not met:** merge; report "non-inferiority not shown at 6 points" with the paired 95% interval, the flip diagnosis (failure groups from `evals/reports/baseline-failures.md`) and run 2's flips; open a known issue; re-test at Phase 4's main-suite run. (Changed from A, no merge and re-measure, by the owner on 2026-10-27 before the final result; see section 5.)
 
 ## Command
 
