@@ -104,4 +104,4 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | Kaggle smoke bundle (rebuildable) | `dist/kaggle-smoke/` | no |
 | Kaggle notebook and dataset versions | Kaggle | – |
 
-Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). It is on the same disk: copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here.
+Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here.
