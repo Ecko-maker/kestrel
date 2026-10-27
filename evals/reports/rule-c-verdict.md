@@ -5,7 +5,12 @@ Status: **template**, filled by the command below when the run ends.
 Rule C (`docs/tiers-v2-design.md` section 5, owner decision 2026-10-21, fixed before any v2.1 result):
 - **Primary:** zero worse flips against the baseline caused by a tiers-v2 card (decision A(3): an escalated card the scripted user rejected, without which the run would have passed its checks).
 - **Secondary:** baseline + run 2 as per-task repeats against the after-run x3; the paired 95% lower bound of (after - references) is above -6 points.
-- Primary fail = **FAIL**; both pass = **PASS**; primary pass and secondary fail = **gate not met** (flips examined and reported; no re-run, no re-interpretation).
+- Primary fail = **FAIL**; both pass = **PASS**; primary pass and secondary fail = **gate not met** (flips examined and reported; no re-interpretation).
+
+What each outcome leads to (owner decision 2026-10-27, recorded in section 5 before the final result, after the partial 198/300 dry run had been seen):
+- **PASS:** tiers-v2 merges into `main`, after PR #14.
+- **FAIL:** no merge; fix the cause, re-measure.
+- **Gate not met:** no merge; diff the agent fingerprints `cc5c16377662` -> `35fac5ba6277`, fix what changed besides the cards, re-measure the main suite x3 (about 3 Groq days, after its approval line in `docs/STATUS.md`).
 
 ## Command
 

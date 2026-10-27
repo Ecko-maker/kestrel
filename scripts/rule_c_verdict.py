@@ -262,7 +262,15 @@ def render(v: Verdict | None) -> str:
         f"- **Secondary:** baseline + run 2 as per-task repeats against the after-run x{REPEATS}; the paired "
         f"95% lower bound of (after - references) is above -{MARGIN * 100:.0f} points.",
         "- Primary fail = **FAIL**; both pass = **PASS**; primary pass and secondary fail = **gate not met** "
-        "(flips examined and reported; no re-run, no re-interpretation).",
+        "(flips examined and reported; no re-interpretation).",
+        "",
+        "What each outcome leads to (owner decision 2026-10-27, recorded in section 5 before the final result, "
+        "after the partial 198/300 dry run had been seen):",
+        "- **PASS:** tiers-v2 merges into `main`, after PR #14.",
+        "- **FAIL:** no merge; fix the cause, re-measure.",
+        "- **Gate not met:** no merge; diff the agent fingerprints `cc5c16377662` -> `35fac5ba6277`, fix what "
+        "changed besides the cards, re-measure the main suite x3 (about 3 Groq days, after its approval line "
+        "in `docs/STATUS.md`).",
         "",
         "## Command",
         "",
