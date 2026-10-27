@@ -399,6 +399,16 @@ The training text holds Kestrel's built-in tools only (`kestrel distill build` d
 `phase4/trace-dataset` branches from main, where tiers v2 (capabilities, taint, the content check) isn't merged yet. The router tests show that the approval gate applies unchanged to the teacher's and the student's calls (cards, forbidden tools, one card per action), but not that taint and the content check do: e.g. the student reads a file, escalation hands the turn over, and the teacher's egress call must still get the taint card.
 **Done when:** after Phase 3 merges and this branch is rebased, tests cover taint and the content check across an escalation (student reads, teacher egresses; teacher reads, next turn's student egresses).
 
+### 51. The first student doesn't know the memory tools, so routed setups run with memory off
+**Labels:** `distillation`, `serving`, `memory`, `medium`
+Owner decision 2026-10-26 (`docs/phase4-plan.md`, "Phase 4 before long-term memory"): Phase 4 is collected and trained before long-term memory exists. The router's pre-route rule sends a turn to the teacher whenever the tools sent differ from the student's `lineage.json` fingerprint, so with `memory_search` / `memory_save` registered **every turn would go to the teacher**, and a routed run would measure the teacher alone (the #41 mechanism).
+**Rule until a student is retrained with memory:** any routed setup runs with memory off, its tools not registered.
+- Nothing to configure today: memory isn't on main.
+- When memory merges, it must ship `KESTREL_MEMORY=off`, bench `--memory-backend none` (the default) for routed runs, and a guard in `build_router`: a `RouterSetupError` if memory tools would be registered and the lineage lacks them.
+- Results meta records `memory_backend`.
+- (Numbered 51 because `voice/talk` already uses 46-50.)
+**Done when:** a student trained with the memory tools (distill d1.3 with memory tasks, collection with `--memory-backend sqlite`) passes `export.py --verify`, and the routed runs are repeated with memory on; or the guard is in place and every routed results file shows `memory_backend: none`.
+
 ---
 
 ## Process

@@ -70,6 +70,19 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 
 Where each phase stands, the live run, branches, Groq calendar and open owner decisions: [docs/STATUS.md](docs/STATUS.md).
 
+**Roadmap change (owner decision 2026-10-26, option B of `docs/memory-rag-design.md`):**
+- **Phase 3's memory item** (long-term memory + hybrid RAG) **moves after Phase 4.**
+- **Phase 3 closes on tiers v2.1:** the safety gate (passed: strict system-level 0/29), the decision on rule A, and the rule C main-suite verdict. Then the merge.
+- **Phase 4 order:**
+  1. Phase 3 merge;
+  2. teacher decision (#36);
+  3. rebase `phase4/trace-dataset`;
+  4. collection;
+  5. training;
+  6. measurement.
+- **Router rule:** until a student is retrained with the memory tools, every routed setup runs with memory off (known issue #51; `docs/phase4-plan.md`). "Retrain with memory" is the planned follow-up.
+- **Parked branches, not merged until after the Phase 4 measurements:** `phase3/memory-rag` (design), `phase3/memory`, `phase3/memory-evals`, `phase3/search-spike`.
+
 ### Phase 1 steps
 1. Model layer + chat loop (provider switch: gemini / groq / ollama)
 2. Tool calling: the model can run Python functions (time, files, web search)
@@ -163,4 +176,4 @@ Branch `phase4/trace-dataset` (off main; no PR yet, so no CI evals). Plan steps 
 - [x] Step 5, QLoRA training: student `Qwen/Qwen3-4B-Instruct-2507` @ `cdbee75f` (Apache-2.0), transformers + peft + trl in an optional `train` extra (`uv sync --inexact --no-install-project --extra train`). `src/kestrel/distill/train_format.py` (chat template renders tools; labels only on weight-1 assistant turns; too long raises), `distill/train.py` + `train.ipynb` + `train_config.toml` (QLoRA NF4, val loss per epoch, early stopping, adapter + `lineage.json`), `distill/TRAINING.md` (Kaggle steps, <1 GPU-hour). CPU smoke run on `distill/smoke/` passes; GPU path not run (#35). Groq §6.3(e) to confirm before collecting (#36). Design decision 23.
 - [x] Step 6, export + template parity: `train.py --gpu-smoke` (real base in 4-bit overfits 4 synthetic examples for 30 steps: finite loss falling >= 50%, trainable tokens per example, a parsable tool call from a greedy generation; versions vs `[pins]`). One prompt format in `train_format.py` (`render()` for training, `OLLAMA_TEMPLATE` for the Modelfile; Go-JSON for tools and arguments), checked byte for byte against Ollama 0.40.6's own renderer (`distill/parity/main.go`, `scripts/template_parity.py`, 20/20; `golden.json` checked in CI) and at runtime by token counts (`export.py --verify`). Export: merge -> llama.cpp b11712 GGUF -> Q4_K_M -> `ollama create` (Ollama's safetensors import needs MLX, not on Windows); whole chain run on the CPU smoke adapter (20/20). Student served as `OLLAMA_MODEL=<name>`, ~5.5-6 GB RAM at 16k context. `distill/EXPORT.md`. GPU smoke test passed on Kaggle 2026-10-20 (T4, torch 2.11.0+cu128; notebook finds both mount layouts, stops on no internet or a version off its pin, full training only with `RUN_TRAINING = True`). Collection blocked on #36. Design decision 24; known issues 36, 38-40.
 - [x] Step 8, router v1 (`src/kestrel/router.py`, off by default: `KESTREL_PROVIDERS=routed`): cascade with pre-route rules (tool set vs the student's lineage fingerprint; prompt over 80% of the student's context) and escalation on invalid tool call, empty reply, max_steps (fresh teacher budget, cap 2x; steps per turn recorded) or student error/timeout (own `student_health` kind; a routed bench run stops above 10% of turns after 10 tasks); no escalation on refusals or rejected approvals; malformed calls never enter the transcript; nothing runs twice; student replies buffered. Route recorded on spans and in results (`routing`); routed reports give escalation rates per reason and the pass rate with/without passes past max_steps; `bench compare` gives the quality verdict both ways. Agent fingerprint unchanged (`cc5c16377662`). 28 tests with scripted models. Plan decision 5 refined; design decision 25; known issue 42 (tiers-v2 tests after the rebase).
-- [ ] Next: after the Phase 3 merge and a rebase, collect one pass (`distill/COLLECTION.md`, owner's OK for quota), build the dataset, then QLoRA fine-tune on free GPUs.
+- [ ] Next (order fixed 2026-10-26): Phase 3 merge (tiers v2.1, no memory), the teacher decision (#36), a rebase, then collect one pass (`distill/COLLECTION.md`, owner's OK for quota), build the dataset, then QLoRA fine-tune on free GPUs.
