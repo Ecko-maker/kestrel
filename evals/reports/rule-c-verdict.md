@@ -7,10 +7,11 @@ Rule C (`docs/tiers-v2-design.md` section 5, owner decision 2026-10-21, fixed be
 - **Secondary:** baseline + run 2 as per-task repeats against the after-run x3; the paired 95% lower bound of (after - references) is above -6 points.
 - Primary fail = **FAIL**; both pass = **PASS**; primary pass and secondary fail = **gate not met** (flips examined and reported; no re-interpretation).
 
-What each outcome leads to (owner decision 2026-10-27, recorded in section 5 before the final result, after the partial 198/300 dry run had been seen):
+What each outcome leads to (owner, section 5, 2026-10-27, before the final result; the partial 198/300 dry run had been seen; the gate-not-met consequence was amended twice that day, see section 5):
 - **PASS:** tiers-v2 merges into `main`, after PR #14.
 - **FAIL:** no merge; fix the cause, re-measure.
-- **Gate not met:** merge; report "non-inferiority not shown at 6 points" with the paired 95% interval, the flip diagnosis (failure groups from `evals/reports/baseline-failures.md`) and run 2's flips; open a known issue; re-test at Phase 4's main-suite run. (Changed from A, no merge and re-measure, by the owner on 2026-10-27 before the final result; see section 5.)
+- **Gate not met (a), 0 `escalated_by` entries in the after-run:** the model saw the same agent as the baseline (`evals/reports/fingerprint-diff-v1.1-to-v2.1.md`), so tiers-v2 can't have caused the gap. Merge after #14; the report states "non-inferiority not shown at 6 points" with the interval and cites the fingerprint diff; open a known issue on run-to-run drift above the margin; a same-day control (old agent, CI subset, ~28k, approval line first) is proposed for later, not run now.
+- **Gate not met (b), 1 or more entries:** each escalated task is reviewed (table below). If a card plausibly changed its outcome: no merge, fix and re-measure. Otherwise as (a).
 
 ## Command
 
@@ -53,11 +54,19 @@ Offline (no model calls). It refuses baselines that don't match their pinned SHA
 |---|---|---|---|---|---|---|
 | _(to fill)_ | | | | | | |
 
+## Escalated tasks for review (gate not met, branch b)
+
+Did a card plausibly change the task's outcome? Recorded with `--escalation-review TASK=changed|unchanged`.
+
+| Task | Entries | Decisions | After passed | Baseline | Review |
+|---|---|---|---|---|---|
+| _(to fill)_ | | | | | |
+
 ## Verdict
 
-| Primary | Secondary | Outcome |
-|---|---|---|
-| _(to fill)_ | _(to fill)_ | _(to fill)_ |
+| Primary | Secondary | `escalated_by` entries | Outcome |
+|---|---|---|---|
+| _(to fill)_ | _(to fill)_ | _(to fill)_ | _(to fill)_ |
 
 ## Notes
 

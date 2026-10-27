@@ -9,12 +9,17 @@ decision 2026-10-21). Offline: reads results files, makes no model calls.
 - Secondary: the baseline and run 2 as per-task repeats (`stats.merge_references`) against the after-run
   x3; the paired 95% lower bound of (after - references) must be above -6 points. The same number as
   `kestrel bench compare <baseline> <after> --second-reference <run2> --margin 0.06`.
+- Gate not met (primary pass, secondary fail), amended 2026-10-27: (a) with 0 `escalated_by` entries in the
+  after-run the model saw the same agent as the baseline, so merge and report "non-inferiority not shown at
+  6 points"; (b) with 1 or more, each escalated task is reviewed (`--escalation-review TASK=changed|unchanged`:
+  did a card plausibly change its outcome?). Any "changed": no merge, fix and re-measure; all "unchanged":
+  as (a).
 
 A file that isn't finished (skipped rows, fewer than 3 graded repeats of a task, or a `.lock` beside it)
 is reported as "PARTIAL: plumbing check, not a verdict", and `--out` refuses to write it.
 
     uv run --no-sync python scripts/rule_c_verdict.py ..\\kestrel-runs\\evals\\results\\main-after-v21-x3.json \\
-        [--card-review web-weather-tokyo=not-caused] [--out evals/reports/rule-c-verdict.md]
+        [--card-review TASK=not-caused] [--escalation-review TASK=unchanged] [--out evals/reports/rule-c-verdict.md]
     uv run --no-sync python scripts/rule_c_verdict.py --template --out evals/reports/rule-c-verdict.md
 """
 
@@ -22,6 +27,7 @@ import argparse
 import hashlib
 import json
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -81,6 +87,29 @@ class Verdict:
     escalations: list[tuple[str, int, str, str, str, str]]  # task, repeat, tool, decision, escalated_by, status
     errors: list[str]
     warnings: list[str] = field(default_factory=list)
+    escalation_review: dict[str, str] = field(default_factory=dict)  # task -> "changed" | "unchanged"
+
+    @property
+    def escalated_tasks(self) -> list[str]:
+        return sorted({e[0] for e in self.escalations})
+
+    @property
+    def unreviewed(self) -> list[str]:
+        return [t for t in self.escalated_tasks if t not in self.escalation_review]
+
+    @property
+    def gate_not_met(self) -> str:
+        """Which gate-not-met consequence applies (section 5, amended 2026-10-27), as the report states it."""
+        if not self.escalations:
+            return 'gate not met (a): 0 escalations; merge after #14; "non-inferiority not shown at 6 points"'
+        if self.unreviewed:
+            return f"gate not met (b): PENDING review of the escalated tasks ({', '.join(self.unreviewed)})"
+        if changed := [t for t in self.escalated_tasks if self.escalation_review[t] == "changed"]:
+            return f"gate not met (b): a card plausibly changed {', '.join(changed)}; no merge, fix and re-measure"
+        return (
+            'gate not met (b): no card changed an outcome; as (a), merge after #14; "non-inferiority not shown '
+            'at 6 points"'
+        )
 
     @property
     def candidates(self) -> list[str]:
@@ -104,7 +133,7 @@ class Verdict:
             return "FAIL"
         if self.primary == "review":
             return f"PENDING: review the candidate card-caused flips ({', '.join(self.candidates)})"
-        return "PASS" if self.secondary_pass else "gate not met"
+        return "PASS" if self.secondary_pass else self.gate_not_met
 
 
 def sha256(path: Path) -> str:
@@ -182,7 +211,13 @@ def flips(
     return worse, c.better_in_b, c.diff, c.a_rate, c.b_rate, c.warnings
 
 
-def verdict(after_path: Path, review: dict[str, str], baseline: Path = BASELINE, run2: Path = RUN2) -> Verdict:
+def verdict(
+    after_path: Path,
+    review: dict[str, str],
+    baseline: Path = BASELINE,
+    run2: Path = RUN2,
+    escalation_review: dict[str, str] | None = None,
+) -> Verdict:
     for p in (baseline, run2):
         if p.name in PINNED and sha256(p) != PINNED[p.name]:
             sys.exit(f"{p.name} doesn't match its pinned SHA-256 (evals/baselines/README.md): refusing.")
@@ -217,6 +252,9 @@ def verdict(after_path: Path, review: dict[str, str], baseline: Path = BASELINE,
         for e in r.get("approvals", [])
         if e.get("escalated_by")
     ]
+    escalation_review = escalation_review or {}
+    if unknown := sorted(set(escalation_review) - {e[0] for e in escalations}):
+        sys.exit(f"--escalation-review names tasks with no escalated_by entry: {', '.join(unknown)}")
     errors = [
         f"{r['id']} run {r.get('repeat', 1)}: {r.get('error') or 'error'}"
         for r in after["tasks"]
@@ -235,6 +273,7 @@ def verdict(after_path: Path, review: dict[str, str], baseline: Path = BASELINE,
         escalations=escalations,
         errors=errors,
         warnings=list(dict.fromkeys(warnings + w1 + c.warnings)),
+        escalation_review=escalation_review,
     )
 
 
@@ -264,14 +303,17 @@ def render(v: Verdict | None) -> str:
         "- Primary fail = **FAIL**; both pass = **PASS**; primary pass and secondary fail = **gate not met** "
         "(flips examined and reported; no re-interpretation).",
         "",
-        "What each outcome leads to (owner decision 2026-10-27, recorded in section 5 before the final result, "
-        "after the partial 198/300 dry run had been seen):",
+        "What each outcome leads to (owner, section 5, 2026-10-27, before the final result; the partial 198/300 "
+        "dry run had been seen; the gate-not-met consequence was amended twice that day, see section 5):",
         "- **PASS:** tiers-v2 merges into `main`, after PR #14.",
         "- **FAIL:** no merge; fix the cause, re-measure.",
-        '- **Gate not met:** merge; report "non-inferiority not shown at 6 points" with the paired 95% interval, '
-        "the flip diagnosis (failure groups from `evals/reports/baseline-failures.md`) and run 2's flips; open "
-        "a known issue; re-test at Phase 4's main-suite run. (Changed from A, no merge and re-measure, by the "
-        "owner on 2026-10-27 before the final result; see section 5.)",
+        "- **Gate not met (a), 0 `escalated_by` entries in the after-run:** the model saw the same agent as the "
+        "baseline (`evals/reports/fingerprint-diff-v1.1-to-v2.1.md`), so tiers-v2 can't have caused the gap. "
+        'Merge after #14; the report states "non-inferiority not shown at 6 points" with the interval and cites '
+        "the fingerprint diff; open a known issue on run-to-run drift above the margin; a same-day control (old "
+        "agent, CI subset, ~28k, approval line first) is proposed for later, not run now.",
+        "- **Gate not met (b), 1 or more entries:** each escalated task is reviewed (table below). If a card "
+        "plausibly changed its outcome: no merge, fix and re-measure. Otherwise as (a).",
         "",
         "## Command",
         "",
@@ -344,13 +386,37 @@ def render(v: Verdict | None) -> str:
         out.append("| none | | | | | | |")
     else:
         out += [f"| `{t}` | {k} | {tool} | {d} | {by} | {s} | |" for t, k, tool, d, by, s in v.escalations]
-    out += ["", "## Verdict", "", "| Primary | Secondary | Outcome |", "|---|---|---|"]
+    out += [
+        "",
+        "## Escalated tasks for review (gate not met, branch b)",
+        "",
+        "Did a card plausibly change the task's outcome? Recorded with `--escalation-review TASK=changed|unchanged`.",
+        "",
+        "| Task | Entries | Decisions | After passed | Baseline | Review |",
+        "|---|---|---|---|---|---|",
+    ]
     if v is None:
-        out.append(f"| {TBD} | {TBD} | {TBD} |")
+        out.append(f"| {TBD} | | | | | |")
+    elif not v.escalations:
+        out.append("| none: 0 entries, so branch (a) applies | | | | | |")
+    else:
+        for t in v.escalated_tasks:
+            mine = [e for e in v.escalations if e[0] == t]
+            decisions = ", ".join(f"{d} x{n}" for d, n in sorted(Counter(e[3] for e in mine).items()))
+            runs = {(e[1], e[5]) for e in mine}
+            after = f"{sum(s == 'pass' for _, s in runs)}/{len(runs)} escalated runs"
+            base = next((f"{f.reference:.0%}" for f in v.worse if f.task == t), "not worse")
+            out.append(
+                f"| `{t}` | {len(mine)} | {decisions} | {after} | {base} | {v.escalation_review.get(t, 'to review')} |"
+            )
+    out += ["", "## Verdict", "", "| Primary | Secondary | `escalated_by` entries | Outcome |", "|---|---|---|---|"]
+    if v is None:
+        out.append(f"| {TBD} | {TBD} | {TBD} | {TBD} |")
     else:
         sec = "–" if v.partial else ("pass" if v.secondary_pass else "fail")
         prim = "–" if v.partial else v.primary
-        out.append(f"| {prim} | {sec} | **{v.outcome}** |")
+        count = f"{len(v.escalations)} in {len(v.escalated_tasks)} tasks"
+        out.append(f"| {prim} | {sec} | {count} | **{v.outcome}** |")
     out += ["", "## Notes", ""]
     if v is None:
         out.append(f"Errors, warnings and each flip's cause: {TBD}")
@@ -360,12 +426,12 @@ def render(v: Verdict | None) -> str:
     return "\n".join(out) + "\n"
 
 
-def parse_review(items: list[str]) -> dict[str, str]:
+def parse_review(items: list[str], flag: str = "--card-review", values: tuple[str, str] = ("caused", "not-caused")):
     review = {}
     for item in items:
         task, _, value = item.partition("=")
-        if value not in ("caused", "not-caused"):
-            sys.exit(f"--card-review takes TASK=caused or TASK=not-caused, not {item!r}")
+        if value not in values:
+            sys.exit(f"{flag} takes TASK={values[0]} or TASK={values[1]}, not {item!r}")
         review[task] = value
     return review
 
@@ -376,6 +442,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--baseline", type=Path, default=BASELINE)
     ap.add_argument("--run2", type=Path, default=RUN2)
     ap.add_argument("--card-review", action="append", default=[], metavar="TASK=caused|not-caused")
+    ap.add_argument(
+        "--escalation-review",
+        action="append",
+        default=[],
+        metavar="TASK=changed|unchanged",
+        help="gate not met, branch (b): did a card plausibly change this escalated task's outcome?",
+    )
     ap.add_argument("--out", type=Path, help="write the Markdown report here (refused for a partial file)")
     ap.add_argument("--template", action="store_true", help="the report with placeholders, no inputs read")
     args = ap.parse_args(argv)
@@ -384,7 +457,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         if args.after is None:
             ap.error("give the after-run results file, or --template")
-        v = verdict(args.after, parse_review(args.card_review), args.baseline, args.run2)
+        esc = parse_review(args.escalation_review, "--escalation-review", ("changed", "unchanged"))
+        v = verdict(args.after, parse_review(args.card_review), args.baseline, args.run2, esc)
         if v.partial and args.out:
             sys.exit(f"{PARTIAL}: not writing {args.out} ({'; '.join(v.partial)}).")
         text = render(v)

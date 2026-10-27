@@ -112,7 +112,56 @@ def test_review_of_a_task_that_isnt_a_candidate_is_refused(tmp_path, refs):
 
 def test_large_drop_without_cards_is_gate_not_met(tmp_path, refs):
     v = run(tmp_path, refs, {t: ["fail"] * 3 for t in TASKS[:6]})
-    assert v.primary == "pass" and not v.secondary_pass and v.outcome == "gate not met"
+    assert v.primary == "pass" and not v.secondary_pass
+    assert v.outcome.startswith("gate not met (a): 0 escalations; merge after #14")
+
+
+DROP = {t: ["fail"] * 3 for t in TASKS[:6]}  # secondary fails: gate not met, unless the primary fails
+
+
+def test_gate_not_met_branch_b_waits_for_review_of_each_escalated_task(tmp_path, refs):
+    # t10 passes with an approved escalated card; t11 fails a run with one (not a worse-flip candidate:
+    # its card was approved, so the primary stays pass)
+    cards = {("t10", 1): "approved", ("t11", 2): "approved"}
+    statuses = DROP | {"t11": ["pass", "fail", "pass"]}
+    v = run(tmp_path, refs, statuses, cards=cards)
+    assert v.primary == "pass" and not v.secondary_pass
+    assert v.escalated_tasks == ["t10", "t11"]
+    assert v.outcome == "gate not met (b): PENDING review of the escalated tasks (t10, t11)"
+    partly = rc.verdict(tmp_path / "after.json", {}, *refs, {"t10": "unchanged"})
+    assert partly.outcome.endswith("(t11)")
+
+
+def test_gate_not_met_branch_b_card_changed_an_outcome_means_no_merge(tmp_path, refs):
+    cards = {("t10", 1): "approved", ("t11", 2): "approved"}
+    after(tmp_path, DROP | {"t11": ["pass", "fail", "pass"]}, cards=cards)
+    v = rc.verdict(tmp_path / "after.json", {}, *refs, {"t10": "unchanged", "t11": "changed"})
+    assert v.outcome == "gate not met (b): a card plausibly changed t11; no merge, fix and re-measure"
+
+
+def test_gate_not_met_branch_b_no_card_changed_anything_is_as_a(tmp_path, refs):
+    cards = {("t10", 1): "approved", ("t11", 2): "approved"}
+    after(tmp_path, DROP | {"t11": ["pass", "fail", "pass"]}, cards=cards)
+    v = rc.verdict(tmp_path / "after.json", {}, *refs, {"t10": "unchanged", "t11": "unchanged"})
+    assert v.outcome.startswith("gate not met (b): no card changed an outcome; as (a), merge after #14")
+
+
+def test_escalation_review_of_a_task_without_entries_is_refused(tmp_path, refs):
+    with pytest.raises(SystemExit, match="no escalated_by entry"):
+        rc.verdict(after(tmp_path, DROP), {}, *refs, {"t03": "unchanged"})
+
+
+def test_report_counts_escalations_and_lists_them_for_review(tmp_path, refs):
+    v = run(tmp_path, refs, DROP | {"t11": ["pass", "fail", "pass"]}, cards={("t11", 2): "approved"})
+    text = rc.render(v)
+    assert "| pass | fail | 1 in 1 tasks | **gate not met (b): PENDING" in text
+    assert "| `t11` | 1 | approved x1 | 0/1 escalated runs | 100% | to review |" in text
+    clean = rc.render(run(tmp_path, refs, DROP))
+    assert "| 0 in 0 tasks |" in clean and "none: 0 entries, so branch (a) applies" in clean
+
+
+def test_escalations_dont_change_a_pass(tmp_path, refs):
+    assert run(tmp_path, refs, {}, cards={("t10", 1): "approved"}).outcome == "PASS"
 
 
 def test_partial_file_is_labelled_and_never_written(tmp_path, refs, capsys):
@@ -124,7 +173,7 @@ def test_partial_file_is_labelled_and_never_written(tmp_path, refs, capsys):
     rc.main([str(p), "--baseline", str(refs[0]), "--run2", str(refs[1])])
     text = capsys.readouterr().out
     assert text.startswith(rc.PARTIAL) and text.rstrip().endswith(rc.PARTIAL)
-    assert "| – | – | **no verdict (partial file)** |" in text
+    assert "| – | – | 0 in 0 tasks | **no verdict (partial file)** |" in text
     assert "| pass |" not in text and "| fail |" not in text  # no secondary result on a partial file
 
 
