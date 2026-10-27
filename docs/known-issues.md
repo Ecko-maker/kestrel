@@ -100,6 +100,11 @@ For export, every trace stores the full message history at that point, so long c
 `logs/traces.db`, `logs/approvals.jsonl` and `logs/mcp-*.log` grow forever.
 **Done when:** a `kestrel prune --older-than 90d` command (or a retention setting) exists.
 
+### 52. `kestrel export` drops only demo traces
+**Labels:** `data`, `safety`, `medium`
+`kestrel export` (`trace_report.py`) skips traces with no stored text, errored runs and demo replies, but it keeps every other provider. So a /good-rated trace from Gemini (or later Claude or GPT) would be exported as training data, which key decision 3 and design decision 9 forbid. No such trace is rated today: on 2026-10-26, `logs/traces.db` had 1 /good demo trace (skipped) and 1 /good Ollama trace. `kestrel distill build` on `phase4/trace-dataset` (not merged) has the right filter: a teacher allowlist (`src/kestrel/distill/teachers.toml`, groq + `openai/gpt-oss-120b` only) that refuses Gemini, Claude, GPT and demo.
+**Done when:** `kestrel export` applies the same teacher allowlist as `kestrel distill build` (or is replaced by it), with a test that a Gemini trace is never exported.
+
 ### 16. Docker bind mounts on Linux need write permission for UID 10001
 **Labels:** `docker`, `low`
 The container runs as user 10001. On Linux, if `./logs` or `./workspace` is created by Docker (as root) or owned by another user, the container can read but not write: traces silently fail to save (with a warning) and notes can't be created. Docker Desktop on Windows/macOS isn't affected. CI works around it with `chmod 777 logs`.
@@ -167,8 +172,10 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 - **Note:** the subset's 75% gate sits close to single-run noise. 13/16 has a CI down to 62%, and one more flip would mean 12/16 = 75%. This is why the threshold should still be derived from repeats.
 
 
-**Still open:** the CI gate (75% on the 16-task subset) is a margin, not derived from the measured variance of that subset. It needs `--repeat` runs of the CI subset (about 40k billable tokens for 3 repeats).
-**Done when:** the CI threshold is derived from repeats of the subset and documented.
+- **(2026-10-07)** CI subset × 3 repeats done: runs folder at `642e8c7`, `--wait-for-quota`, 66.6k billable. Scores 81%, 88% and 94%, mean 88% (95% CI 73-100%), 2 flips. The threshold is derived in `evals/reports/ci-threshold.md` (on the `phase3/memory-safety` line, including `phase3/tiers-v2`; not on `main` yet). Proposal: keep the 75% gate (false alarm 0.3%, at most 10% under pessimistic assumptions; it catches a 4-task regression). `ci.yml` is unchanged.
+
+**Still open:** the owner's decision on that proposal, and the report reaching `main` with its branch.
+**Done when:** the owner accepts or changes the threshold, and `evals/reports/ci-threshold.md` is on `main`.
 
 ## Safety split (Phase 3)
 
