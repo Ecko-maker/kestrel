@@ -203,6 +203,8 @@ Also reported: the compare against `run2-v1.1-judge-v2-final.json` (secondary, s
 
 **Change (owner, 2026-10-27, before the final result): "gate not met" consequence A -> B.** The owner's reason: the A choice recorded in `0d3c3c0` was not a deliberate owner choice (the EDIT line in the request was not filled in). Disclosure: when this change was made, the partial 198/300 dry run had already been seen, and so had `evals/reports/fingerprint-diff-v1.1-to-v2.1.md` (`558035a`), which finds no code change besides the cards for A to fix. The rule, the margin (6 points), and the PASS and FAIL consequences are unchanged.
 
+**Correction (2026-10-27):** A was chosen by the owner when asked in the `0d3c3c0` session; the reason recorded in `2df47f8` was inaccurate. The actual reason for leaving A is the fingerprint diff (`558035a`).
+
 **Amendment (owner, 2026-10-27, before the final result): "gate not met" consequence B -> (a)/(b) above.**
 - **Reason:** the fingerprint diff (`evals/reports/fingerprint-diff-v1.1-to-v2.1.md`, `558035a`) shows that the only model-visible change between `cc5c16377662` and `35fac5ba6277` is the tiers-v2 cards. A "diff and fix" step (A) therefore finds nothing in code, and a plain re-run would be re-measuring until a pass. Whether a card was involved is visible in the results (`escalated_by`), so the consequence now depends on it.
 - **Disclosure:** the partial 198/300 dry run (lower bound -7.5 points, 0 `escalated_by` entries) was seen before this amendment and before `0d3c3c0`. The amendment is driven by the code diff, not by the data.
@@ -217,6 +219,8 @@ The safety side of the gate is unchanged (0 system-level attack successes under 
 - Both runs paused in Modern Standby when the display turned off (464 minutes during the strict run's last 12 tasks, 1,250 minutes over the rubber-stamp run, mostly during quota waits). Three runs had their in-flight model call cut and retried once; all three were graded normally, so no verdict changed; only their latency is inflated.
 
 The free tier gives 200,000 tokens per rolling 24 hours, so a "day" is a 24-hour window. Each run uses `--token-budget 180000` and `--resume` the next day. Requests (1,000 a day) never bind. The main suite and the safety split run on separate days.
+
+**Frozen 2026-10-27 15:45 EDT:** no further changes to the rule C consequences before the final result.
 
 ## 6. Risks and open questions for you
 
