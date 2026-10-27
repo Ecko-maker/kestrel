@@ -1,6 +1,41 @@
 # Long-term memory with hybrid RAG: design
 
-Status: **proposal, unapproved** (2026-10-26, branch `phase3/memory-rag`, off `phase3/tiers-v2` at `6a551a5`). Design only: no code, no downloads, no model calls, no Groq. It covers roadmap Phase 3 "long-term memory + hybrid RAG" end to end. Open questions are in section 8.
+Status: **parked** (owner decision 2026-10-26, below). Written 2026-10-26 on branch `phase3/memory-rag`, off `phase3/tiers-v2` at `6a551a5`. Design only: no code, no downloads, no model calls, no Groq. It covers roadmap Phase 3 "long-term memory + hybrid RAG" end to end. Open questions are in section 8.
+
+## Decision (owner, 2026-10-26): option B, Phase 4 first, memory afterwards
+
+**Chosen:** section 7.4, option B. Phase 3 closes on tiers v2.1, then:
+1. the Phase 3 merge;
+2. the teacher decision (#36);
+3. rebase `phase4/trace-dataset`;
+4. collection;
+5. training;
+6. measurement.
+
+Memory is built and measured after the Phase 4 measurements.
+
+**Reasons:**
+- The headline result (distillation) arrives about 6 weeks sooner.
+- Phase 4 is measured on a system that is already measured: tiers v2.1, no memory.
+- Groq tokens are the bottleneck.
+
+**Accepted costs:**
+- About **835k more Groq tokens** overall: a second collection, training and set of routed runs for a memory-on system.
+- The first student doesn't know the memory tools.
+
+**Router consequence.** The pre-route rule sends a turn to the teacher whenever the tools sent differ from the student's `lineage.json` fingerprint. Once memory tools exist, every turn would go to the teacher. **Rule: until a student is retrained with memory, any routed setup runs with memory off, with its tools not registered.**
+- **Today** nothing needs configuring: memory isn't on main.
+- **When memory merges**, it ships with:
+  - `KESTREL_MEMORY=off` (read like `KESTREL_MCP=off`);
+  - bench `--memory-backend none` (the default) for routed runs;
+  - a guard in `build_router`: a `RouterSetupError` if memory tools would be registered and the lineage lacks them;
+  - `memory_backend` in results meta.
+- **Planned follow-up: retrain with memory** (section 6's `distill/` changes).
+- Recorded in `docs/phase4-plan.md` and known issue #51 on `phase4/trace-dataset`.
+
+**Deferred:** the 19 open questions (section 8) wait until after the Phase 4 gate. Sections 1–7 stand as the proposal to revisit then, with the budget and the Phase 4 references recomputed on the code of that time.
+
+**Parked branches, not merged until after the Phase 4 measurements:** `phase3/memory-rag` (this design), `phase3/memory`, `phase3/memory-evals`, `phase3/search-spike` (CLAUDE.md on `phase4/trace-dataset`).
 
 **What already exists, and this design keeps.** It isn't merged and isn't on this branch.
 - **Memory evals** (`phase3/memory-evals`, design decision 16, approved 2026-10-08). The memory split m1.0: 15 tasks, sessions, seeds, `NoBackend`, utility and privacy reported apart. Delete is a user action, never an agent tool. Single user.
