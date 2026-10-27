@@ -22,18 +22,18 @@ Phase 3 is closing on permission tiers v2.1. Its safety gate passed (strict syst
 
 ## Branches
 
-Merge order: PR #14 → `phase3/tiers-v2` → `phase4/trace-dataset` (rebased) → voice. `labels/judge-calibration`, `docs/merge-plan` and this docs branch merge whenever: they cost no evals. `console/hud-theme` costs no evals only after tiers-v2 is in `main`; until then it carries tiers-v2's code. Nothing is deleted yet: the last column only proposes.
+Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → `phase4/trace-dataset` (rebased). This follows the merge rehearsal (`evals/reports/merge-rehearsal.md`), which already resolved the conflicts in that order; it is refreshed before each merge. `console/hud-theme` costs no evals only after tiers-v2 is in `main`; until then it carries tiers-v2's code. `docs/merge-plan` merges whenever (no evals). Nothing is deleted yet: the last column only proposes.
 
 | Branch | Phase | State | Next action |
 |---|---|---|---|
 | `phase3/results-analysis` | 3 | PR #14 into `phase3/tiers-v2`, 1 commit, CI green, evals not run | merge into tiers-v2 (no evals) |
 | `phase3/tiers-v2` | 3 | safety gate PASS; rule A part 1 not met as written; rule C running | merge to `main` after the rule C verdict and the owner's gate call (~56k) |
-| `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | rebase onto `main` after tiers-v2; fix #42 and the main-meta test; then merge (~56k) |
-| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; mypy/numpy fail CI | fix CI; rename decisions 19–20; rebase onto `main`; one PR after phase4 (~56k) |
+| `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | last: rebase onto `main` after voice; fix #42 and the main-meta test; then merge (~56k) |
+| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; mypy/numpy fail CI | fix CI; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
 | `console/hud-theme` | console | stacked on tiers-v2 `75ce54c`; console only | rebase onto `main` after tiers-v2; merge (no evals) |
-| `labels/judge-calibration` | 2 | 3 owner labels, pushed | merge whenever (no evals) |
+| `labels/judge-calibration` | 2 | 3 owner labels | merged to `main` via PR (2026-10-26) |
 | `docs/merge-plan` | – | merge-rehearsal report (stale on memory-rag and the phase4 tip) | merge whenever (no evals) |
-| `docs/status-2026-10-26` | – | this file, `progress.md`, CLAUDE.md rewrite | merge whenever (no evals) |
+| `docs/status-2026-10-26` | – | this file, `progress.md`, CLAUDE.md rewrite | merged to `main` as PR #18 (2026-10-26) |
 | `phase3/memory-rag` | 3 | memory + hybrid RAG design, parked (option B) | park until after the Phase 4 measurements |
 | `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
 | `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
@@ -49,22 +49,37 @@ Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates);
 
 - **Quota:** 200k tokens per rolling 24 h per organisation (usage frees ~24 h after it was spent); 1,000 requests/day never bind. Cached input doesn't count.
 - **One consumer at a time.** No CI-triggering PR while a measurement runs.
+- **From 2026-10-26, a run starts only after its approval line is added to the log below** (through a docs PR to `main`).
 - **Each agent-affecting PR costs ~56k:** the PR run (~28k) plus the merge-to-main run (~28k). Every new push to an open PR runs it again.
 - **Calendar:**
   1. Live run (until ~10-28).
-  2. Merges, one per quota day: #14 and tiers-v2 (day 1), phase4 rebased (day 2), voice (day 3). The no-eval branches go in between.
+  2. Merges, one per quota day: #14 and tiers-v2 (day 1), console (no evals), voice (day 2), phase4 rebased (day 3). The no-eval branches go in between.
   3. Teacher data: dry-run estimate first (`distill/README.md` says ~253k, 2 days); needs the owner's OK and the teacher decision (#36).
   4. Kaggle QLoRA training (no Groq; under 1 GPU hour).
   5. Student evals: the student on Ollama locally, the judge only on Groq.
 
+### Owner approvals (Groq quota)
+
+Billable tokens from each results file's summary (measured). Files are in `..\kestrel-runs\evals\results\`.
+
+| Date | Run | Billable | Approval |
+|---|---|---|---|
+| 2026-10-06 | PR #11 labelled CI subset (run 37504156469) | 27.7k | owner decision D4 |
+| 2026-10-07 | CI subset ×3 (`ci-repeat3-2026-10-07.json`) | 66.6k | not recorded: owner to confirm |
+| 2026-10-11 | memory split before, ×3 (`20261011-092134-memory-groq.json`) | 87.3k | approved by the owner, recorded 10-26 |
+| 2026-10-15–17 | safety before side: smoke, strict ×3, rubber-stamp (`safety-before-*.json`) | 18.7k + 210.1k + 58.4k | approved by the owner 2026-10-15 (tiers-v2 CLAUDE.md) |
+| 2026-10-17–19 | safety after side, tiers v2: strict ×3, rubber-stamp (`safety-after-*.json`) | 223.5k + 36.3k | not recorded: owner to confirm |
+| 2026-10-20–21 | main suite after, tiers v2 (`main-after-v1.1.json`) | 174.1k | not recorded: owner to confirm |
+| 2026-10-21–23 | safety after side, tiers v2.1: strict ×3, rubber-stamp (`safety-after-v21-*.json`) | 230.2k + 68.4k | approved by the owner at the time, recorded 10-26 |
+| from 2026-10-26 | main suite after, tiers v2.1, ×3, live (`main-after-v21-x3.json`) | 365.2k so far (198/300) | approved by the owner at the time, recorded 10-26 |
+
 ## Owner decisions open
 
-1. **Phase 3 tiers gate**, after the rule C verdict: rule A part 1 is not met as written (`evals/reports/rule-a-power.md` on tiers-v2 reads it as noise). Ship or not.
+1. **Phase 3 tiers gate**, after the rule C verdict. The gate requires no drop in the benign pass rate (decision A, `docs/tiers-v2-design.md` §5), and rule A part 1 is not met as written (`evals/reports/rule-a-power.md` on tiers-v2 reads it as noise). It includes **`ben-note-from-mcp`**: it still fails 1 of 3 strict runs on v2.1 (`docs__lookup` ran, `create_note` didn't), and the reports give rule A with and without it. Ship or not.
 2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). It is recorded only on unmerged branches (`phase4/trace-dataset` CLAUDE.md, `docs/memory-rag-design.md`); it lands with them.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
-5. **`ben-note-from-mcp`:** its `docs__lookup` approval rule is in (2026-10-15). It still failed 1 of 3 strict runs on v2.1; the reports give rule A with and without it. No separate question is recorded; decide it with item 1.
-6. Also waiting: the teacher decision (#36, Groq §6.3(e)); labels for #21; `docs/phase4-plan.md` open question 13 (power of the quality claim); tiers-v2 §6 questions 4–8.
+5. Also waiting: the teacher decision (#36, Groq §6.3(e)); labels for #21; `docs/phase4-plan.md` open question 13 (power of the quality claim); tiers-v2 §6 questions 4–8.
 
 ## Docs on unmerged branches
 

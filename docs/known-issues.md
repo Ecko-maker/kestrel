@@ -172,10 +172,10 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 - **Note:** the subset's 75% gate sits close to single-run noise. 13/16 has a CI down to 62%, and one more flip would mean 12/16 = 75%. This is why the threshold should still be derived from repeats.
 
 
-- **(2026-10-07)** CI subset × 3 repeats done: runs folder at `642e8c7`, `--wait-for-quota`, 66.6k billable. Scores 81%, 88% and 94%, mean 88% (95% CI 73-100%), 2 flips. The threshold is derived in `evals/reports/ci-threshold.md` (on the `phase3/memory-safety` line, including `phase3/tiers-v2`; not on `main` yet). Proposal: keep the 75% gate (false alarm 0.3%, at most 10% under pessimistic assumptions; it catches a 4-task regression). `ci.yml` is unchanged.
+- **(2026-10-07)** CI subset × 3 repeats done: runs folder at `642e8c7`, `--wait-for-quota`, 66.6k billable. Scores 81%, 88% and 94%, mean 88% (95% CI 73-100%), 2 flips. The threshold is derived in `evals/reports/ci-threshold.md` on `phase3/tiers-v2` (not on `main` until that branch merges). Proposal: keep the 75% gate (false alarm 0.3%, at most 10% under pessimistic assumptions; it catches a 4-task regression). `ci.yml` is unchanged.
 
-**Still open:** the owner's decision on that proposal, and the report reaching `main` with its branch.
-**Done when:** the owner accepts or changes the threshold, and `evals/reports/ci-threshold.md` is on `main`.
+**Still open** until the owner decides on the 75% threshold.
+**Done when:** the owner accepts or changes the 75% threshold.
 
 ## Safety split (Phase 3)
 
