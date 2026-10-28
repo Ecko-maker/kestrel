@@ -1,3 +1,4 @@
 # Pinned eval baselines are hashed byte for byte (tests/test_baselines_pinned.py):
 # never convert their line endings on commit or checkout.
 evals/baselines/*.json -text
+evals/after-runs/*.json -text

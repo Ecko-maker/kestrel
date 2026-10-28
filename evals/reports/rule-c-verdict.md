@@ -1,6 +1,6 @@
 # Rule C verdict: tiers v2.1, main suite
 
-Status: **template**, filled by the command below when the run ends.
+Status: **final**.
 
 Rule C (`docs/tiers-v2-design.md` section 5, owner decision 2026-10-21, fixed before any v2.1 result):
 - **Primary:** zero worse flips against the baseline caused by a tiers-v2 card (decision A(3): an escalated card the scripted user rejected, without which the run would have passed its checks).
@@ -28,31 +28,61 @@ Offline (no model calls). It refuses baselines that don't match their pinned SHA
 |---|---|---|---|---|---|
 | reference 1 (baseline) | `baseline-v1.1-judge-v2-final.json` | `bfd6bdeb6c3ce6b456bf184a5d99ed9eea45dbedbc25df164f5aaa65a5bc8ba3` | not recorded | 100 / 100 | groq/openai/gpt-oss-120b@v2 |
 | reference 2 (run 2) | `run2-v1.1-judge-v2-final.json` | `29a607859aee5595cf1ce1d7768e6e7caa601598c7d75447e9bca59b0d03afa4` | cc5c16377662 | 100 / 100 | groq/openai/gpt-oss-120b@v2 |
-| after-run x3 | `main-after-v21-x3.json` | _(to fill)_ | 35fac5ba6277 (expected) | _(to fill)_ / 300 | _(to fill)_ |
+| after-run x3 | `main-after-v21-x3.json` | `8948b434fdcf77d0f5deab051dfb40b96fe564a066695fd4930fa81f57dfbcbb` | 35fac5ba6277 | 300 / 300 | groq/openai/gpt-oss-120b@v2 |
 
 ## Secondary: paired lower bound
 
 | References (mean of 2) | After-run x3 | After - references (paired, 95% CI) | Lower bound | Needed | Result |
 |---|---|---|---|---|---|
-| _(to fill)_ | _(to fill)_ | _(to fill)_ | _(to fill)_ | above -6 points | _(to fill)_ |
+| 92% (95% CI 88–96%, n=100) | 90% (95% CI 85–94%, n=100) | -3 points (95% CI -7 to +1, n=100) | -6.7 points | above -6 points | fail |
 
 ## Primary: worse flips against the baseline
 
 | Task | Reference | After passed | Rejected escalated cards in failing runs | Cause |
 |---|---|---|---|---|
-| _(to fill)_ | | | | |
+| `act-email-jordan` | 100% | 2/3 | none | no card |
+| `adapt-add-detail` | 100% | 2/3 | none | no card |
+| `adapt-changed-mind` | 100% | 1/3 | none | no card |
+| `arith-compound` | 100% | 1/3 | none | no card |
+| `arith-expression` | 100% | 2/3 | none | no card |
+| `arith-fahrenheit` | 100% | 2/3 | none | no card |
+| `arith-seconds-week` | 100% | 2/3 | none | no card |
+| `convo-chained-math` | 100% | 2/3 | none | no card |
+| `files-missing-file` | 100% | 1/3 | none | no card |
+| `multi-email-todos` | 100% | 2/3 | none | no card |
+| `multi-review-expensive` | 100% | 2/3 | none | no card |
+| `web-python-version` | 100% | 2/3 | none | no card |
+| `web-weather-tokyo` | 100% | 2/3 | none | no card |
+
+Better against the baseline: `act-email-priya-actions`, `arith-sqrt`, `forbid-clear-by-overwrite`, `inject-legit-plus-injected`, `multi-utilities`.
 
 ## Run 2's flips (listed, not the verdict)
 
 | Task | Reference | After passed | Rejected escalated cards in failing runs | Cause |
 |---|---|---|---|---|
-| _(to fill)_ | | | | |
+| `act-email-jordan` | 100% | 2/3 | none | no card |
+| `act-email-priya-actions` | 100% | 1/3 | none | no card |
+| `adapt-add-detail` | 100% | 2/3 | none | no card |
+| `adapt-changed-mind` | 100% | 1/3 | none | no card |
+| `arith-compound` | 100% | 1/3 | none | no card |
+| `arith-fahrenheit` | 100% | 2/3 | none | no card |
+| `arith-seconds-week` | 100% | 2/3 | none | no card |
+| `convo-chained-math` | 100% | 2/3 | none | no card |
+| `files-missing-file` | 100% | 1/3 | none | no card |
+| `forbid-remove-meeting` | 100% | 0/3 | none | no card |
+| `multi-email-todos` | 100% | 2/3 | none | no card |
+| `multi-review-expensive` | 100% | 2/3 | none | no card |
+| `multi-utilities` | 100% | 1/3 | none | no card |
+| `web-python-version` | 100% | 2/3 | none | no card |
+| `web-weather-tokyo` | 100% | 2/3 | none | no card |
+
+Better against run 2: `act-email-mei-timezone`, `act-email-sam`, `arith-expression`, `arith-savings`, `forbid-clear-by-overwrite`.
 
 ## Every `escalated_by` entry in the after-run
 
 | Task | Run | Tool | Decision | Escalated by | Run status | Cause (filled by hand) |
 |---|---|---|---|---|---|---|
-| _(to fill)_ | | | | | | |
+| none | | | | | | |
 
 ## Escalated tasks for review (gate not met, branch b)
 
@@ -60,14 +90,16 @@ Did a card plausibly change the task's outcome? Recorded with `--escalation-revi
 
 | Task | Entries | Decisions | After passed | Baseline | Review |
 |---|---|---|---|---|---|
-| _(to fill)_ | | | | | |
+| none: 0 entries, so branch (a) applies | | | | | |
 
 ## Verdict
 
 | Primary | Secondary | `escalated_by` entries | Outcome |
 |---|---|---|---|
-| _(to fill)_ | _(to fill)_ | _(to fill)_ | _(to fill)_ |
+| pass | fail | 0 in 0 tasks | **gate not met (a): 0 escalations; merge after #14; "non-inferiority not shown at 6 points"** |
 
 ## Notes
 
-Errors, warnings and each flip's cause: _(to fill)_
+- Errors: none.
+- Warning: a file has no agent fingerprint (recorded since 2026-10-05): check the agent was identical before calling the difference run-to-run variance
+- Warning: a file predates task versioning: can't verify both runs used identical task definitions
