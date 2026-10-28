@@ -82,7 +82,7 @@ def _norm(text: str) -> str:
 
 # Part of the agent fingerprint (bench/runner.py): bump it whenever the approval rules change, so runs made
 # with different rules are never mixed, resumed into one another or paired as the same agent.
-RULES_VERSION = "tiers-v2.1"  # v2.1: taint only from reads that returned local data (known issue #45)
+RULES_VERSION = "tiers-v2.1"  # v2.1: taint only from reads that returned local data (known issue #57)
 
 
 def returned_local_data(output: str) -> bool:
@@ -110,7 +110,7 @@ class Session:
 
     def note_ran(self, name: str, caps: frozenset[str], args: dict, output: str) -> None:
         """Record a tool call that ran (successfully or not). output is the tool's own result, before
-        any note the gate adds. A reads_local call taints only if it returned local data (known issue #45)."""
+        any note the gate adds. A reads_local call taints only if it returned local data (known issue #57)."""
         if "reads_local" in caps and returned_local_data(output):  # taint source = reads_local only (decision 2)
             self.taint_sources.append(name)
             self.local_texts.append((name, egress.strip_wrapper(output)))

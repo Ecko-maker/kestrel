@@ -567,7 +567,7 @@ _UNKNOWN_TOOL = re.compile(r"attempted to call tool '([^']*)' which was not in r
 def error_kind(error: str | None) -> tuple[str, str] | None:
     """A model error that is model behaviour, not an outage: (kind, detail). Groq validates tool calls
     against the request and cuts the stream when the model calls a tool that doesn't exist (gpt-oss
-    sometimes calls its 'commentary' channel as a tool). Known issue #37."""
+    sometimes calls its 'commentary' channel as a tool). Known issue #54."""
     if error and (m := _UNKNOWN_TOOL.search(error)):
         return "model called an unknown tool", m.group(1)
     return None

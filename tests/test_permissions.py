@@ -195,7 +195,7 @@ def test_the_tiers_v2_agent_fingerprint_is_pinned(monkeypatch):
     """The main-suite agent for the next graded tiers-v2 after-run (groq / gpt-oss-120b). The before agent is
     cc5c16377662 (CLAUDE.md, D4). It moved from cc5c16377662 to 2cac3804ef92 only because capabilities are
     hashed (the 2026-10-21 main-suite after-run), then to 35fac5ba6277 because the approval rules' version
-    is hashed too (tiers-v2.1: taint only from reads that returned local data, known issue #45). The same
+    is hashed too (tiers-v2.1: taint only from reads that returned local data, known issue #57). The same
     tools hashed without capabilities still give the before run's tools hash, and the system prompt hash is
     unchanged, so the model sees byte-identical tools and prompt. If either moves, update CLAUDE.md and
     decision 16."""

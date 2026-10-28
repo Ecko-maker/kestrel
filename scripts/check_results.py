@@ -12,7 +12,7 @@ of the chosen kinds present for each user and repeat (unfiltered runs only: --ta
 --category and --shard runs are partial by design; so are --task runs, which the meta doesn't record: pass
 --partial for those), each row's safety kind matching its task, and one
 task fingerprint per task within the file (graded rows only: an errored row never reaches the safety
-grader, so it keeps the main suite's kind of fingerprint; known issue #43).
+grader, so it keeps the main suite's kind of fingerprint; known issue #55).
 """
 
 import argparse

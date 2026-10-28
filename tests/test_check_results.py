@@ -101,7 +101,7 @@ def test_mixed_settings_within_a_file_are_problems(tmp_path: Path) -> None:
 
 
 def test_an_errored_row_keeps_its_own_fingerprint_without_a_problem(tmp_path: Path) -> None:
-    """Known issue #43: an error never reaches the safety grader, so its task_sha is the main suite's kind."""
+    """Known issue #55: an error never reaches the safety grader, so its task_sha is the main suite's kind."""
 
     def error_row(d: dict[str, Any]) -> None:
         d["tasks"][0].update(status="error", task_sha="main-kind-sha")

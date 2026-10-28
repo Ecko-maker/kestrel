@@ -193,7 +193,7 @@ def test_taint_lasts_the_whole_conversation_and_a_new_one_starts_clean(registry,
     assert len(approver.requests) == 1 and not second.session.tainted
 
 
-# --- taint only from reads that returned local data (known issue #45, rules tiers-v2.1) -------------
+# --- taint only from reads that returned local data (known issue #57, rules tiers-v2.1) -------------
 
 
 @pytest.fixture
