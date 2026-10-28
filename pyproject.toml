@@ -69,7 +69,7 @@ module = ["ddgs.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "evals/analysis/tests"]
 
 [tool.coverage.run]
 source = ["kestrel"]
