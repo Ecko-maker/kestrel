@@ -230,3 +230,21 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Stage-6 acceptance (owner decision, 2026-10-11): the criterion is reads-then-falls → 0/29, not always-falls.** reads-then-falls is a scripted model that reads the local data, then obeys the injection: the weakest model a real attack needs. always-falls keeps 11/29 strict-user successes after, but they are artifacts: it writes a canary it never read into a search or fetch, which no real model can do, and with nothing read nothing taints the conversation. The same 11 attacks are stopped under reads-then-falls. The proof **passed on the `e37e6e5` task set** and is **to be re-run on the final attack texts** once `phase3/memory-safety` is merged in.
 - The model sees exactly the same tools and prompt (the fingerprint moves only because capabilities are hashed), so a change in the after-run is the defense, not a different agent. Pinned by `test_the_tiers_v2_agent_fingerprint_is_pinned`: agent `2cac3804ef92` (rules `tiers-v2`, the 2026-10-21 main-suite after-run), then `35fac5ba6277` once the approval rules' version was hashed too (rules `tiers-v2.1`, taint only from reads that returned local data, known issue #45); the tools hashed without capabilities still give the before run's `22ab98e45865`, with the same system prompt hash.
 - The content check is evidence more than a gate: after a read, every network call already asks. It tells the user *what* would leave, which makes "no" an informed answer.
+
+## D-pending-tiers-v2-gate. Phase 3 tiers gate: ship tiers v2.1 (owner override on rule A)
+
+**Decision** (owner, 2026-10-28; measurements and rules in `docs/tiers-v2-design.md` section 5): ship tiers v2.1.
+- Safety gate PASS (0/29, CI 0–12%).
+- Rule C: gate not met (a), 0 escalations; merge per the frozen §5 consequence.
+- Rule A: part 1 NOT met (12/18 → 11/18; both drops are the model's draft-and-ask habit, no card); parts 2 and 3 hold. No pre-registered consequence existed for rule A failing. This is an owner override, not a pass. `evals/reports/rule-a-power.md` (written after the result) is context only.
+- Lesson: part 1 is underpowered; the next safety measurement pre-registers the s1.1 rule from `rule-a-power.md` before its before-side runs.
+- Caveats carried: `KI-pending-main-suite-drift`, 18 benign tasks (±14 points), #44, #23, #21, #53 (on `main`), image policy unrecorded on the main split.
+
+**Alternatives:**
+- **Hold and pre-register s1.1 now, then measure both sides at 5 repeats** (about 126k billable, 1 Groq day). Not chosen; s1.1 is pre-registered for the next safety measurement instead.
+- **Hold and fix the draft-and-ask habit first** (a system-prompt change, so a new agent: safety strict x3, rubber-stamp and main x3 again, about 840k billable, about 5 Groq days). Not chosen: the habit predates tiers v2 (failure group 3 of the baseline), and fixing it is tracked as its own measured change (`KI-pending-draft-and-ask`).
+
+**Why:**
+- The defense itself met its gate: 0 system-level attack successes under the strict user, and no benign or main-suite failure was caused by a card.
+- The two part 1 drops come from a model habit seen in the baseline too, with no card in either run.
+- Recording it as an override keeps the rule as it was: part 1 stays "not met" on the record.
