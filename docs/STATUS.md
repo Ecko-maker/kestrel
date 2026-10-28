@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-27 16:00 EDT (20:00 UTC), from the day's sessions on `main` and `phase3/tiers-v2` (log below).
+2026-10-27 20:14 EDT (10-28 00:14 UTC), from the day's sessions on `main`, `phase3/tiers-v2` and the voice branches (log below).
 
 ## Now
 
@@ -20,7 +20,10 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 5. **Rule C outcomes recorded** (`0d3c3c0`), then **amended** before the result (`2df47f8`, `130134d`): PASS → merge after #14; FAIL → no merge, fix, re-measure; gate not met → (a) 0 `escalated_by` entries: merge after #14, report "non-inferiority not shown at 6 points", open `KI-pending-main-suite-drift`; (b) 1 or more: review each escalated task, no merge if a card plausibly changed an outcome. Rule and margin unchanged. Superseded options, the reasons, and the disclosure of the partial data seen are in §5.
 6. **Fingerprint diff** (`558035a`): `cc5c16377662` → `35fac5ba6277` changes only the tiers-v2 cards (capabilities + approval rules); `evals/reports/fingerprint-diff-v1.1-to-v2.1.md`.
 7. **Freeze** (`a29c5f3`): the 2df47f8 reason corrected (A was the owner's choice; it was left because of the fingerprint diff); no further changes to the rule C consequences before the final result.
-8. **Voice CI:** still red. Last run 10-26 (`40406346377`, `voice/talk`): mypy can't find `pywhispercpp.model` and `numpy` in `src/kestrel/wake/transcribe.py`, on Ubuntu and Windows. No voice push since.
+8. **Voice CI green** (voice branches, no PR, no model calls): `voice/wake-word` `88bb9d1` (run `40605087925`); `voice/talk` `5e36551` (run `40605628065`, after one Windows rerun). The `ci.yml` Python job now installs `--extra wake`, so mypy sees `pywhispercpp` and `numpy` (both ship types; no override). wake-word's own failure was a test catching a real bug: `c_long`/`c_ulong` are 8 bytes on 64-bit Linux, so the Windows `INPUT` struct was 56 bytes, not 40; fixed with fixed-width types.
+9. **`voice/talk` rebased** onto wake-word; the old tip is kept as tag `archive/voice-talk-4155004`. The merge rehearsal's voice commit hashes are stale.
+10. **`KI-pending-wake-window-start`** (voice, not yet in `docs/known-issues.md`): `on_wake` counts the Listening window from before the trace write and two Windows calls, so listening gets less than the configured time (the cause of the flaky `test_level_events_carry_one_number_and_only_while_listening` on Windows CI). Fix on `voice/talk` later, measured with the offline voice evals before and after.
+11. **Cleanup later:** the `ddgs` entry in the mypy `ignore_missing_imports` override is no longer needed (`ddgs` ships `py.typed`).
 
 ## Phases
 
@@ -30,7 +33,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 2 Evals | done, except judge calibration (#21: 3 labels so far) | README baseline 92%; `evals/baselines/` on `main`; labels on `labels/judge-calibration` |
 | 3 Memory and safety | in progress: tiers v2.1 gate pending; memory parked until after Phase 4 | `phase3/tiers-v2` (`evals/reports/safety-after-v2.1.md`); `phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) |
 | 4 Distillation | in progress: tooling done, GPU smoke passed 2026-10-20, no teacher data collected | `phase4/trace-dataset` (`docs/phase4-plan.md`, `distill/*.md`) |
-| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video and posts not started | `voice/talk` (`docs/voice-wake.md`); CI red |
+| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video and posts not started | `voice/talk` (`docs/voice-wake.md`); CI green |
 
 ## Branches
 
@@ -41,13 +44,14 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `phase3/results-analysis` | 3 | PR #14 into `phase3/tiers-v2`, 1 commit, CI green, evals not run | merge into tiers-v2 (no evals) |
 | `phase3/tiers-v2` | 3 | safety gate PASS; rule A part 1 not met as written; rule C running, consequences frozen (`a29c5f3`, CI green) | verdict report; then merge to `main` per §5 and the owner's gate call (~56k) |
 | `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | last: rebase onto `main` after voice; fix #42 and the main-meta test; then merge (~56k) |
-| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI red (mypy imports in `wake/transcribe.py`, run `40406346377`) | fix CI; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
+| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI green (wake-word `88bb9d1`, talk `5e36551`; old talk tip = tag `archive/voice-talk-4155004`) | fix `KI-pending-wake-window-start`; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
 | `console/hud-theme` | console | stacked on tiers-v2 `75ce54c`; console only | rebase onto `main` after tiers-v2; merge (no evals) |
 | `labels/judge-calibration` | 2 | 3 owner labels | merged to `main` via PR (2026-10-26) |
-| `docs/merge-plan` | – | merge-rehearsal report (stale on memory-rag and the phase4 tip) | merge whenever (no evals) |
+| `docs/merge-plan` | – | merge-rehearsal report (stale on memory-rag, the phase4 tip and the voice hashes after the 10-27 rebase) | merge whenever (no evals) |
 | `docs/status-2026-10-26` | – | this file, `progress.md`, CLAUDE.md rewrite | merged to `main` as PR #18 (2026-10-26) |
 | `docs/approvals-2026-10-26` | – | Groq approvals log | merged to `main` as PR #20 (2026-10-27) |
-| `docs/status-2026-10-27` | – | this update | merge to `main` (no evals) |
+| `docs/status-2026-10-27` | – | STATUS update | merged to `main` as PR #21 (2026-10-27) |
+| `docs/status-2026-10-27-voice` | – | this update (voice CI) | merge to `main` (no evals) |
 | `phase3/memory-rag` | 3 | memory + hybrid RAG design, parked (option B) | park until after the Phase 4 measurements |
 | `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
 | `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
@@ -55,7 +59,7 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `phase3/memory-safety` | 3 | tip = tag `safety-before`; its content is in tiers-v2 | proposed: delete (tag exists) |
 | `phase4/trace-dataset-v0` | 4 | first distill attempt, replaced | proposed: archive as tag, delete |
 | `dev`, `phase2/kestrelbench`, `master` | 1–2 | fully merged into `main` | proposed: delete |
-| `main` | – | = `origin/main` `0960cf8` (before this PR) | – |
+| `main` | – | = `origin/main` `71e0166` (before this PR) | – |
 
 Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates); they cost no evals.
 
@@ -115,6 +119,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-tool-not-found, -errored-row-fingerprint, -content-check-silent, -taint-on-run | tiers-v2 and descendants | 37, 43, 44, 45 |
 | KI-pending-console-taint | console, voice | 46 |
 | KI-pending-wake-owner-machine, -self-interruption, -vocab-hint (closed), -cancel-unmeasured | voice | 47–50 |
+| KI-pending-wake-window-start | voice (not yet written on the branch) | – |
 | KI-pending-memory-isolation, -memory-attack-surface, -memory-split-limits | memory-evals, search-spike, memory | **25, 26**, 27 |
 | KI-pending-memory-search-limits, -estimate-from-cache | memory | 28, 29 |
 | KI-pending-safety-prompts-pinned … -router-tiers-v2 (12 issues) | phase4 | 30–36, 38–42 |
