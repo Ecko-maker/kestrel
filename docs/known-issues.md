@@ -177,6 +177,13 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 **Still open** until the owner decides on the 75% threshold.
 **Done when:** the owner accepts or changes the 75% threshold.
 
+### 53. The `--wait-for-quota` retry loop spends quota on attempts Groq drops
+**Labels:** `evals`, `cost`, `high`
+When Groq's daily token limit is reached mid-task, `kestrel bench run --wait-for-quota` waits and retries. A retried attempt can spend tokens before Groq refuses it, and the loop ignores `--token-budget`. The spent tokens keep the rolling 24 h window full, so the next attempt fails too: the run livelocks while burning quota. The 10-26–27 main-suite after-run (`main-after-v21-x3.json`) spent ~225k tokens in dropped attempts before the owner stopped it at 198/300. Nothing was lost (finished runs stay in the file).
+**Workaround (until fixed):** one single `--resume` per quiet 24 h window, never a loop. The 10-28 resume finished the remaining 102 runs in one go (~176k billable, under its 180k budget).
+**Fix (planned, feature branch, after the rule C verdict):** a budget check inside the retry loop, a longer back-off after an attempt that spent tokens, and logging Groq's TPD/RPD error text.
+**Done when:** a test shows the retry loop stops at `--token-budget` and backs off after a spending attempt, and the error text reaches the run log.
+
 ## Safety split (Phase 3)
 
 ### 23. The safety split's attack success rate is a lower bound
