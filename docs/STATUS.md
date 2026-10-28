@@ -4,19 +4,20 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-28 evening EDT, from the 10-28 verdict session (`phase3/tiers-v2`, then this docs PR on `main`; log below).
+2026-10-28 late evening EDT, from the 10-28 gate session (`phase3/tiers-v2`, then this docs PR on `main`; log below).
 
 ## Now
 
-Phase 3's tiers v2.1 measurements are **finished**. Safety gate passed (strict system-level ASR 0/29, `evals/reports/safety-after-v2.1.md`). The rule C main-suite after-run finished **300/300** (269 pass, 31 fail, 0 errors, 0 skipped) in one resume on 10-28, and nothing is running. The verdict report (`evals/reports/rule-c-verdict.md` on `phase3/tiers-v2`, `b99113c`) says:
+Phase 3's tiers gate is **decided: ship tiers v2.1** (owner, 2026-10-28; `D-pending-tiers-v2-gate`, `ffe502e` on `phase3/tiers-v2`, `docs/tiers-v2-design.md` §5). Safety gate PASS (strict system-level ASR 0/29, CI 0–12%). Rule C: gate not met (a), 0 escalations (`evals/reports/rule-c-verdict.md`, after − references −3 points, 95% CI −7 to +1), merge per the frozen §5 consequence. Rule A: part 1 not met (12/18 → 11/18), parts 2 and 3 hold; recorded as an **owner override, not a pass**. PR #14 is merged into tiers-v2 (`caff0f8`). Nothing is running.
 
-| Primary | Secondary | `escalated_by` entries | Outcome |
-|---|---|---|---|
-| pass | fail | 0 in 0 tasks | **gate not met (a): 0 escalations; merge after #14; "non-inferiority not shown at 6 points"** |
+**The single next step:** open the tiers-v2 → `main` PR on **10-29 after ~15:45 EDT** (once the Groq window has room; approval line below, ~56k). Before it opens, resolve the 2 doc conflicts on the branch (`CLAUDE.md` ×3 hunks: take `main`'s and move the branch's rules into `main`'s docs; `docs/known-issues.md` ×1: keep both), and assign numbers to the pending decisions and issues at merge. Any extra push to the open PR needs a new approval line. After the merge: console (no evals), then the fix for known issue #53 on its own branch.
 
-After − references: −3 points (95% CI −7 to +1), lower bound −6.7 against the −6 margin. 13 worse flips against the baseline, none with a card. The after-run is pinned in git (`evals/after-runs/`, SHA-256 `8948b434…bfbcbb`).
+## 2026-10-28 (gate session)
 
-**Next, under the frozen §5 consequences (`a29c5f3`), branch (a):** merge PR #14 into tiers-v2, then tiers-v2 into `main` (~56k, needs the owner's gate call: open decision 1). The tiers-v2 report states "non-inferiority not shown at 6 points" with the interval and cites the fingerprint diff. Open `KI-pending-main-suite-drift` (run-to-run drift above the margin). The same-day control (old agent, CI subset, ~28k, approval line first) is proposed for later, not run now. The fix for known issue #53 (retry spend) starts on its own branch after that.
+1. **Phase 3 tiers gate: ship tiers v2.1** (owner decision, `D-pending-tiers-v2-gate`, `ffe502e` on `phase3/tiers-v2`). Rule A part 1 not met and overridden (not a pass); the next safety measurement pre-registers the s1.1 rule from `evals/reports/rule-a-power.md` before its before-side runs. Caveats carried: `KI-pending-main-suite-drift`, 18 benign tasks (±14 points), #44, #23, #21, #53, image policy unrecorded on the main split. New issues: `KI-pending-main-suite-drift`, `KI-pending-draft-and-ask`.
+2. **PR #14 merged** into `phase3/tiers-v2` (`caff0f8`, no evals). Checks re-run locally on the merged branch: 544 passed, 4 xfailed.
+3. **tiers-v2 → `main` PR opens 10-29 after ~15:45 EDT**, with its approval line (~56k). Dry-run merge (`git merge-tree`): 2 doc conflicts (`CLAUDE.md` ×3, `docs/known-issues.md` ×1); 24 eval-trigger files, so CI evals run.
+4. **Known issue #45 (taint on run) closed** on `phase3/tiers-v2` (`635da8e`): the fix is measured, 0 escalations in the rule C after-run.
 
 ## 2026-10-28 (verdict session)
 
@@ -62,8 +63,8 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 
 | Branch | Phase | State | Next action |
 |---|---|---|---|
-| `phase3/results-analysis` | 3 | PR #14 into `phase3/tiers-v2`, 1 commit, CI green, evals not run | merge into tiers-v2 (no evals) |
-| `phase3/tiers-v2` | 3 | safety gate PASS; rule A part 1 not met as written; rule C after-run 300/300; verdict gate not met (a), 0 escalations (`b99113c`); results pinned in `evals/after-runs/` | merge #14, then to `main` per §5 (a) and the owner's gate call (~56k) |
+| `phase3/results-analysis` | 3 | PR #14 merged into `phase3/tiers-v2` (`caff0f8`, 2026-10-28) | proposed: delete |
+| `phase3/tiers-v2` | 3 | gate decided: ship (`ffe502e`); #14 merged (`caff0f8`); #45 closed (`635da8e`); 2 doc conflicts with `main` | resolve conflicts; PR to `main` 10-29 after ~15:45 EDT (~56k) |
 | `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | last: rebase onto `main` after voice; fix #42 and the main-meta test; then merge (~56k) |
 | `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI green (wake-word `88bb9d1`, talk `5e36551`; old talk tip = tag `archive/voice-talk-4155004`) | fix `KI-pending-wake-window-start`; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
 | `console/hud-theme` | console | stacked on tiers-v2 `75ce54c`; console only | rebase onto `main` after tiers-v2; merge (no evals) |
@@ -74,7 +75,8 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `docs/status-2026-10-27` | – | STATUS update | merged to `main` as PR #21 (2026-10-27) |
 | `docs/status-2026-10-27-voice` | – | STATUS update (voice CI) | merged to `main` as PR #22 (2026-10-28) |
 | `docs/status-2026-10-28` | – | STATUS update (after-run stopped, resume plan, retry KI) | merged to `main` as PR #23 (2026-10-28) |
-| `docs/status-2026-10-28-verdict` | – | this update (after-run finished, verdict, known issue #53) | merge to `main` (no evals) |
+| `docs/status-2026-10-28-verdict` | – | STATUS update (after-run finished, verdict, known issue #53) | merged to `main` as PR #24 (2026-10-28) |
+| `docs/status-2026-10-28-gate` | – | this update (gate decision, #14 merged, tiers-v2 PR plan) | merge to `main` (no evals) |
 | `phase3/memory-rag` | 3 | memory + hybrid RAG design, parked (option B) | park until after the Phase 4 measurements |
 | `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
 | `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
@@ -82,7 +84,7 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `phase3/memory-safety` | 3 | tip = tag `safety-before`; its content is in tiers-v2 | proposed: delete (tag exists) |
 | `phase4/trace-dataset-v0` | 4 | first distill attempt, replaced | proposed: archive as tag, delete |
 | `dev`, `phase2/kestrelbench`, `master` | 1–2 | fully merged into `main` | proposed: delete |
-| `main` | – | = `origin/main` `4aac7a4` (before this PR) | – |
+| `main` | – | = `origin/main` `6b929e8` (before this PR) | – |
 
 Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates); they cost no evals.
 
@@ -94,7 +96,7 @@ Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates);
 - **Each agent-affecting PR costs ~56k:** the PR run (~28k) plus the merge-to-main run (~28k). Every new push to an open PR runs it again.
 - **Calendar:**
   1. ~~After-run resumes~~: done in one resume 10-28 15:22–15:44 EDT; verdict 10-28.
-  2. Merges, one per quota day: #14 and tiers-v2 (day 1), console (no evals), voice (day 2), phase4 rebased (day 3). The no-eval branches go in between.
+  2. Merges, one per quota day: #14 (done 10-28, no evals) and tiers-v2 (day 1: 10-29 after ~15:45 EDT), console (no evals), voice (day 2), phase4 rebased (day 3). The no-eval branches go in between.
   3. Teacher data: dry-run estimate first (`distill/README.md` says ~253k, 2 days); needs the owner's OK and the teacher decision (#36).
   4. Kaggle QLoRA training (no Groq; under 1 GPU hour).
   5. Student evals: the student on Ollama locally, the judge only on Groq.
@@ -114,10 +116,11 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 2026-10-21–23 | safety after side, tiers v2.1: strict ×3, rubber-stamp (`safety-after-v21-*.json`) | 230.2k + 68.4k | approved by the owner at the time, recorded 10-26 |
 | 2026-10-26–27 | main suite after, tiers v2.1, ×3 (`main-after-v21-x3.json`) | 365.2k at 198/300 | approved by the owner at the time, recorded 10-26 |
 | 2026-10-28 and 10-29 | resume of the main-suite after-run (same measurement, single command per quiet 24 h window, `--token-budget 180000`) | ~210k (estimate) | approved by the owner. The 10-26–27 livelock spent ~225k in dropped attempts; stopped by the owner 10-27 18:28 at 198/300, nothing lost. **Ran 10-28 15:22:54–15:44:11 EDT**, one resume, 102 runs, finished 300/300. Approval line merged (PR #23) at 15:12:41 EDT, 10 min before the start; the start was ~3 h earlier than the planned ~18:30 and ~21 h after the stop. ~176.3k billable (file total 541,468 minus 365.2k at 198/300), under the 180k budget. The 10-29 resume isn't needed. |
+| 2026-10-29 | tiers-v2 → main PR (one CI run on the PR + one on the merge to main) | ~56k (estimate) | approved by the owner. Conflicts are resolved on the branch before the PR opens; extra pushes to the open PR need a new approval line. |
 
 ## Owner decisions open
 
-1. **Phase 3 tiers gate**, after the rule C verdict (what each outcome leads to: §5, frozen). The gate requires no drop in the benign pass rate (decision A, `docs/tiers-v2-design.md` §5), and rule A part 1 is not met as written (`evals/reports/rule-a-power.md` on tiers-v2 reads it as noise). It includes **`ben-note-from-mcp`**: it still fails 1 of 3 strict runs on v2.1 (`docs__lookup` ran, `create_note` didn't), and the reports give rule A with and without it. Ship or not.
+1. ~~**Phase 3 tiers gate**~~: decided 2026-10-28, ship tiers v2.1 (owner override on rule A part 1; `D-pending-tiers-v2-gate`, lands with tiers-v2).
 2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). It is recorded only on unmerged branches (`phase4/trace-dataset` CLAUDE.md, `docs/memory-rag-design.md`); it lands with them.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
@@ -132,6 +135,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 |---|---|---|
 | D-pending-safety-repeats | memory-safety line (tiers-v2 and all descendants, memory-*) | 15 (same text everywhere) |
 | D-pending-tiers-v2 | tiers-v2, results-analysis, memory-rag, console, voice, v0 | **16** |
+| D-pending-tiers-v2-gate | tiers-v2 (`ffe502e`) | – |
 | D-pending-memory-split | memory-evals, search-spike, memory | **16** |
 | D-pending-memory-search | memory | **17** |
 | D-pending-hud-console | console, voice | **17** |
@@ -140,12 +144,12 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | D-pending-voice-wake | wake-word, talk | **18** |
 | D-pending-talk-whisper, D-pending-send-countdown | talk | **19, 20** |
 | D-pending-distill-data, -distill-taskset, -distill-overlap, -distill-rubric-checks, -student-qlora, -prompt-format, -router-v1 | phase4 | **19, 20**, 21–25 |
-| KI-pending-tool-not-found, -errored-row-fingerprint, -content-check-silent, -taint-on-run | tiers-v2 and descendants | 37, 43, 44, 45 |
+| KI-pending-tool-not-found, -errored-row-fingerprint, -content-check-silent, -taint-on-run | tiers-v2 and descendants | 37, 43, 44, 45 (45 closed on tiers-v2) |
 | KI-pending-console-taint | console, voice | 46 |
 | KI-pending-wake-owner-machine, -self-interruption, -vocab-hint (closed), -cancel-unmeasured | voice | 47–50 |
 | KI-pending-wake-window-start | voice (not yet written on the branch) | – |
 | ~~KI-pending-quota-retry-spend~~ | numbered on `main` as #53 (this PR); fix branch not yet created | 53 |
-| KI-pending-main-suite-drift | tiers-v2 (rule C branch (a); not yet written) | – |
+| KI-pending-main-suite-drift, -draft-and-ask | tiers-v2 (`ffe502e`) | – |
 | KI-pending-memory-isolation, -memory-attack-surface, -memory-split-limits | memory-evals, search-spike, memory | **25, 26**, 27 |
 | KI-pending-memory-search-limits, -estimate-from-cache | memory | 28, 29 |
 | KI-pending-safety-prompts-pinned … -router-tiers-v2 (12 issues) | phase4 | 30–36, 38–42 |
