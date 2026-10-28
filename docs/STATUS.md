@@ -4,11 +4,17 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-27 20:14 EDT (10-28 00:14 UTC), from the day's sessions on `main`, `phase3/tiers-v2` and the voice branches (log below).
+2026-10-28 15:10 EDT (19:10 UTC), from the 10-28 session on `main` (log below).
 
 ## Now
 
-Phase 3 is closing on permission tiers v2.1. Its safety gate passed (strict system-level ASR 0/29, `evals/reports/safety-after-v2.1.md` on `phase3/tiers-v2`). The last measurement is running: the main-suite non-inferiority check under rule C (main suite ×3 against the two pinned baselines, `docs/tiers-v2-design.md` §5 on `phase3/tiers-v2`). It runs on Groq in a standalone PowerShell window in `..\kestrel-runs` (PID 13464, `evals\results\main-after-v21-x3.json`, `--wait-for-quota`). Last read 10-27 08:02: 198/300, waiting for the rolling quota; expected finish 10-27 evening to 10-28 midday. Runs pause in Modern Standby, so keep the laptop on mains power and awake. What each rule C outcome leads to is recorded and **frozen** (`a29c5f3`). **The single next step:** when the run ends, run `scripts/rule_c_verdict.py` (offline, no model calls; plus `--escalation-review` if any task was escalated) with `--out evals/reports/rule-c-verdict.md`, and commit the report on `phase3/tiers-v2`.
+Phase 3 is closing on permission tiers v2.1. Its safety gate passed (strict system-level ASR 0/29, `evals/reports/safety-after-v2.1.md` on `phase3/tiers-v2`). The last measurement is the main-suite non-inferiority check under rule C (main suite ×3 against the two pinned baselines, `docs/tiers-v2-design.md` §5 on `phase3/tiers-v2`; `..\kestrel-runs\evals\results\main-after-v21-x3.json`). It is **stopped at 198/300, not running**: the owner stopped it 10-27 18:28 EDT because of a livelock (`KI-pending-quota-retry-spend`, log below). The process that ran it (PID 13464) is gone; no bench process and no lock file, verified 10-27 21:16, again after a laptop restart, and 10-28 15:07. It resumes with **one single `--resume` command per quiet 24 h window** (never the 6-attempt loop): 10-28 ~18:30 EDT, then 10-29 evening, in a standalone PowerShell window in `..\kestrel-runs` (at `75ce54c`, clean). Verdict expected 10-29 evening. Runs pause in Modern Standby, so keep the laptop on mains power and awake. What each rule C outcome leads to is recorded and **frozen** (`a29c5f3`). **The single next step:** after the last resume completes 300/300, run `scripts/rule_c_verdict.py` (offline, no model calls; plus `--escalation-review` if any task was escalated) with `--out evals/reports/rule-c-verdict.md`, and commit the report on `phase3/tiers-v2`.
+
+## 2026-10-28
+
+1. **PR #22 merged** (`2b643c6`): the 10-27 voice STATUS update.
+2. **After-run stopped** by the owner 10-27 18:28 EDT at 198/300, nothing lost (177 pass, 21 fail, 0 errored, 102 not yet run). Resume plan in Now; approval in the Groq log.
+3. **`KI-pending-quota-retry-spend`** (not yet in `docs/known-issues.md`): the `--wait-for-quota` retry loop spends tokens on attempts Groq then drops, and it ignores `--token-budget`; the spent tokens keep the rolling window full, so the run livelocks. The 10-26–27 livelock spent ~225k in dropped attempts. Fix after the verdict on a feature branch: a budget check inside the retry loop, a longer back-off after an attempt that spent tokens, and logging Groq's TPD/RPD error text. **Operating rule until fixed:** one resume per quiet 24 h window, never a loop.
 
 ## 2026-10-27
 
@@ -42,7 +48,7 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | Branch | Phase | State | Next action |
 |---|---|---|---|
 | `phase3/results-analysis` | 3 | PR #14 into `phase3/tiers-v2`, 1 commit, CI green, evals not run | merge into tiers-v2 (no evals) |
-| `phase3/tiers-v2` | 3 | safety gate PASS; rule A part 1 not met as written; rule C running, consequences frozen (`a29c5f3`, CI green) | verdict report; then merge to `main` per §5 and the owner's gate call (~56k) |
+| `phase3/tiers-v2` | 3 | safety gate PASS; rule A part 1 not met as written; rule C after-run stopped at 198/300, resumes 10-28 and 10-29; consequences frozen (`a29c5f3`, CI green) | verdict report; then merge to `main` per §5 and the owner's gate call (~56k) |
 | `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | last: rebase onto `main` after voice; fix #42 and the main-meta test; then merge (~56k) |
 | `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI green (wake-word `88bb9d1`, talk `5e36551`; old talk tip = tag `archive/voice-talk-4155004`) | fix `KI-pending-wake-window-start`; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
 | `console/hud-theme` | console | stacked on tiers-v2 `75ce54c`; console only | rebase onto `main` after tiers-v2; merge (no evals) |
@@ -51,7 +57,8 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `docs/status-2026-10-26` | – | this file, `progress.md`, CLAUDE.md rewrite | merged to `main` as PR #18 (2026-10-26) |
 | `docs/approvals-2026-10-26` | – | Groq approvals log | merged to `main` as PR #20 (2026-10-27) |
 | `docs/status-2026-10-27` | – | STATUS update | merged to `main` as PR #21 (2026-10-27) |
-| `docs/status-2026-10-27-voice` | – | this update (voice CI) | merge to `main` (no evals) |
+| `docs/status-2026-10-27-voice` | – | STATUS update (voice CI) | merged to `main` as PR #22 (2026-10-28) |
+| `docs/status-2026-10-28` | – | this update (after-run stopped, resume plan, retry KI) | merge to `main` (no evals) |
 | `phase3/memory-rag` | 3 | memory + hybrid RAG design, parked (option B) | park until after the Phase 4 measurements |
 | `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
 | `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
@@ -59,7 +66,7 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `phase3/memory-safety` | 3 | tip = tag `safety-before`; its content is in tiers-v2 | proposed: delete (tag exists) |
 | `phase4/trace-dataset-v0` | 4 | first distill attempt, replaced | proposed: archive as tag, delete |
 | `dev`, `phase2/kestrelbench`, `master` | 1–2 | fully merged into `main` | proposed: delete |
-| `main` | – | = `origin/main` `71e0166` (before this PR) | – |
+| `main` | – | = `origin/main` `2b643c6` (before this PR) | – |
 
 Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates); they cost no evals.
 
@@ -70,7 +77,7 @@ Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates);
 - **From 2026-10-26, a run starts only after its approval line is added to the log below** (through a docs PR to `main`).
 - **Each agent-affecting PR costs ~56k:** the PR run (~28k) plus the merge-to-main run (~28k). Every new push to an open PR runs it again.
 - **Calendar:**
-  1. Live run (until ~10-28).
+  1. After-run resumes: 10-28 ~18:30 EDT and 10-29 evening, one command each (verdict 10-29 evening).
   2. Merges, one per quota day: #14 and tiers-v2 (day 1), console (no evals), voice (day 2), phase4 rebased (day 3). The no-eval branches go in between.
   3. Teacher data: dry-run estimate first (`distill/README.md` says ~253k, 2 days); needs the owner's OK and the teacher decision (#36).
   4. Kaggle QLoRA training (no Groq; under 1 GPU hour).
@@ -89,7 +96,8 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 2026-10-17–19 | safety after side, tiers v2: strict ×3, rubber-stamp (`safety-after-*.json`) | 223.5k + 36.3k | approved by the owner at the time, recorded 10-26 |
 | 2026-10-20–21 | main suite after, tiers v2 (`main-after-v1.1.json`) | 174.1k | approved by the owner at the time, recorded 10-26 |
 | 2026-10-21–23 | safety after side, tiers v2.1: strict ×3, rubber-stamp (`safety-after-v21-*.json`) | 230.2k + 68.4k | approved by the owner at the time, recorded 10-26 |
-| from 2026-10-26 | main suite after, tiers v2.1, ×3, live (`main-after-v21-x3.json`) | 365.2k so far (198/300) | approved by the owner at the time, recorded 10-26 |
+| 2026-10-26–27 | main suite after, tiers v2.1, ×3 (`main-after-v21-x3.json`) | 365.2k so far (198/300) | approved by the owner at the time, recorded 10-26 |
+| 2026-10-28 and 10-29 | resume of the main-suite after-run (same measurement, single command per quiet 24 h window, `--token-budget 180000`) | ~210k (estimate) | approved by the owner. The 10-26–27 livelock spent ~225k in dropped attempts; stopped by the owner 10-27 18:28 at 198/300, nothing lost. |
 
 ## Owner decisions open
 
@@ -120,6 +128,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-console-taint | console, voice | 46 |
 | KI-pending-wake-owner-machine, -self-interruption, -vocab-hint (closed), -cancel-unmeasured | voice | 47–50 |
 | KI-pending-wake-window-start | voice (not yet written on the branch) | – |
+| KI-pending-quota-retry-spend | fix branch after the verdict (not yet created) | – |
 | KI-pending-memory-isolation, -memory-attack-surface, -memory-split-limits | memory-evals, search-spike, memory | **25, 26**, 27 |
 | KI-pending-memory-search-limits, -estimate-from-cache | memory | 28, 29 |
 | KI-pending-safety-prompts-pinned … -router-tiers-v2 (12 issues) | phase4 | 30–36, 38–42 |
