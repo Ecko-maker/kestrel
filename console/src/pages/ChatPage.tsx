@@ -3,7 +3,7 @@ import { ArrowUp, FlaskConical, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert }
 import { rateTrace, type SessionInfo, type Stats } from "../api";
 import { AgentTrace } from "../components/AgentTrace";
 import { ApprovalCard } from "../components/ApprovalCard";
-import { Markdown } from "../components/Markdown";
+import { ImageAllowlist, Markdown } from "../components/Markdown";
 import { StatsPanel } from "../components/StatsPanel";
 import { Button, cx } from "../components/ui";
 import type { Turn, useChat } from "../useChat";
@@ -149,6 +149,8 @@ function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
   );
 }
 
+const NO_HOSTS: readonly string[] = [];
+
 export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; session: SessionInfo | null; stats: Stats | null; onRated: () => void }) {
   const bottom = useRef<HTMLDivElement>(null);
   const last = chat.turns[chat.turns.length - 1];
@@ -164,78 +166,80 @@ export function ChatPage({ chat, session, stats, onRated }: { chat: Chat; sessio
   const unavailable = session && !session.chat_available;
   const suggestions = session?.demo_prompts?.length ? session.demo_prompts : SUGGESTIONS;
   return (
-    <div className="flex h-full min-h-0">
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6">
-            {session?.demo && (
-              <div className="flex items-start gap-3 rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900 ring-1 ring-violet-200 dark:bg-violet-950/40 dark:text-violet-200 dark:ring-violet-900">
-                <FlaskConical className="mt-0.5 size-4 shrink-0" />
-                <div>
-                  <span className="font-semibold">Demo mode.</span>{" "}
-                  {(session.demo_notice ?? "").replace(/^Demo mode:\s*(.)/, (_, c: string) => c.toUpperCase())} Add a free Gemini or Groq key to <code>.env</code> to use a real model.
-                </div>
-              </div>
-            )}
-            {chat.turns.length === 0 && (
-              <div className="pt-[8vh]">
-                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">What should Kestrel do?</h1>
-                <p className="mt-2 max-w-xl text-stone-500 dark:text-stone-400">
-                  It can read your workspace, search and fetch the web, and draft notes and messages. Anything that changes a file or sends something waits for your approval.
-                </p>
-                <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                  {suggestions.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => chat.send(s)}
-                      disabled={chat.state !== "open" || !!unavailable}
-                      className="rounded-xl bg-white px-4 py-3 text-left text-sm text-stone-700 ring-1 ring-stone-200 transition hover:-translate-y-px hover:ring-accent-300 hover:shadow-sm disabled:opacity-50 dark:bg-stone-900 dark:text-stone-300 dark:ring-stone-800 dark:hover:ring-accent-800"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {chat.turns.map((turn) => (
-              <div key={turn.id} className="space-y-5">
-                <div className="flex justify-end">
-                  <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-stone-800 px-4 py-2.5 text-[15px] leading-6 text-stone-50 dark:bg-stone-200 dark:text-stone-900">
-                    {turn.user}
+    <ImageAllowlist.Provider value={session?.image_allowlist ?? NO_HOSTS}>
+      <div className="flex h-full min-h-0">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 sm:px-6">
+              {session?.demo && (
+                <div className="flex items-start gap-3 rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900 ring-1 ring-violet-200 dark:bg-violet-950/40 dark:text-violet-200 dark:ring-violet-900">
+                  <FlaskConical className="mt-0.5 size-4 shrink-0" />
+                  <div>
+                    <span className="font-semibold">Demo mode.</span>{" "}
+                    {(session.demo_notice ?? "").replace(/^Demo mode:\s*(.)/, (_, c: string) => c.toUpperCase())} Add a free Gemini or Groq key to <code>.env</code> to use a real model.
                   </div>
                 </div>
-                <AssistantTurn turn={turn} onRespond={chat.answerApproval} onRated={onRated} />
-              </div>
-            ))}
-            <div ref={bottom} />
+              )}
+              {chat.turns.length === 0 && (
+                <div className="pt-[8vh]">
+                  <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">What should Kestrel do?</h1>
+                  <p className="mt-2 max-w-xl text-stone-500 dark:text-stone-400">
+                    It can read your workspace, search and fetch the web, and draft notes and messages. Anything that changes a file or sends something waits for your approval.
+                  </p>
+                  <div className="mt-6 grid gap-2 sm:grid-cols-2">
+                    {suggestions.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => chat.send(s)}
+                        disabled={chat.state !== "open" || !!unavailable}
+                        className="rounded-xl bg-white px-4 py-3 text-left text-sm text-stone-700 ring-1 ring-stone-200 transition hover:-translate-y-px hover:ring-accent-300 hover:shadow-sm disabled:opacity-50 dark:bg-stone-900 dark:text-stone-300 dark:ring-stone-800 dark:hover:ring-accent-800"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {chat.turns.map((turn) => (
+                <div key={turn.id} className="space-y-5">
+                  <div className="flex justify-end">
+                    <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-stone-800 px-4 py-2.5 text-[15px] leading-6 text-stone-50 dark:bg-stone-200 dark:text-stone-900">
+                      {turn.user}
+                    </div>
+                  </div>
+                  <AssistantTurn turn={turn} onRespond={chat.answerApproval} onRated={onRated} />
+                </div>
+              ))}
+              <div ref={bottom} />
+            </div>
+          </div>
+
+          <div className="border-t border-stone-200/70 bg-stone-50/80 px-4 pb-4 pt-3 backdrop-blur dark:border-stone-800/70 dark:bg-stone-950/80 sm:px-6">
+            <div className="mx-auto max-w-3xl space-y-2">
+              {(chat.notice || unavailable) && (
+                <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                  <span>{chat.notice ?? session?.problem}</span>
+                </div>
+              )}
+              {chat.state === "closed" && (
+                <div className="flex items-center justify-between gap-2 rounded-lg bg-stone-100 px-3 py-2 text-sm dark:bg-stone-900">
+                  <span>Disconnected. Anything waiting for approval was rejected.</span>
+                  <Button size="sm" onClick={chat.reconnect}><RefreshCw className="size-3.5" /> New conversation</Button>
+                </div>
+              )}
+              <Composer chat={chat} disabled={chat.running || chat.state !== "open" || !!unavailable} />
+              <p className="text-center text-[11px] text-stone-400">
+                Enter to send · Shift+Enter for a new line · runs locally, approvals required for actions
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="border-t border-stone-200/70 bg-stone-50/80 px-4 pb-4 pt-3 backdrop-blur dark:border-stone-800/70 dark:bg-stone-950/80 sm:px-6">
-          <div className="mx-auto max-w-3xl space-y-2">
-            {(chat.notice || unavailable) && (
-              <div className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                <span>{chat.notice ?? session?.problem}</span>
-              </div>
-            )}
-            {chat.state === "closed" && (
-              <div className="flex items-center justify-between gap-2 rounded-lg bg-stone-100 px-3 py-2 text-sm dark:bg-stone-900">
-                <span>Disconnected. Anything waiting for approval was rejected.</span>
-                <Button size="sm" onClick={chat.reconnect}><RefreshCw className="size-3.5" /> New conversation</Button>
-              </div>
-            )}
-            <Composer chat={chat} disabled={chat.running || chat.state !== "open" || !!unavailable} />
-            <p className="text-center text-[11px] text-stone-400">
-              Enter to send · Shift+Enter for a new line · runs locally, approvals required for actions
-            </p>
-          </div>
+        <div className="hidden w-72 shrink-0 overflow-y-auto border-l border-stone-200/70 p-4 dark:border-stone-800/70 xl:block">
+          <StatsPanel stats={stats} />
         </div>
       </div>
-
-      <div className="hidden w-72 shrink-0 overflow-y-auto border-l border-stone-200/70 p-4 dark:border-stone-800/70 xl:block">
-        <StatsPanel stats={stats} />
-      </div>
-    </div>
+    </ImageAllowlist.Provider>
   );
 }

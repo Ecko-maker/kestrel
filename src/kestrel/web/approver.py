@@ -13,7 +13,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
 
-from kestrel.approval import Decision
+from kestrel.approval import Decision, Notice
 
 APPROVAL_TIMEOUT = 300.0  # 5 minutes
 
@@ -46,7 +46,9 @@ class WebApprover:
         self._lock = threading.Lock()
         self._closed = False
 
-    def review(self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False) -> Decision:
+    def review(
+        self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False, notice: Notice | None = None
+    ) -> Decision:
         approval_id = uuid.uuid4().hex[:12]
         answer: Future = Future()
         with self._lock:
@@ -64,6 +66,7 @@ class WebApprover:
             editable_field=editable_field(args),
             allow_session=allow_session,
             timeout_s=self.timeout,
+            notice=notice.as_dict() if notice else None,  # why the card appeared (tiers v2)
         )
         try:
             response = answer.result(self.timeout)

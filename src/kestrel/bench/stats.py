@@ -171,6 +171,31 @@ class Comparison:
         return None if self.diff is None else self.diff.low > -margin
 
 
+def merge_references(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    """Two reference runs of the same agent as one results file, the second's runs numbered as later
+    repeats: per_task_pass then gives each task the mean of its graded runs in both files (rule C,
+    docs/tiers-v2-design.md section 5; the same as scripts/main_suite_power.py assumes). Refuses two files
+    that can't be repeats of one reference: another split, suite version or judge."""
+    m1, m2 = first.get("meta", {}), second.get("meta", {})
+    for what, v1, v2 in (
+        ("split", m1.get("split") or "main", m2.get("split") or "main"),
+        ("suite version", m1.get("suite_version"), m2.get("suite_version")),
+        ("judge", judge_label(m1), judge_label(m2)),
+    ):
+        if v1 != v2:
+            raise ValueError(f"the two references differ in {what} ({v1} vs {v2}): they aren't repeats of one run")
+    if (m1.get("split") or "main") != "main":
+        raise ValueError("two references are for the main split only")
+    a1, a2 = (m1.get("agent") or {}).get("sha"), (m2.get("agent") or {}).get("sha")
+    if a1 and a2 and a1 != a2:
+        raise ValueError(f"the two references are different agents ({a1} vs {a2})")
+    offset = max((r.get("repeat") or 1 for r in first["tasks"]), default=0)
+    tasks = [dict(r, repeat=r.get("repeat") or 1) for r in first["tasks"]]
+    tasks += [dict(r, repeat=(r.get("repeat") or 1) + offset) for r in second["tasks"]]
+    meta = dict(m1, agent=(m1.get("agent") if a1 and a1 == a2 else None), references=2)
+    return {"meta": meta, "tasks": tasks}
+
+
 def compare(a: dict[str, Any], b: dict[str, Any], **kw: Any) -> Comparison:
     """Compare two results files (as loaded JSON) on the tasks graded in both."""
     warnings = []

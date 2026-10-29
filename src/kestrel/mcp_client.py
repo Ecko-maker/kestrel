@@ -1,21 +1,27 @@
 """MCP client: use tools from any MCP server as if they were Kestrel's own.
 
 Servers are listed in kestrel.mcp.json in the same "mcpServers" format Claude Desktop
-and Claude Code use, plus Kestrel's own "safe_tools" allowlist:
+and Claude Code use, plus Kestrel's own fields that say what a tool can do:
 
     {
       "mcpServers": {"fetch": {"command": "uvx", "args": ["mcp-server-fetch"]}},
-      "safe_tools": ["fetch__fetch"]
+      "safe_tools": ["fetch__fetch"],
+      "capabilities": {"time__get_current_time": []}
     }
+
+"capabilities" names a tool's capabilities (permissions.CAPABILITIES); "safe_tools" is an alias
+for ["network_egress"]. A tool named in neither can do anything.
 
 The SDK is async; the rest of Kestrel is not (yet). So MCPManager runs one asyncio
 event loop on a background thread, keeps every server connection open there, and
 offers a plain blocking call() that tools can use. When the web console needs async
 the Agent can move onto that loop, and nothing here has to change.
 
-Security: an external tool is "confirm" unless its name is in safe_tools. What the
-server says about itself (annotations like readOnlyHint) is shown in the approval
-preview but never lowers the tier, and every result is treated as untrusted data.
+Security: an external tool has every capability, so it needs approval, unless the config
+narrows it. The config can only narrow: a tool can't get more than everything, and the
+config can't touch built-in tools. What the server says about itself (annotations like
+readOnlyHint) is shown in the approval preview but never lowers anything, and every result
+is treated as untrusted data.
 """
 
 import asyncio
@@ -33,6 +39,7 @@ from typing import Any
 from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from kestrel.permissions import NETWORK_ONLY, check_capabilities
 from kestrel.tools import ExternalToolError, Tool, ToolRegistry
 
 CONFIG_FILE = Path("kestrel.mcp.json")
@@ -60,6 +67,11 @@ class ServerConfig:
 class MCPConfig:
     servers: list[ServerConfig]
     safe_tools: set[str]
+    capabilities: dict[str, frozenset[str]] = field(default_factory=dict)  # tool -> what it can do
+
+    def declared(self) -> dict[str, frozenset[str]]:
+        """Every tool the config narrows, with its capabilities (safe_tools = network_egress only)."""
+        return {**{name: NETWORK_ONLY for name in self.safe_tools}, **self.capabilities}
 
 
 def _expand(value: str) -> str:
@@ -91,7 +103,21 @@ def load_config(path: str | Path = CONFIG_FILE) -> MCPConfig | None:
                 cwd=spec.get("cwd"),
             )
         )
-    return MCPConfig(servers, set(data.get("safe_tools") or []))
+    safe_tools = set(data.get("safe_tools") or [])
+    raw = data.get("capabilities") or {}
+    if not isinstance(raw, dict):
+        raise ValueError(f'{path}: "capabilities" must map tool names to lists of capabilities')
+    capabilities = {}
+    for name, caps in raw.items():
+        if not isinstance(caps, list):
+            raise ValueError(f'{path}: capabilities of "{name}" must be a list')
+        try:
+            capabilities[name] = check_capabilities(caps)
+        except ValueError as e:
+            raise ValueError(f'{path}: tool "{name}": {e}') from None
+    if both := sorted(safe_tools & set(capabilities)):
+        raise ValueError(f"{path}: {both} in both safe_tools and capabilities; name each tool once")
+    return MCPConfig(servers, safe_tools, capabilities)
 
 
 def tool_name(server: str, tool: str) -> str:
@@ -267,8 +293,15 @@ class MCPManager:
             raise ConnectionError(f"MCP server '{server}' stopped working: {conn.error}") from None
         return format_result(result)
 
-    def register_tools(self, registry: ToolRegistry, safe_tools: frozenset[str] | set[str] = frozenset()) -> list[Tool]:
-        """Add every connected server's tools to the registry as "<server>__<tool>"."""
+    def register_tools(
+        self,
+        registry: ToolRegistry,
+        safe_tools: frozenset[str] | set[str] = frozenset(),
+        capabilities: dict[str, frozenset[str]] | None = None,
+    ) -> list[Tool]:
+        """Add every connected server's tools to the registry as "<server>__<tool>". A tool can do
+        anything unless `capabilities` (or `safe_tools`, = network_egress only) says less."""
+        declared = {**{name: NETWORK_ONLY for name in safe_tools}, **(capabilities or {})}
         added = []
         for conn in self.connections.values():
             if not conn.alive:
@@ -288,7 +321,7 @@ class MCPManager:
                             call,
                             f"[MCP server '{conn.name}'] {description}".strip(),
                             t.input_schema or {},
-                            risk="safe" if name in safe_tools else "confirm",  # annotations never decide this
+                            capabilities=declared.get(name),  # None = all; annotations never decide this
                             server=conn.name,
                             annotations=annotations,
                             preview=external_preview(conn.name, t.name, description, annotations),

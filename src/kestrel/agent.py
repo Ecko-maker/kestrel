@@ -17,6 +17,7 @@ from typing import Literal, Protocol
 
 from kestrel.approval import ApprovalGate
 from kestrel.llm import LLMError
+from kestrel.permissions import Session
 from kestrel.tools import Tool, ToolCallError, ToolRegistry
 from kestrel.tools import registry as default_registry
 from kestrel.tracing import Span, Tracer
@@ -97,6 +98,7 @@ class Agent:
         self.gate = gate or ApprovalGate()  # default approver rejects every risky call
         self.tracer = tracer or Tracer(db_path=None)  # default: measure, but don't save
         self.messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        self.session = Session()  # what the approval rules know about this conversation (taint)
 
     def run(self, user_text: str) -> AgentResult:
         """Answer one user message, running as many tool rounds as needed (up to max_steps).
@@ -149,6 +151,7 @@ class Agent:
     def _run(self, user_text: str, root: Span) -> tuple[AgentResult, list[dict]]:
         checkpoint = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
+        self.session.note_user(user_text)
         steps, providers, tools_used = 0, [], Counter[str]()
 
         try:
@@ -288,6 +291,7 @@ class Agent:
         results: list[str] = [""] * len(calls)
         safe: list[tuple[int, Tool, dict, str, Span]] = []
         actions: list[tuple[int, Tool, dict, str, Span]] = []
+        ran: dict[int, tuple[Tool, dict, str]] = {}  # what actually ran and its own output, for the taint record
         decisions: dict[int, str] = {}  # approval outcome per call, for the event stream
 
         def result_event(i: int, result: str, ran: bool, span: Span, decision: str = "") -> None:
@@ -341,15 +345,21 @@ class Agent:
                 external=tool.external,
             )
             span.set("kestrel.tool.risk", tool.risk)
+            span.set("kestrel.tool.capabilities", sorted(tool.capabilities))
             span.set("kestrel.tool.external", tool.external)
             if tool.server:
                 span.set("kestrel.tool.server", tool.server)
 
-            if tool.risk == "safe":
-                verdict = self.gate.check(tool, args)
+            need = self.gate.requirement(tool, args, self.session)  # capabilities + the conversation so far
+            if need.level == "safe":
+                verdict = self.gate.check(tool, args, need, self.session)
             else:
                 approval = self.tracer.start_span("approval", span)
-                verdict = self.gate.check(tool, args)
+                if need.escalated_by:  # hashes and lengths only, never the matched text
+                    approval.set("kestrel.approval.escalated_by", list(need.escalated_by))
+                if need.matches:
+                    approval.set("kestrel.egress.matched_chars", sum(m.chars for m in need.matches))
+                verdict = self.gate.check(tool, args, need, self.session)
                 approval.set("kestrel.approval.decision", verdict.decision)
                 approval.set("kestrel.approval.reason", verdict.reason)
                 approval.end()
@@ -360,7 +370,7 @@ class Agent:
                 span.set("gen_ai.tool.call.result", verdict.message)
                 span.end()
                 result_event(i, results[i], False, span, verdict.decision)
-            elif tool.risk == "safe":
+            elif need.level == "safe":
                 safe.append((i, tool, verdict.args, verdict.note, span))
             else:
                 actions.append((i, tool, verdict.args, verdict.note, span))
@@ -369,7 +379,8 @@ class Agent:
         def run_one(item: tuple[int, Tool, dict, str, Span]) -> str:
             i, tool, args, note, span = item
             t0 = time.perf_counter()
-            output = self.tools.execute(tool.name, args, approved=tool.risk == "confirm")
+            output = self.tools.execute(tool.name, args, approved=i in decisions)  # the gate approved it
+            ran[i] = (tool, args, output)  # without the gate's note, so a failure still reads "Error: ..."
             span.set("kestrel.tool.exec_ms", round((time.perf_counter() - t0) * 1000, 1))
             span.set("kestrel.tool.ran", True)
             span.set("gen_ai.tool.call.result", output)
@@ -388,6 +399,10 @@ class Agent:
 
         for item in actions:
             results[item[0]] = run_one(item)
+
+        for i in sorted(ran):  # after every call of the turn: the model sees all results at once
+            tool, args, output = ran[i]
+            self.session.note_ran(tool.name, tool.capabilities, args, output)
 
         if self.on_tool_step:  # report after, in order, so parallel output isn't interleaved
             for call, result in zip(calls, results, strict=True):

@@ -11,6 +11,11 @@ For task authors. Every problem is collected (not just the first) and named as
    attack, never-falls trips no goal or guard and passes every benign task, refuse-all fails every
    benign task. A goal that never fires, or a guard that fires on the honest path, is a task bug.
 
+Warnings don't fail validation: a benign task that expects a network call (web_search, fetch__fetch,
+or one of its MCP stubs with network: true) should have an approval rule covering it. Tiers v2 gates
+those calls after a local read; without a rule the strict user would reject the user's own request
+and the benign rate would move for a reason that isn't the defense (tiers-v2 risk 1).
+
 No model is called and nothing touches the network (the stubs serve everything).
 """
 
@@ -21,8 +26,17 @@ from pathlib import Path
 
 from kestrel.bench import canaries as cn
 from kestrel.bench.guards import goal_label, make_grader
-from kestrel.bench.runner import TaskResult, run_suite
-from kestrel.bench.safety import SafetySplit, SafetyTask, _attacker_texts, _read_tree, load_safety
+from kestrel.bench.runner import ScriptedApprover, TaskResult, run_suite
+from kestrel.bench.safety import (
+    Marker,
+    SafetySplit,
+    SafetyTask,
+    _attacker_texts,
+    _read_tree,
+    fill,
+    first_canary,
+    load_safety,
+)
 from kestrel.bench.scripted import ScriptedSafetyModel
 from kestrel.bench.stubs import make_setup
 
@@ -99,10 +113,11 @@ def _run(split: SafetySplit, tasks: list[SafetyTask], model: str) -> dict[str, T
     return {r.id: r for r in results}
 
 
-def check_behavior(split: SafetySplit) -> list[str]:
+def check_behavior(split: SafetySplit, only: str | None = None) -> list[str]:
     problems = []
-    attacks = [st for st in split.tasks if st.meta.kind == "attack"]
-    benign = [st for st in split.tasks if st.meta.kind == "benign"]
+    tasks = [st for st in split.tasks if only is None or st.id == only]
+    attacks = [st for st in tasks if st.meta.kind == "attack"]
+    benign = [st for st in tasks if st.meta.kind == "benign"]
     falls = _run(split, attacks, "always-falls")
     for st in attacks:
         r = falls[st.id]
@@ -158,12 +173,51 @@ def check_recipients(split: SafetySplit) -> list[str]:
     return problems
 
 
-def validate(root: Path) -> tuple[SafetySplit, list[str]]:
-    """All problems in a safety split folder, schema first."""
+def check_network_rules(split: SafetySplit) -> list[str]:
+    """Warnings: a benign task's expected network call (web_search, fetch__fetch, a network MCP stub)
+    with no approval rule that would approve it (the expect entry's own args, as the scripted models
+    send them)."""
+    warnings = []
+    for st in split.tasks:
+        if st.meta.kind != "benign":
+            continue
+        for i, e in enumerate(st.meta.expect):
+            if e.get("tool") not in st.meta.network_tools():
+                continue
+            args = fill(e["args"], first_canary(st.meta))
+            if ScriptedApprover(st.task.approvals).review(e["tool"], args, "").status != "approved":
+                warnings.append(
+                    f"{_where(st)}: approvals: expect {i + 1} ({e['tool']}) has no approval rule covering it; "
+                    "tiers v2 gates it after a local read"
+                )
+    return warnings
+
+
+def validate(root: Path, only: str | None = None) -> tuple[SafetySplit, list[str]]:
+    """All problems in a safety split folder, schema first. With `only` (a task id), the scripted-model
+    behavior checks run for that task alone; the cheap whole-split checks still run for every task,
+    since a canary clash involves two tasks."""
     problems: list[str] = []
     split = load_safety(root, problems)
     problems += check_canaries(split)
     problems += check_recipients(split)
     problems += check_git_visibility(root)
-    problems += check_behavior(split)
+    problems += check_behavior(split, only)
     return split, problems
+
+
+def concerns(problem: str, task_id: str) -> bool:
+    """Whether a problem line names this task (`file:task-id: ...`, or another task's line that says
+    its canary also appears in this one). Ids contain hyphens, so `owner-1` never matches `owner-10`."""
+    return re.search(rf"(?<![\w-]){re.escape(task_id)}(?![\w-])", problem) is not None
+
+
+def markers_of(split: SafetySplit, markers: list[Marker], task_id: str) -> list[Marker]:
+    """The unfilled markers in one task: in its own fields, or in a page file it serves."""
+    pages = set(split.by_id[task_id].meta.pages.values())
+    return [
+        mk
+        for mk in markers
+        if mk.where.endswith(f":{task_id}")
+        or (":" not in mk.where and (split.root / mk.where).read_text(encoding="utf-8", errors="replace") in pages)
+    ]

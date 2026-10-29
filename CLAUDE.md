@@ -53,7 +53,7 @@ A voice-first personal AI agent, built step by step as a flagship portfolio proj
 
 - Windows laptop, VS Code, PowerShell, `uv`, Git + GitHub (`origin` = github.com/Ecko-maker/kestrel, branches `dev` and `main`).
 - Development happens here: one VS Code window on this folder, one Claude tab at a time. `.env` is present in this folder. Which branch holds which work: docs/STATUS.md.
-- Measurements (any `kestrel bench run` on a real provider, i.e. every Groq run) happen only in `..\kestrel-runs`, never from VS Code: a standalone PowerShell window there, started from the Start menu, so closing VS Code or a Claude tab can't stop it. `..\kestrel-runs` is the only git worktree, detached at a tag or commit, with its own `.venv`, created or moved by `.\scripts\runs_folder.ps1 <tag-or-commit>` (on `phase3/tiers-v2`, not merged). The script never creates, copies or reads `.env`; the owner copies it in by hand (check only that it exists). Never edit files in the runs folder: move it to a new commit instead. Long runs use `--wait-for-quota`. While a run is live, keep that PowerShell window open (closing it stops the run) and the laptop on mains power and awake (runs pause in Modern Standby).
+- Measurements (any `kestrel bench run` on a real provider, i.e. every Groq run) happen only in `..\kestrel-runs`, never from VS Code: a standalone PowerShell window there, started from the Start menu, so closing VS Code or a Claude tab can't stop it. `..\kestrel-runs` is the only git worktree, detached at a tag or commit, with its own `.venv`, created or moved by `.\scripts\runs_folder.ps1 <tag-or-commit>`. The script never creates, copies or reads `.env`; the owner copies it in by hand (check only that it exists). Never edit files in the runs folder: move it to a new commit instead. Long runs use `--wait-for-quota`. While a run is live, keep that PowerShell window open (closing it stops the run) and the laptop on mains power and awake (runs pause in Modern Standby).
 - Free providers: Gemini API (free tier), Groq (free tier, 1,000 requests and 200k tokens/day for gpt-oss-120b), Ollama (local).
 - Free GPUs for fine-tuning: Kaggle (~30 h/week), Google Colab.
 
@@ -81,13 +81,13 @@ Where each phase stands, the live run, branches, Groq calendar and open owner de
 
 ## Progress
 
-History, step by step (Phases 1-2 from `main`, Phases 3-5 from the branches, marked not merged): [docs/progress.md](docs/progress.md).
+History, step by step (Phases 1-2 from `main`, Phase 3 tiers v2 merged with `phase3/tiers-v2`, the rest from the branches, marked not merged): [docs/progress.md](docs/progress.md).
 
 ## Configuration (.env)
 
-Also: `KESTREL_HOST`, `KESTREL_PORT`, `KESTREL_TOKEN`, `KESTREL_ALLOWED_HOSTS` (web/Docker), `KESTREL_MCP=off`, `<PROVIDER>_BASE_URL` (e.g. `OLLAMA_BASE_URL`). Provider `demo` needs no key.
+Also: `KESTREL_HOST`, `KESTREL_PORT`, `KESTREL_TOKEN`, `KESTREL_ALLOWED_HOSTS` (web/Docker), `KESTREL_MCP=off`, `KESTREL_IMAGE_ALLOWLIST` / `KESTREL_LINKS_AUTOLOAD` / `KESTREL_IMAGE_POLICY` (answer-URL policy; the console reads the allowlist; `KESTREL_IMAGE_POLICY=allowlist` only for tiers-v2 after-runs), `<PROVIDER>_BASE_URL` (e.g. `OLLAMA_BASE_URL`). Provider `demo` needs no key.
 
-On `phase3/tiers-v2` (not merged): `KESTREL_IMAGE_ALLOWLIST` / `KESTREL_LINKS_AUTOLOAD` / `KESTREL_IMAGE_POLICY` (answer-URL policy; the console reads the allowlist; `KESTREL_IMAGE_POLICY=allowlist` only for tiers-v2 after-runs). Other branches add their own (memory: `KESTREL_MEMORY_DB`; phase4: router settings; voice: wake and talk settings); see each branch's `.env.example`.
+Other branches add their own (memory: `KESTREL_MEMORY_DB`; phase4: router settings; voice: wake and talk settings); see each branch's `.env.example`.
 
 | Variable | Purpose |
 |---|---|
@@ -123,7 +123,9 @@ kestrel/
     ├── __main__.py      # lets `python -m kestrel` run it
     ├── llm.py           # LLM (retries, fail-fast), FallbackLLM, build_llm()
     ├── tools.py         # @tool registry: schemas, risk tiers, validation, timeout, truncation + tools
-    ├── approval.py      # Approver interface, TerminalApprover, ApprovalGate + audit log
+    ├── approval.py      # Approver interface, TerminalApprover, ApprovalGate + audit log, card notices
+    ├── permissions.py   # tiers v2: capabilities, Session (taint), required_approval()
+    ├── egress.py        # tiers v2: outbound-content check
     ├── tracing.py       # Tracer/Span, SQLite storage, redaction
     ├── trace_report.py  # kestrel traces / trace / stats / export
     ├── pricing.py       # cost from prices.toml (actual vs list price)

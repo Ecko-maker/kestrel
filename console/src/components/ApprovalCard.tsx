@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Ban, Check, CircleCheck, CircleX, Pencil, ShieldAlert, Timer } from "lucide-react";
-import type { Approval } from "../useChat";
+import { Ban, Check, CircleCheck, CircleX, Pencil, ShieldAlert, Timer, TriangleAlert } from "lucide-react";
+import type { Approval, ApprovalNotice } from "../useChat";
 import { DiffView, MessagePreview, TextPreview } from "./Previews";
 import { Badge, Button, cx } from "./ui";
 
@@ -25,6 +25,47 @@ function useCountdown(approval: Approval): number {
     return () => clearInterval(id);
   }, [deadline, approval.status]);
   return Math.max(0, Math.round(left / 1000));
+}
+
+// Tiers v2: why this card appeared, with the evidence. Text only: nothing here loads anything.
+function NoticePanel({ notice }: { notice: ApprovalNotice }) {
+  return (
+    <div className="space-y-2 rounded-lg bg-amber-50/70 p-3 text-[13px] text-amber-950 ring-1 ring-amber-200 dark:bg-amber-950/20 dark:text-amber-100 dark:ring-amber-900/60">
+      {notice.reasons.map((r) => (
+        <p key={r} className="flex gap-2">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+          <span>{r}</span>
+        </p>
+      ))}
+      {notice.highlights.map((h) => (
+        <div key={`${h.source}:${h.match}`}>
+          <div className="text-xs font-medium text-amber-800 dark:text-amber-300">
+            {h.chars} characters from {h.source}, in what this call sends:
+          </div>
+          <div className="mt-0.5 break-all font-mono text-xs">
+            {h.before}
+            <mark className="rounded bg-red-200 px-0.5 text-red-950 dark:bg-red-900 dark:text-red-50">{h.match}</mark>
+            {h.after}
+          </div>
+        </div>
+      ))}
+      {notice.decoded.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-amber-800 dark:text-amber-300">Decoded, as the receiving server would read it:</div>
+          {notice.decoded.map((d) => (
+            <div key={d} className="break-all font-mono text-xs">
+              {d}
+            </div>
+          ))}
+        </div>
+      )}
+      {notice.recipient_warnings.map((w) => (
+        <p key={w} className="font-semibold text-red-700 dark:text-red-300">
+          {w}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 export function ApprovalCard({ approval, onRespond }: { approval: Approval; onRespond: Respond }) {
@@ -73,6 +114,7 @@ export function ApprovalCard({ approval, onRespond }: { approval: Approval; onRe
       </div>
 
       <div className="space-y-3 p-4">
+        {approval.notice && <NoticePanel notice={approval.notice} />}
         {mode === "edit" && field ? (
           <div>
             <label className="mb-1.5 block text-xs font-medium text-stone-500">

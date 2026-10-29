@@ -18,7 +18,9 @@ from kestrel.agent import MAX_CONTEXT_TOKENS, SYSTEM_PROMPT, Agent
 from kestrel.approval import ApprovalGate, Decision
 from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
+from kestrel.bench.quota import QuotaWait
 from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
+from kestrel.permissions import RULES_VERSION
 from kestrel.tools import ToolRegistry
 from kestrel.tracing import Tracer
 
@@ -36,7 +38,9 @@ class ScriptedApprover:
         self.used: dict[int, int] = {}
         self.requests: list[dict] = []
 
-    def review(self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False) -> Decision:
+    def review(
+        self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False, notice: Any = None
+    ) -> Decision:
         self.requests.append({"type": "approval_required", "tool": tool_name, "args": dict(args)})
         for i, rule in enumerate(self.rules):
             if rule.tool != tool_name:
@@ -75,6 +79,9 @@ class TaskResult:
     task_sha: str = ""  # version of the task definition + fixture workspace, so runs are only compared like for like
     safety: dict | None = None  # safety split only: attack success at model and system level, or the benign outcome
     user: str | None = None  # safety split only: the scripted user (strict / rubber-stamp)
+    # The gate's audit entries for this run (tool, decision, escalated_by): kept because the task's
+    # workspace, audit log included, is deleted afterwards. Hashes and lengths only, no arguments.
+    approvals: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -96,6 +103,16 @@ def _prepare_workspace(task: Task, base: Path) -> tuple[Path, dict[str, str]]:
         if p.is_file()
     }
     return root, originals
+
+
+def _audit(path: Path) -> list[dict]:
+    """The run's audit log, without arguments: what was asked, what the user decided, and why a
+    card appeared (tiers v2 `escalated_by`)."""
+    if not path.is_file():
+        return []
+    entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    keep = ("tool", "decision", "escalated_by", "session")
+    return [{k: e[k] for k in keep if k in e} for e in entries]
 
 
 def _tool_log(events: list[dict]) -> list[str]:
@@ -181,6 +198,7 @@ def run_task(
         repeat=repeat,
         tool_log=_tool_log(events),
         task_sha=task_sha(task, base_workspace),
+        approvals=_audit(workspace.parent / "approvals.jsonl"),
     )
     if any(r.stop_reason == "error" for r in results):  # the model couldn't be reached: not the agent's fault
         result.status, result.error = "error", next(r.text for r in results if r.stop_reason == "error")
@@ -225,12 +243,16 @@ def run_task(
 def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None = None) -> dict[str, Any]:
     """Everything that shapes the agent's behavior in a benchmark run, so two runs can be checked for
     being the same agent before their difference is called run-to-run variance. The system prompt
-    and tool list are hashed (the tools' names, descriptions, parameters and risk tiers). The bench
+    and tool list are hashed (the tools' names, descriptions, parameters, risk tiers and capabilities). The bench
     never starts MCP servers, so the tool list is the built-in one, or the safety split's (built-in
     plus stubbed network and MCP tools). No temperature or seed is sent, so the provider's default
-    sampling applies."""
+    sampling applies. The approval rules' version is included too: the same tools and prompt with
+    different rules (e.g. what starts the taint) are a different agent."""
     tool_list = sorted(
-        ({"schema": t.schema, "risk": t.risk} for t in (registry or tools.registry).tools.values()),
+        (
+            {"schema": t.schema, "risk": t.risk, "capabilities": sorted(t.capabilities)}
+            for t in (registry or tools.registry).tools.values()
+        ),
         key=lambda t: json.dumps(t, sort_keys=True),
     )
     parts: dict[str, Any] = {
@@ -244,6 +266,7 @@ def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None =
         "tool_result_chars": tools.MAX_RESULT_CHARS,
         "request_timeout_s": float(os.getenv("KESTREL_REQUEST_TIMEOUT", llm_module.REQUEST_TIMEOUT)),
         "sampling": "provider default (no temperature or seed sent)",
+        "approval_rules": RULES_VERSION,
     }
     parts["sha"] = hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     return parts
@@ -268,13 +291,17 @@ def run_suite(
     stop_after_errors: int | None = None,
     setup: Setup | None = None,
     grader: Grader | None = None,
+    quota: QuotaWait | None = None,
 ) -> list[TaskResult]:
     """Run tasks in order (repeats[i] is task i's repeat number). The rest are marked "skipped", to
     resume later, once either:
     - token_budget: the agent + judge tokens spent (excluding cached input, which Groq doesn't
       rate-limit) reach it, since free tiers cap tokens per day;
     - stop_after_errors: that many tasks in a row errored, which almost always means the provider's
-      rate limit or an outage; carrying on would only turn the rest into errors too."""
+      rate limit or an outage; carrying on would only turn the rest into errors too.
+    quota (wait-for-quota mode): a run that errored on a provider's daily limit is dropped, not
+    counted toward stop_after_errors; the runner waits until the limit should free, then runs the same
+    (task, repeat) again. Its tokens still count toward token_budget: they were spent."""
     results: list[TaskResult] = []
     spent = 0
     errors_in_a_row = 0
@@ -292,8 +319,15 @@ def run_suite(
         else:
             if i and pause:
                 time.sleep(pause)  # spreads requests out under free-tier per-minute limits
-            result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
-            spent += billable_tokens(result)
+            while True:
+                result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
+                spent += billable_tokens(result)
+                wait = quota.wait_for(result.error) if quota and result.status == "error" else None
+                if quota is None or wait is None:
+                    break
+                if quota.checkpoint:
+                    quota.checkpoint(results)  # resumable if the process dies while it sleeps
+                quota.wait(wait, len(results), task.id, repeat)
             errors_in_a_row = errors_in_a_row + 1 if result.status == "error" else 0
         results.append(result)
         if on_result:

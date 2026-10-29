@@ -31,7 +31,7 @@ class DemoPolicy:
         self.sam_drafts = 0
         self.log = []
 
-    def review(self, tool_name, args, preview, *, allow_session=False):
+    def review(self, tool_name, args, preview, *, allow_session=False, notice=None):
         if tool_name == "create_note":
             d = Decision("approved")
         elif tool_name == "send_message" and args.get("to", "").strip().lower() == "sam@example.com":

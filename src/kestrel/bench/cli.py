@@ -2,7 +2,9 @@
 
 import argparse
 import fnmatch
+import functools
 import json
+import os
 import subprocess
 import sys
 import time
@@ -11,10 +13,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from kestrel.answer_policy import AnswerPolicy
 from kestrel.bench import calibrate as cal
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
+from kestrel.bench.preview import preview
+from kestrel.bench.quota import QuotaWait
 from kestrel.bench.report import markdown, pct, summarize, write_results
 from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.safety import (
@@ -22,6 +27,7 @@ from kestrel.bench.safety import (
     SAFETY_VERSION,
     SafetyMeta,
     SafetySplit,
+    compare_safety,
     find_markers,
     load_safety,
     score,
@@ -29,10 +35,10 @@ from kestrel.bench.safety import (
 )
 from kestrel.bench.safety_report import markdown_safety
 from kestrel.bench.scripted import MODELS, ScriptedSafetyModel
-from kestrel.bench.stats import SEED, compare, judge_label, stratified_sample
+from kestrel.bench.stats import SEED, compare, judge_label, merge_references, stratified_sample
 from kestrel.bench.stubs import USERS, build_registry, make_setup
 from kestrel.bench.tasks import SUITE_VERSION, Task, TaskError, load_tasks, select, task_sha
-from kestrel.bench.validate import validate
+from kestrel.bench.validate import check_network_rules, concerns, markers_of, validate
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
 from kestrel.tracing import Tracer
 
@@ -43,9 +49,15 @@ BENCH_DB = Path("logs") / "bench.db"  # kept apart from your personal traces and
 TOKENS_PER_TASK_ESTIMATE = 3_300  # raw agent tokens per task (the full-suite mean was 3,103)
 JUDGE_TOKENS_ESTIMATE = 500  # raw judge tokens per rubric task (measured 489)
 JUDGE_OUTPUT_ESTIMATE = 150  # judge output tokens per call, including gpt-oss reasoning (measured ~90-200)
-BILLABLE_SHARE = 0.32  # uncached share of raw agent + judge tokens (Groq caches the repeated prompt)
+# Uncached share of raw agent + judge tokens. Measured: 0.69 (run 2, 100 tasks), 0.64 (its 16 CI tasks),
+# 0.75 (CI run 37504156469). The highest is used so estimates err high. It was 0.32, which made the
+# CI subset cost 1.6x and the full suite 2.1x the estimate.
+BILLABLE_SHARE = 0.75
+# Measured per-task tokens for the main split (frozen at v1.1), used when no other reference is given.
+PINNED_REFERENCE = RESULTS_DIR.parent / "baselines" / "run2-v1.1-judge-v2-final.json"
 GROQ_FREE_DAILY = {"tokens": 200_000, "requests": 1_000}  # gpt-oss-120b free tier, cached tokens excluded
 DONE = ("pass", "fail", "excluded")  # results a resumed run keeps
+WAITING = "not run yet: waiting for the daily limit (checkpoint; --resume continues)"
 SPLITS = ("main", "safety")
 REUSABLE = ("pass", "fail")
 
@@ -84,6 +96,13 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         help="safety split: who answers approvals. strict = the task's rules, rejects the rest (default; the "
         "Phase 3 gate); rubber-stamp = approves everything (approval fatigue); both = every task under each",
     )
+    run.add_argument(
+        "--kinds",
+        choices=["all", "attack", "benign"],
+        default="all",
+        help="safety split: run only attacks (policy probes included) or only benign tasks, e.g. the "
+        "rubber-stamp user on attacks only (default all)",
+    )
     run.add_argument("--provider", default="groq", help="model under test (default groq)")
     run.add_argument("--model", help="override the provider's default model")
     run.add_argument("--judge", default="groq", help="judge provider, or 'none' to skip rubric grading")
@@ -108,6 +127,12 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         help="skip the rest after this many errors in a row, e.g. a daily rate limit (default 3, 0 = never)",
     )
     run.add_argument(
+        "--wait-for-quota",
+        action="store_true",
+        help="when the provider's daily limit is hit, wait until it frees (Retry-After, else every 15 min) and "
+        "go on from the same task and repeat, instead of erroring; per-minute limits behave as before",
+    )
+    run.add_argument(
         "--resume", type=Path, help="continue an earlier results file: keep its pass/fail/excluded runs, run the rest"
     )
     run.add_argument("--shard", help="run every n-th task, e.g. 1/2 and 2/2 on different days")
@@ -116,7 +141,8 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         "--estimate-from",
         type=Path,
         action="append",
-        help="results file(s) with measured tokens per task for the estimate (repeatable; default: --reuse/--resume)",
+        help="results file(s) with measured tokens per task for the estimate (repeatable; default: --reuse/"
+        "--resume, else the pinned run 2 for the main split on its model)",
     )
 
     label = actions.add_parser("label", help="label stored answers pass/fail yourself, to calibrate the judge")
@@ -146,12 +172,28 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     comp.add_argument("a", type=Path, help="baseline results (e.g. the frontier model)")
     comp.add_argument("b", type=Path, help="results to compare against it (e.g. the small model)")
     comp.add_argument("--margin", type=float, default=0.05, help="non-inferiority margin, absolute (default 0.05)")
+    comp.add_argument(
+        "--second-reference",
+        type=Path,
+        metavar="A2",
+        help="a second run of the reference agent: A and A2 count as per-task repeats (main split; rule C)",
+    )
 
     val = actions.add_parser(
         "validate", help="check task files before running them (schema, canaries, fixtures, checks)"
     )
     val.add_argument("--split", choices=SPLITS, default="safety")
     val.add_argument("--split-dir", type=Path, help="safety split folder (default evals/kestrelbench/safety)")
+    val.add_argument(
+        "--task", help="safety split: check one task (its problems and markers; behavior runs for it alone)"
+    )
+
+    show = actions.add_parser(
+        "show", help="safety split: print what the model would see in one task, and how it is graded (offline)"
+    )
+    show.add_argument("task_id")
+    show.add_argument("--split", choices=["safety"], default="safety")
+    show.add_argument("--split-dir", type=Path, help="safety split folder (default evals/kestrelbench/safety)")
 
     unlock_cmd = actions.add_parser("unlock", help="remove a stale lock left by a crashed run (checks its PID is gone)")
     unlock_cmd.add_argument("results", type=Path)
@@ -212,13 +254,17 @@ def _refuse_incomplete(args: argparse.Namespace) -> None:
     """A real model never runs on skeletons: unfilled markers would be graded as if they were attacks."""
     if args.split == "safety" and not args.scripted and (todo := find_markers(args.split_dir or SAFETY_DIR)):
         sys.exit(
-            f"The safety split has {len(todo)} unfilled {{{{INJECTION}}}} marker(s), e.g. {todo[0].where}. "
+            f"The safety split has {len(todo)} unfilled {{{{INJECTION}}}} marker(s) or leftover scaffolding, "
+            f"e.g. {todo[0].where}. "
             "Run `kestrel bench validate --split safety` for the list; scripted models (--scripted) still run."
         )
 
 
 def _pick_tasks(args: argparse.Namespace) -> list[Task]:
-    pool = [st.task for st in _safety(args).tasks] if args.split == "safety" else load_tasks()
+    if args.split == "safety":
+        pool = [st.task for st in _safety(args).tasks if args.kinds in ("all", st.meta.kind)]
+    else:
+        pool = load_tasks()
     tasks = select(pool, args.subset, args.category, args.task, skip_tags=("network",) if args.skip_network else ())
     if args.tasks:
         patterns = [p.strip() for p in args.tasks.split(",") if p.strip()]
@@ -257,22 +303,34 @@ def _reusable(path: Path, provider: str, model: str, judge: str | None, tasks: l
     return usable
 
 
+def _default_reference(split: str, provider: str, model: str) -> list[Path]:
+    """The pinned run's measured tokens, for a main-split estimate on the same provider and model."""
+    if split != "main" or not PINNED_REFERENCE.is_file():
+        return []
+    meta = _load(PINNED_REFERENCE)["meta"]
+    return [PINNED_REFERENCE] if (meta.get("provider"), meta.get("model")) == (provider, model) else []
+
+
 def _estimate(jobs: list[tuple[Task, int]], refs: list[Path]) -> dict[str, int]:
     """Expected raw tokens, billable (uncached) tokens and requests for these jobs, from measured
     per-task numbers where a reference file has them, else from the averages above."""
-    measured: dict[str, dict[str, Any]] = {}
+    # A file that records caching (any task with cached tokens) is trusted for every task, including
+    # those with 0 cached (fully billable in that run). Files from before cache recording have 0
+    # everywhere, so only their agent tokens are used.
+    measured: dict[str, tuple[dict[str, Any], bool]] = {}
     for path in refs:
-        for d in _load(path)["tasks"]:
+        rows = _load(path)["tasks"]
+        recorded = any(d.get("cached_tokens", 0) > 0 for d in rows)
+        for d in rows:
             if d["status"] in REUSABLE and d["tokens"]:
                 best = measured.get(d["id"])
-                has_cache = d.get("cached_tokens", 0) > 0
-                if best is None or (has_cache and not best.get("cached_tokens", 0)):
-                    measured[d["id"]] = d
+                if best is None or (recorded and not best[1]):
+                    measured[d["id"]] = (d, recorded)
     raw = billable = requests = 0
     for task, _ in jobs:
-        d = measured.get(task.id)
+        d, recorded = measured.get(task.id, (None, False))
         judge_raw = JUDGE_TOKENS_ESTIMATE if task.rubric else 0
-        if d and d.get("cached_tokens", 0) > 0:  # fully recorded: agent + judge + cache
+        if d and recorded:  # fully recorded: agent + judge + cache
             raw += d["tokens"] + d.get("judge_tokens", 0)
             billable += billable_tokens(TaskResult(**d))
         else:
@@ -287,8 +345,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Lock the output (and resumed) results file for the whole run, so a second process can't
     run the same benchmark at the same time. A dry run makes no calls and takes no lock."""
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    if args.split == "main" and (args.scripted or args.split_dir or args.user != "strict"):
-        sys.exit("--scripted, --split-dir and --user apply to --split safety only.")
+    if args.split == "main" and (args.scripted or args.split_dir or args.user != "strict" or args.kinds != "all"):
+        sys.exit("--scripted, --split-dir, --user and --kinds apply to --split safety only.")
     if args.split == "safety":
         args.judge = "none"  # graded by deterministic guards only
         if args.reuse:
@@ -320,6 +378,11 @@ def _run(args: argparse.Namespace) -> int:
     judge_model = (args.judge_model or PROVIDERS[args.judge].default_model) if args.judge != "none" else None
     judge_name = f"{args.judge}/{judge_model}" if judge_model else None
 
+    safety = args.split == "safety"
+    registry = build_registry(SafetyMeta(), []) if safety else None  # safety: the common tools, without MCP stubs
+    # the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default), for the resume check
+    resolved = args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
+    agent = agent_fingerprint(args.provider, resolved, registry)
     previous: dict[tuple[str, int, str | None], TaskResult] = {}  # (task, repeat, user)
     if args.resume:
         old = _load(args.resume)
@@ -328,6 +391,15 @@ def _run(args: argparse.Namespace) -> int:
             sys.exit(f"{args.resume.name} is a {old_meta.get('split', 'main')} split run, not {args.split}.")
         if old_meta.get("split") == "safety" and old_meta.get("user") != args.user:  # strict / rubber-stamp / both
             sys.exit(f"{args.resume.name} was run with user {old_meta.get('user')!r}, not {args.user!r}.")
+        if old_meta.get("split") == "safety" and old_meta.get("kinds", "all") != args.kinds:
+            sys.exit(f"{args.resume.name} was run with --kinds {old_meta.get('kinds', 'all')}, not {args.kinds}.")
+        if old_meta.get("split") == "safety" and old_meta.get("answer_policy", AnswerPolicy().as_dict()) != (
+            AnswerPolicy.from_env().as_dict()
+        ):
+            sys.exit(
+                f"{args.resume.name} was graded with answer-URL policy {old_meta.get('answer_policy')}, not "
+                f"{AnswerPolicy.from_env().as_dict()} (KESTREL_IMAGE_ALLOWLIST / KESTREL_LINKS_AUTOLOAD)."
+            )
         if (old_meta.get("provider"), old_meta.get("model")) != (args.provider, model):
             sys.exit(
                 f"{args.resume.name} was run on {old_meta.get('provider')}/{old_meta.get('model')}; "
@@ -339,6 +411,18 @@ def _run(args: argparse.Namespace) -> int:
                 f"{judge_name}@{JUDGE_VERSION} and mix two judges in one score. Re-grade it first: "
                 f"uv run kestrel bench rejudge {args.resume}"
             )
+        version = SAFETY_VERSION if safety else SUITE_VERSION
+        if old_meta.get("split_version") not in (None, version):  # files from before versions were recorded pass
+            sys.exit(
+                f"{args.resume.name} was run on {args.split} split version {old_meta['split_version']}, not {version}: "
+                "resuming would mix two versions of the tasks in one score."
+            )
+        old_agent = (old_meta.get("agent") or {}).get("sha")
+        if old_agent and old_agent != agent["sha"]:  # same provider and model, so the prompt, tools or settings
+            sys.exit(
+                f"{args.resume.name} was run by agent {old_agent}, this one is {agent['sha']} (system prompt, tools "
+                "or settings changed): resuming would mix two agents in one score."
+            )
         previous = {
             (d["id"], d.get("repeat", 1), d.get("user")): TaskResult(**d) for d in old["tasks"] if d["status"] in DONE
         }
@@ -346,12 +430,12 @@ def _run(args: argparse.Namespace) -> int:
         for r in _reusable(args.reuse, args.provider, model, judge_name, tasks):
             previous.setdefault((r.id, 1, None), r)
 
-    safety = args.split == "safety"
     users: list[str | None] = (["strict", "rubber-stamp"] if args.user == "both" else [args.user]) if safety else [None]
     # user by user, then repeat by repeat: spread over time
     all_jobs = [(t, k, u) for u in users for k in range(1, args.repeat + 1) for t in tasks]
     todo = [(t, k, u) for t, k, u in all_jobs if (t.id, k, u) not in previous]
-    est = _estimate([(t, k) for t, k, _ in todo], args.estimate_from or [p for p in (args.reuse, args.resume) if p])
+    refs = args.estimate_from or [p for p in (args.reuse, args.resume) if p]
+    est = _estimate([(t, k) for t, k, _ in todo], refs or _default_reference(args.split, args.provider, model))
     times = f"{args.repeat}" + (f" x {len(users)} users ({', '.join(str(u) for u in users)})" if safety else "")
     print(
         f"KestrelBench{' safety split' if safety else ''}: {len(tasks)} tasks x {times} = {len(all_jobs)} runs on "
@@ -394,50 +478,18 @@ def _run(args: argparse.Namespace) -> int:
         sys.exit(f"Can't start the benchmark: {e}")
 
     split = _safety(args) if safety else None
-    fresh: list[TaskResult] = []
-    tracer = Tracer(BENCH_DB)
-    for user in users:  # one pass per scripted user (main split: one pass)
-        jobs = [(t, k) for t, k, u in todo if u == user]
-        if not jobs:
-            continue
-        extra: dict[str, Any] = {}
-        if split is not None and user is not None:
-            print(f"-- user: {user}")
-            on_begin = llm.begin if isinstance(llm, ScriptedSafetyModel) else None
-            extra = {
-                "base_workspace": split.workspace,
-                "setup": make_setup(split, user, on_begin),
-                "grader": make_grader(split, user),
-            }
-        spent = sum(billable_tokens(r) for r in fresh)
-        done = run_suite(
-            [t for t, _ in jobs],
-            llm,
-            judge,
-            tracer,
-            pause=args.pause,
-            on_result=_progress,
-            expected_provider=None if args.scripted else args.provider,
-            token_budget=None if args.token_budget is None else max(0, args.token_budget - spent),
-            repeats=[k for _, k in jobs],
-            stop_after_errors=args.stop_after_errors or None,
-            **extra,
-        )
-        for r in done:
-            r.user = user  # also on errors and skips, which the grader never saw, so --resume finds them
-        fresh += done
-    by_key = {**previous, **{(r.id, r.repeat, r.user): r for r in fresh}}
-    results = [by_key[(t.id, k, u)] for t, k, u in all_jobs]
-    out = args.out
+    policy = AnswerPolicy.from_env()  # what the console loads from an answer by itself
     meta = {
         "suite_version": SUITE_VERSION,
         "split": args.split,
         "split_version": SAFETY_VERSION if safety else SUITE_VERSION,
         # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
-        "agent": agent_fingerprint(args.provider, model, build_registry(SafetyMeta(), []) if safety else None),
+        "agent": agent_fingerprint(args.provider, model, registry),  # the model actually built
         "provider": args.provider,
         "model": model,
         "user": args.user if safety else None,
+        "kinds": args.kinds if safety else None,
+        "answer_policy": policy.as_dict() if safety else None,
         "users": users if safety else None,
         "judge": judge.name if judge else None,
         "judge_version": JUDGE_VERSION if judge else None,
@@ -452,6 +504,64 @@ def _run(args: argparse.Namespace) -> int:
         "shard": args.shard,
         "git": _git_sha(),
     }
+    fresh: list[TaskResult] = []
+    out = args.out
+
+    def checkpoint(user: str | None, partial: list[TaskResult]) -> None:
+        """Write what is finished so far, the rest as skipped, so --resume can continue this file."""
+        for r in partial:
+            r.user = user
+        have = {**previous, **{(r.id, r.repeat, r.user): r for r in fresh + partial}}
+        rows = [
+            have.get((t.id, k, u))
+            or TaskResult(id=t.id, category=t.category, status="skipped", score=0.0, error=WAITING, repeat=k, user=u)
+            for t, k, u in all_jobs
+        ]
+        sections = {"safety": score_dict(score([r.to_dict() for r in rows]))} if safety else None
+        write_results(out, rows, meta, extra=sections)
+
+    tracer = Tracer(BENCH_DB)
+    for user in users:  # one pass per scripted user (main split: one pass)
+        jobs = [(t, k) for t, k, u in todo if u == user]
+        if not jobs:
+            continue
+        extra: dict[str, Any] = {}
+        if split is not None and user is not None:
+            print(f"-- user: {user}")
+            if isinstance(llm, ScriptedSafetyModel):
+                llm.reset()  # repeat numbers restart for each user
+            on_begin = llm.begin if isinstance(llm, ScriptedSafetyModel) else None
+            extra = {
+                "base_workspace": split.workspace,
+                "setup": make_setup(split, user, on_begin),
+                "grader": make_grader(split, user, policy),
+            }
+        spent = sum(billable_tokens(r) for r in fresh)
+        done = run_suite(
+            [t for t, _ in jobs],
+            llm,
+            judge,
+            tracer,
+            pause=args.pause,
+            on_result=_progress,
+            expected_provider=None if args.scripted else args.provider,
+            token_budget=None if args.token_budget is None else max(0, args.token_budget - spent),
+            repeats=[k for _, k in jobs],
+            stop_after_errors=args.stop_after_errors or None,
+            quota=QuotaWait(
+                total=len(all_jobs),
+                done_before=len(previous) + len(fresh),
+                checkpoint=functools.partial(checkpoint, user),
+            )
+            if args.wait_for_quota
+            else None,
+            **extra,
+        )
+        for r in done:
+            r.user = user  # also on errors and skips, which the grader never saw, so --resume finds them
+        fresh += done
+    by_key = {**previous, **{(r.id, r.repeat, r.user): r for r in fresh}}
+    results = [by_key[(t.id, k, u)] for t, k, u in all_jobs]
     if safety:
         scored = score([r.to_dict() for r in results])
         data = write_results(out, results, meta, extra={"safety": score_dict(scored)})
@@ -688,12 +798,24 @@ def cmd_compare(args: argparse.Namespace) -> int:
     sa, sb = a.get("meta", {}).get("split", "main"), b.get("meta", {}).get("split", "main")
     if sa != sb:
         sys.exit(f"Can't compare a {sa} split run with a {sb} split run: they contain different tasks.")
+    second = getattr(args, "second_reference", None)
+    if sa == "safety":
+        if second:
+            sys.exit("--second-reference is for the main split only.")
+        return _compare_safety(args, a, b)
+    a_name = args.a.name
+    if second:
+        try:
+            a = merge_references(a, _load(second))
+        except ValueError as e:
+            sys.exit(f"Can't use {second.name} as a second reference: {e}")
+        a_name = f"{args.a.name} + {second.name} (2 references, per-task mean of their runs)"
     c = compare(a, b)
     if c.diff is None or c.a_rate is None or c.b_rate is None:
         print("No task was graded in both files.")
         return 1
     ma, mb = a["meta"], b["meta"]
-    print(f"A  {args.a.name}: {ma.get('provider')}/{ma.get('model')}  {c.a_rate.fmt()}")
+    print(f"A  {a_name}: {ma.get('provider')}/{ma.get('model')}  {c.a_rate.fmt()}")
     print(f"B  {args.b.name}: {mb.get('provider')}/{mb.get('model')}  {c.b_rate.fmt()}")
     print(f"B - A: {c.diff.fmt(signed=True)}  (paired bootstrap over the {c.diff.n} tasks graded in both)")
     print(f"Flipped: {len(c.better_in_b)} better in B, {len(c.worse_in_b)} worse in B")
@@ -714,6 +836,44 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _compare_safety(args: argparse.Namespace, a: dict[str, Any], b: dict[str, Any]) -> int:
+    """Before (A) and after (B) a defense, attack by attack: any-repeat success at each level, flips."""
+    try:
+        c = compare_safety(a, b)
+    except ValueError as e:
+        sys.exit(f"Can't compare these safety runs: {e}.")
+    ma, mb = a["meta"], b["meta"]
+    print(f"A  {args.a.name}: {ma.get('provider')}/{ma.get('model')}, agent {(ma.get('agent') or {}).get('sha')}")
+    print(f"B  {args.b.name}: {mb.get('provider')}/{mb.get('model')}, agent {(mb.get('agent') or {}).get('sha')}")
+    print(f"Safety split {ma.get('split_version')}; attacks count as successes if any repeat succeeded.\n")
+    for level, (ra, rb) in c.rates.items():
+        stopped, started = c.flips(level)
+        print(f"{level:20} A {ra.fmt():32} B {rb.fmt()}")
+        print(f"{'':20} stopped succeeding in B: {', '.join(stopped) or 'none'}")
+        print(f"{'':20} newly succeeding in B:   {', '.join(started) or 'none'}")
+    for level in c.skipped_levels:
+        print(f"{level:20} not compared: that user did not run in both files")
+    if c.attacks:
+        hit = sorted({i for pairs in c.attacks.values() for i, (x, y) in pairs.items() if x or y})
+        if hit:
+            print("\nAttacks that succeeded in either run (A -> B):")
+            for i in hit:
+                cells = [
+                    f"{lv} {'yes' if p[0] else 'no'} -> {'yes' if p[1] else 'no'}"
+                    for lv, pairs in c.attacks.items()
+                    if (p := pairs.get(i))
+                ]
+                print(f"  {i}: " + "; ".join(cells))
+    if c.benign_rates:
+        better, worse = c.benign_flips()
+        print(f"\nBenign, passed every repeat (strict): A {c.benign_rates[0].fmt()}  B {c.benign_rates[1].fmt()}")
+        print(f"  newly passing in B: {', '.join(better) or 'none'}")
+        print(f"  newly failing in B: {', '.join(worse) or 'none'}")
+    for w in c.warnings:
+        print(f"Warning: {w}")
+    return 0
+
+
 def cmd_validate(args: argparse.Namespace) -> int:
     """For task authors: every problem, named file:task: field: message. Exit 1 if any."""
     if args.split == "main":
@@ -725,10 +885,14 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print(f"OK: {len(tasks)} main-split tasks load.")
         return 0
     root = args.split_dir or SAFETY_DIR
+    if args.task:
+        return _validate_one(root, args.task)
     print(f"Validating the safety split in {root} (scripted models only, no network)...")
     split, problems = validate(root)
     for p in problems:
         print(f"PROBLEM {p}")
+    for w in check_network_rules(split):
+        print(f"WARNING {w}")
     todo = find_markers(root)
     for mk in todo:
         print(f"TODO not yet written: {mk.where} ({mk.field})" + (f": {mk.spec}" if mk.spec else ""))
@@ -756,6 +920,44 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _validate_one(root: Path, task_id: str) -> int:
+    """validate --task: one task's problems and markers. Problems in other tasks are counted, not hidden."""
+    if task_id not in load_safety(root).by_id:
+        sys.exit(f"No safety task {task_id!r} in {root}. Run `kestrel bench validate --split safety` for the list.")
+    print(f"Validating {task_id} in {root} (scripted models only, no network)...")
+    split, problems = validate(root, only=task_id)
+    mine = [p for p in problems if concerns(p, task_id)]
+    for p in mine:
+        print(f"PROBLEM {p}")
+    for w in check_network_rules(split):
+        if concerns(w, task_id):
+            print(f"WARNING {w}")
+    todo = markers_of(split, find_markers(root), task_id)
+    for mk in todo:
+        print(f"TODO not yet written: {mk.where} ({mk.field})" + (f": {mk.spec}" if mk.spec else ""))
+    if others := len(problems) - len(mine):
+        print(f"({others} problem(s) elsewhere in the split; run without --task to see them.)")
+    if mine:
+        print(f"\n{len(mine)} problem(s) in {task_id}.")
+        return 1
+    if todo:
+        print(
+            f"\nINCOMPLETE: {task_id} has {len(todo)} injection(s) not yet written; "
+            "its checks pass on the declared goals."
+        )
+        return 1
+    print(f"OK: {task_id}.")
+    return 0
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    split = load_safety(args.split_dir or SAFETY_DIR)
+    if args.task_id not in split.by_id:
+        sys.exit(f"No safety task {args.task_id!r}. Run `kestrel bench validate --split safety` for the list.")
+    print(preview(split, args.task_id), end="")
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     path = args.results or _newest_results()
     data = _load(path)
@@ -773,5 +975,6 @@ def main(args: argparse.Namespace) -> int:
         "report": cmd_report,
         "unlock": cmd_unlock,
         "validate": cmd_validate,
+        "show": cmd_show,
     }
     return commands[args.bench_command](args)

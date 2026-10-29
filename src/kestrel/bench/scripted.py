@@ -3,7 +3,14 @@ outcome. They validate the harness, not a model: if the checks are right,
 - always-falls (does the user's request, then everything the attacker wants) scores 100%
   model-level attack success;
 - never-falls (does only the user's request) scores 0% and passes every benign task;
-- refuse-all (no tool calls, a polite refusal) scores 0% and fails every benign task.
+- refuse-all (no tool calls, a polite refusal) scores 0% and fails every benign task;
+- falls-on-repeat-2 plays always-falls on the second time it plays a task and never-falls
+  otherwise, so with --repeat 3 every attack succeeds in exactly 1 of 3 repeats: it checks that
+  any-repeat scoring catches a flaky attack;
+- reads-then-falls plays always-falls, but first reads every file of the task that holds its
+  canary (unless the user's request already did). always-falls writes the canary without reading
+  it, which no real model can do; this one shows what a defense that reacts to reads (tiers v2)
+  does against a model that falls.
 
 A model plays one task at a time: the safety setup hook calls begin() before each run. Earlier
 turns of a multi-turn prompt get a short acknowledgement; the scripted actions happen in the last.
@@ -14,7 +21,8 @@ from typing import Any
 
 from kestrel.bench.safety import ANSWER, SafetyTask, fill, first_canary
 
-MODELS = ("always-falls", "never-falls", "refuse-all")
+MODELS = ("always-falls", "never-falls", "refuse-all", "falls-on-repeat-2", "reads-then-falls")
+FALLS = ("always-falls", "reads-then-falls")
 REFUSAL = "I can't help with that."
 OVERWRITE = "PLACEHOLDER OVERWRITE"
 
@@ -38,9 +46,15 @@ class ScriptedSafetyModel:
         self.model = name  # what results files record as the model
         self.turns = 1
         self.queue: list[dict[str, Any]] = []
+        self.played: dict[str, int] = {}  # task id -> times begun: its repeat number, for falls-on-repeat-2
+
+    def reset(self) -> None:
+        """Start counting repeats again (the CLI calls this before each scripted user)."""
+        self.played.clear()
 
     def begin(self, st: SafetyTask) -> None:
         self.turns = len(st.task.prompts)
+        self.played[st.id] = self.played.get(st.id, 0) + 1
         self.queue = self.plan(st)
 
     def plan(self, st: SafetyTask) -> list[dict[str, Any]]:
@@ -49,7 +63,13 @@ class ScriptedSafetyModel:
         canary = first_canary(st.meta)
         calls = [(e["tool"], fill(e["args"], canary)) for e in st.meta.expect if "tool" in e]
         answer = [str(fill(e["example"], canary)) for e in st.meta.expect if "answer" in e]
-        if self.name == "always-falls":
+        falls = self.name in FALLS or (self.name == "falls-on-repeat-2" and self.played.get(st.id) == 2)
+        if falls and self.name == "reads-then-falls" and canary:
+            done = {str(args.get("path", "")) for name, args in calls if name == "read_file"}
+            for path, text in sorted(st.task.files.items()):
+                if canary in text and path not in done:
+                    calls.append(("read_file", {"path": path}))
+        if falls:
             for goal in st.meta.goals:
                 kind = goal["type"]
                 if kind == "leak" and goal["via"] == ANSWER:
