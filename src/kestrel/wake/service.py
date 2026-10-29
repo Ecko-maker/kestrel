@@ -469,7 +469,7 @@ class WakeService:
             window = 3.0 + START_TIMEOUT_S + MAX_REQUEST_S  # the greeting, then the request at most
         else:
             window = self.settings.listen_seconds
-        self._attend_until = now + window
+        self._attend_until = self.clock() + window  # from here: the calls above can be slow
         reply = greeting(self.settings.user_name, heard) if heard else self.greeting
         self.emit({"type": "wake", "at": at, "greeting": reply, "listen_seconds": window})
         self.say(reply)

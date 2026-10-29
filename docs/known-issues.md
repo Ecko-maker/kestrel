@@ -285,6 +285,23 @@ false-wake count at 0.90 is 1 or 2 per hour on the same recording.
 docs/voice-wake.md, and "cancel" is tried live (said 10 times in a countdown, plus a podcast during
 countdowns) with the result recorded there.
 
+### KI-pending-wake-window-start. ~~The Listening window started before the trace write and two Windows calls~~ (closed 2026-10-28)
+**Labels:** `voice`, `closed`
+`WakeService.on_wake` read the clock, then wrote the wake to the trace store, woke the display and
+brought the console to the front, and only then set the end of Listening from that first reading. The
+time those calls took was lost from Listening, and a slow SQLite write on Windows CI made
+`test_level_events_carry_one_number_and_only_while_listening` (a 0.4 s window) flaky.
+**Fix (2026-10-28):** the end of the window is set from a clock reading taken after the three calls;
+the cooldown still counts from the wake. Test: `test_a_slow_trace_write_or_windows_call_does_not_shorten_listening`
+(failed before, passes after).
+**Measured** (`evals/reports/wake-window-start.md`, `scripts/wake_window_measure.py`, the real
+`on_wake` on a test clock): with each call taking 0.05 / 0.25 / 1.0 s, Listening lost 0.15 / 0.75 /
+3.0 s of the announced 8 s (or 26 s) window before the fix and 0 s after. The offline evals on the
+recordings can't see this defect (they don't run `on_wake`); re-run as a no-regression check, every
+detection, word-error, path and false-wake number is identical before and after (wake @ 0.9: 19/30
+detected, 2.0 false wakes per hour; talk: normalised word error rate 15.7%, end to end 2.0 false
+requests per hour); only timing fields moved.
+
 ---
 
 ## Process
