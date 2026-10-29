@@ -304,6 +304,7 @@ def run_suite(
     (task, repeat) again. Its tokens still count toward token_budget: they were spent."""
     results: list[TaskResult] = []
     spent = 0
+    dropped = 0  # of spent: tokens of attempts dropped by wait-for-quota
     errors_in_a_row = 0
     for i, task in enumerate(tasks):
         repeat = repeats[i] if repeats else 1
@@ -321,13 +322,25 @@ def run_suite(
                 time.sleep(pause)  # spreads requests out under free-tier per-minute limits
             while True:
                 result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
-                spent += billable_tokens(result)
-                wait = quota.wait_for(result.error) if quota and result.status == "error" else None
+                cost = billable_tokens(result)
+                spent += cost
+                wait = quota.wait_for(result.error, cost) if quota and result.status == "error" else None
                 if quota is None or wait is None:
+                    break
+                dropped += cost
+                if token_budget is not None and spent >= token_budget:  # dropped attempts spend tokens too
+                    stop = (
+                        f"token budget reached while waiting for quota ({spent:,} of {token_budget:,}; "
+                        f"{dropped:,} spent by dropped attempts)"
+                    )
+                    quota.log(f"[quota] {stop}; stopping, the rest is marked skipped (--resume continues)")
+                    result = TaskResult(
+                        id=task.id, category=task.category, status="skipped", score=0.0, error=stop, repeat=repeat
+                    )
                     break
                 if quota.checkpoint:
                     quota.checkpoint(results)  # resumable if the process dies while it sleeps
-                quota.wait(wait, len(results), task.id, repeat)
+                quota.wait(wait, len(results), task.id, repeat, result.error, cost)
             errors_in_a_row = errors_in_a_row + 1 if result.status == "error" else 0
         results.append(result)
         if on_result:
