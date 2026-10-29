@@ -188,12 +188,24 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 **Still open:** a decision on the proposal. It is to keep 75% (derived, not just a margin) and change nothing in `ci.yml`; a later option is a rerun on failure. Also open: the subset can't see 1-2 task regressions, which is what the full suite with `kestrel bench compare` is for.
 **Done when:** the owner accepts the threshold (or picks another from the table in the report), and it is recorded in design-decisions.
 
-### 53. The `--wait-for-quota` retry loop spends quota on attempts Groq drops
-**Labels:** `evals`, `cost`, `high`
+### 53. ~~The `--wait-for-quota` retry loop spends quota on attempts Groq drops~~ (fixed in code 2026-10-28, `fix/quota-retry-spend`)
+**Labels:** `evals`, `cost`, `closed`
 When Groq's daily token limit is reached mid-task, `kestrel bench run --wait-for-quota` waits and retries. A retried attempt can spend tokens before Groq refuses it, and the loop ignores `--token-budget`. The spent tokens keep the rolling 24 h window full, so the next attempt fails too: the run livelocks while burning quota. The 10-26–27 main-suite after-run (`main-after-v21-x3.json`) spent ~225k tokens in dropped attempts before the owner stopped it at 198/300. Nothing was lost (finished runs stay in the file).
 **Workaround (until fixed):** one single `--resume` per quiet 24 h window, never a loop. The 10-28 resume finished the remaining 102 runs in one go (~176k billable, under its 180k budget).
-**Fix (planned, feature branch, after the rule C verdict):** a budget check inside the retry loop, a longer back-off after an attempt that spent tokens, and logging Groq's TPD/RPD error text.
-**Done when:** a test shows the retry loop stops at `--token-budget` and backs off after a spending attempt, and the error text reaches the run log.
+**Fix (2026-10-28, `fix/quota-retry-spend`, bench code only; agent fingerprint unchanged, `35fac5ba6277`):**
+- `run_suite` checks `--token-budget` between attempts of the same run, counting the tokens dropped attempts
+  spent, and stops with "token budget reached while waiting for quota (... spent by dropped attempts)"; the
+  rest is marked skipped, so `--resume` continues.
+- After a dropped attempt that spent tokens, the wait is at least the time a rolling daily window needs to
+  free them at the limit's rate (spent × 24 h / Limit; 4,100 tokens at 200,000/day = 29.5 min), not only the
+  429's "try again in".
+- A daily-limit `LLMError` keeps Groq's limit clause ("on tokens per day (TPD): Limit ..., Used ..., Requested
+  ...", no organization or model), and the `[quota]` line shows it, redacted, plus the attempt's spent tokens.
+**Tests** (`tests/test_quota.py`): the real Groq `LLM` class with a scripted client reproduces the 10-26/27
+livelock (first call succeeds and spends 4,100 tokens, second call 429 TPD, forever). Before the fix: 406 calls
+over the 26 h wait cap, 462 s waits, budget ignored. After: with a 20,000 budget it stops after 5 attempts
+(20,500 spent), and each wait is 1,771 s.
+**Done when:** met by the tests above. Still to see: the next live `--wait-for-quota` run's log.
 
 ## Safety split (Phase 3)
 

@@ -101,6 +101,9 @@ def _retry_after(error: Exception) -> float | None:
 # per day, RPD). Per-minute limits (TPM, RPM) free within a minute; daily ones within hours.
 _DAILY_LIMIT = re.compile(r"per day|\((?:TPD|RPD)\)", re.IGNORECASE)
 DAILY_LIMIT = "daily limit (429)"  # the reason in the LLMError text; the benchmark's wait-for-quota mode looks for it
+# Groq's own words for the daily limit it hit, without the organization or model: kept in the error
+# so the benchmark's [quota] line can show it (known issue #53).
+_LIMIT_TEXT = re.compile(r"on (?:tokens|requests) per day \((?:TPD|RPD)\): Limit \d+, Used \d+, Requested \d+")
 
 
 def _error_text(error: Exception) -> str:
@@ -202,19 +205,22 @@ class LLM:
                     openai.APIConnectionError: "unreachable",
                 }.get(type(e), f"server error ({getattr(e, 'status_code', '5xx')})")
                 wait = _retry_after(e)
+                detail = ""
                 if isinstance(e, openai.RateLimitError) and _DAILY_LIMIT.search(_error_text(e)):
                     reason = DAILY_LIMIT  # same handling; only the label (and a wait from the text) differ
                     wait = wait if wait is not None else _try_again_in(e)
+                    limit = _LIMIT_TEXT.search(_error_text(e))
+                    detail = f"; {limit.group(0)}" if limit else ""
                 if wait is not None:
                     # The server told us how long to wait (e.g. Groq's tokens-per-minute limit):
                     # follow it, within a total budget; a long wait means hand over to the fallback.
                     if wait > self.max_retry_wait or waited + wait > self.max_retry_wait * RATE_LIMIT_BUDGET:
-                        raise LLMError(name, f"{reason}, server asks to wait {wait:.0f}s") from e
+                        raise LLMError(name, f"{reason}, server asks to wait {wait:.0f}s{detail}") from e
                     if attempt == MAX_GUIDED_TRIES:
-                        raise LLMError(name, f"{reason}, gave up after {attempt} tries") from e
+                        raise LLMError(name, f"{reason}, gave up after {attempt} tries{detail}") from e
                 else:
                     if attempt >= MAX_TRIES:  # we'd only be guessing: give up after a few tries
-                        raise LLMError(name, f"{reason}, gave up after {attempt} tries") from e
+                        raise LLMError(name, f"{reason}, gave up after {attempt} tries{detail}") from e
                     wait = 2 ** (attempt - 1) + random.uniform(0, 0.5)  # 1s, 2s, plus jitter
                 waited += wait
                 if self.on_retry:

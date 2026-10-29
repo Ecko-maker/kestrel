@@ -63,7 +63,8 @@ def test_a_daily_limit_is_labelled_and_carries_the_servers_wait(limit):
     llm, waits = fake_llm([groq_429(limit, {"retry-after": "3600"})])
     with pytest.raises(LLMError) as e:
         llm.chat([])
-    assert str(e.value) == f"groq: {DAILY_LIMIT}, server asks to wait 3600s" and waits == []
+    detail = f"on {limit}: Limit 200000, Used 199800, Requested 2400"  # Groq's words, kept for the [quota] line
+    assert str(e.value) == f"groq: {DAILY_LIMIT}, server asks to wait 3600s; {detail}" and waits == []
 
 
 def test_without_a_header_the_wait_comes_from_try_again_in():
@@ -164,6 +165,77 @@ def test_waiting_stops_at_the_cap_and_the_error_is_recorded(base):
 def test_without_the_flag_a_daily_limit_is_an_error_as_before(base):
     results = run_suite(tasks(4), DailyLimited({2, 3, 4, 5}), base_workspace=base, stop_after_errors=3)
     assert [r.status for r in results] == ["pass", "error", "error", "error"]
+
+
+# --- the 10-26/27 livelock (known issue #53) ------------------------------------------------------
+
+SPENT = 4_000 + 100  # billable tokens of the call that succeeds before each 429
+
+
+def livelocked_groq() -> tuple[LLM, list[int]]:
+    """The real Groq LLM class with a scripted client, as on 10-26/27: every attempt's first call
+    succeeds (a tool call, 4,100 tokens spent), its second gets a 429 tokens-per-day. Forever."""
+    llm = LLM("groq")
+    calls = [0]
+
+    def create(**kwargs):
+        calls[0] += 1
+        if calls[0] % 2 == 0:
+            raise groq_429("tokens per day (TPD)", try_again="7m12s")
+        call = SimpleNamespace(
+            model_dump=lambda **kw: {
+                "id": f"c{calls[0]}",
+                "type": "function",
+                "function": {"name": "get_current_time", "arguments": '{"timezone": "UTC"}'},
+            }
+        )
+        message = SimpleNamespace(content=None, tool_calls=[call])
+        usage = SimpleNamespace(prompt_tokens=4_000, completion_tokens=100, prompt_tokens_details=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="tool_calls")], usage=usage)
+
+    llm.client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    llm.sleep = lambda seconds: None
+    llm._streaming_ok = False  # one non-streamed reply per call, as if the provider refused streaming
+    return llm, calls
+
+
+def test_the_retry_loop_stops_at_the_token_budget_counting_dropped_attempts(base):
+    lines: list[str] = []
+    slept: list[float] = []
+    quota = QuotaWait(total=2, log=lines.append, sleep=slept.append, now=clock())
+    llm, calls = livelocked_groq()
+    results = run_suite(tasks(2), llm, base_workspace=base, token_budget=20_000, quota=quota)
+    # 5 dropped attempts spend 20,500 >= 20,000: stop there, not after 26 h of waits (~200 attempts)
+    assert calls[0] == 10 and len(slept) == 4
+    assert [r.status for r in results] == ["skipped", "skipped"]
+    assert results[0].error == (
+        "token budget reached while waiting for quota (20,500 of 20,000; 20,500 spent by dropped attempts)"
+    )
+    assert lines[-1] == (
+        "[quota] token budget reached while waiting for quota (20,500 of 20,000; 20,500 spent by dropped "
+        "attempts); stopping, the rest is marked skipped (--resume continues)"
+    )
+
+
+def test_after_a_dropped_attempt_that_spent_tokens_the_wait_covers_freeing_them(base):
+    slept: list[float] = []
+    quota = QuotaWait(total=1, log=lambda line: None, sleep=slept.append, now=clock())
+    llm, _ = livelocked_groq()
+    run_suite(tasks(1), llm, base_workspace=base, token_budget=10_000, quota=quota)
+    # Groq's hint is 7m12s (+30 s margin = 462 s); 4,100 tokens at 200,000 per 24 h free in 1,771.2 s
+    assert slept == [pytest.approx(SPENT * 86_400 / 200_000)] * 2
+
+
+def test_the_quota_line_carries_groqs_limit_text_without_identifiers(base):
+    lines: list[str] = []
+    quota = QuotaWait(total=1, log=lines.append, sleep=lambda s: None, now=clock())
+    llm, _ = livelocked_groq()
+    run_suite(tasks(1), llm, base_workspace=base, token_budget=5_000, quota=quota)
+    assert lines[0] == (
+        "[quota] daily limit at t0 #1: 0 done, 1 remaining; this attempt spent 4,100 tokens; waiting 30 min, "
+        "next attempt 2026-10-07 09:29 UTC-04:00; groq: on tokens per day (TPD): Limit 200000, Used 199800, "
+        "Requested 2400"
+    )
 
 
 # --- the CLI: checkpoint while waiting, resume keeps finished runs --------------------------------
