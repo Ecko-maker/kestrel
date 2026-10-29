@@ -1,6 +1,6 @@
 # The Listening window after a wake: before and after the fix
 
-Known issue `KI-pending-wake-window-start` (closed by this fix). Offline, local models only, 2026-10-28, on
+Known issue #65 (closed by this fix). Offline, local models only, 2026-10-28, on
 `voice/talk` (before: `5e36551`; after: the same plus the one-line fix in `src/kestrel/wake/service.py`).
 Numbers only; no transcript text is reproduced here.
 

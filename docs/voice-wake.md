@@ -200,7 +200,7 @@ network, once, to fetch the model.
 
 If the false-wake rate stays high at every threshold, Vosk isn't good enough for this room: the
 detector sits behind an interface (`kestrel.wake.detector.Detector`), and openWakeWord with a custom
-"kestrel" model is the planned alternative (see design decision 18).
+"kestrel" model is the planned alternative (see design decision 19).
 
 ### Measured so far
 
@@ -209,7 +209,7 @@ detector sits behind an interface (`kestrel.wake.detector.Detector`), and openWa
   real room; this shows only that the word is in the model's vocabulary and the pipeline works.
 - CPU while listening (2026-10-23, `scripts/wake_measure.py --minutes 10`, mains power, real microphone and model):
   **1.3% of one core** on average; per minute 0.2% to 5.5% (more while people talk, when Vosk decodes more).
-- Keep-awake request in `powercfg /requests`: not checked yet (needs an elevated prompt; known issue #47).
+- Keep-awake request in `powercfg /requests`: not checked yet (needs an elevated prompt; known issue #61).
   Without elevation, Windows granted the request and released it on demand (`keep_awake` returned True, then False).
 - **Your voice and room (2026-10-24, 30 clips of 2 s, 1.00 h of a podcast played aloud and recorded
   in the room, `wake_eval.py`):**
@@ -371,7 +371,7 @@ Threshold sweep, set 1 (21 requests) plus the end-to-end background at wake 0.90
 | 0.80 | 0 / 21 | 0 | 0 / 2 |
 
 Confidence separates misheard from correct requests poorly: cutting misheard-but-sent to 1 needs 0.65,
-which sends 18 of 21 requests to "check first". The send countdown (design decision 20) is the answer
+which sends 18 of 21 requests to "check first". The send countdown (design decision 21) is the answer
 to that, not a higher floor. ("Misheard" counts any normalised word error, including small ones.)
 
 **First set, your recordings (2026-10-24, base.en 5-bit, 21 requests, no names in the vocab file yet):**
@@ -397,7 +397,7 @@ owner's vocab file (one name), base.en 5-bit, word-weighted over all 31 requests
 | hint | 21.3% | 9.6% | **46 errors = 17.62%** |
 
 Net +9 errors with the hint (+10 on set 1, -1 on set 2), so it loses. The code and the switch stay
-(`KESTREL_TALK_HINT=on`); known issue #49 records it. Confidences (set 1, with the hint): min 0.425,
+(`KESTREL_TALK_HINT=on`); known issue #63 records it. Confidences (set 1, with the hint): min 0.425,
 median 0.642; the threshold is still provisional.
 
 **Decision (owner, 2026-10-24): base.en stays the default; small.en is an option.** The rule was fixed

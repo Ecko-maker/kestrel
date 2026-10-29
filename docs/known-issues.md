@@ -255,7 +255,7 @@ gpt-oss-120b sometimes reads its data, writes the message or note as a draft, an
 Tiers v2 keeps the taint state in the agent's `Session` and never sends it to the console; the only tiers-v2 data the browser gets is the `notice` on an escalated approval card. So the HUD shows "escalated cards" (approvals that came with a notice) and no "tainted / clean" indicator, rather than guess one from tool names. A user can't see in advance that the next search will ask for approval.
 **Done when:** the agent emits the taint state (e.g. a `session` event after each tool result: tainted, by which tool) and the HUD shows it; that is an agent change, so it waits until after the Phase 3 gate.
 
-### 47. Voice wake-up: parts that need the owner's machine and hands
+### 61. Voice wake-up: parts that need the owner's machine and hands
 **Labels:** `voice`, `medium`
 Built and tested with fakes (docs/voice-wake.md); these depend on the real PC, the real room or an elevated prompt:
 - **Accuracy:** detection rate and false wakes per hour are unmeasured until the owner records ~30 "Kestrel" clips and an hour or more of background audio (`scripts/wake_record.py`, `scripts/wake_eval.py`). `KESTREL_WAKE_THRESHOLD=0.5` is provisional. On synthetic clips Vosk reported confidence 1.0 for every word, so the confidence may not separate well; the eval reports every threshold.
@@ -265,7 +265,7 @@ Built and tested with fakes (docs/voice-wake.md); these depend on the real PC, t
 - **distill:** `kestrel distill build` is on `phase4/trace-dataset`; its `read_traces` was checked to skip wake records, but the direct test belongs where both branches meet.
 **Done when:** the eval table and chosen threshold are in docs/voice-wake.md, the powercfg check is recorded, the display/lock/window behaviour is written down, and a distill test calls `build` on a database with a wake record.
 
-### 48. Kestrel can hear itself (self-interruption)
+### 62. Kestrel can hear itself (self-interruption)
 **Labels:** `voice`, `medium`
 Windows doesn't cancel the speakers' sound out of the microphone for an ordinary capture stream, so
 while Kestrel reads an answer aloud, the wake word listener hears it. If the spoken text contained
@@ -278,7 +278,7 @@ not measured.
 Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
 recorded in docs/voice-wake.md.
 
-### 49. ~~The vocabulary hint: better on Kestrel words, worse overall~~ (decided 2026-10-24: off by default)
+### 63. ~~The vocabulary hint: better on Kestrel words, worse overall~~ (decided 2026-10-24: off by default)
 **Labels:** `voice`, `medium`
 On the owner's first 21 recorded requests (2026-10-24, base.en 5-bit), the whisper.cpp vocabulary hint
 fixed Kestrel words ("files in my workspace", "a note called") but three other requests got worse (a
@@ -294,9 +294,9 @@ requests (261 words): **14.18% without (37 errors), 17.62% with (46 errors)**; +
 set 2 (the largest single loss: set 1 req-003, a repeated phrase, 1 -> 7). The hint loses:
 `KESTREL_TALK_HINT` now defaults to off; the code and the switch stay for later experiments.
 
-### 50. The spoken "cancel" and the wake threshold are not measured on your voice yet
+### 64. The spoken "cancel" and the wake threshold are not measured on your voice yet
 **Labels:** `voice`, `medium`
-The spoken "cancel" during the 2 s send countdown (design decision 20) is tested only with fakes: how
+The spoken "cancel" during the 2 s send countdown (design decision 21) is tested only with fakes: how
 often it hears your "cancel" in time, and how often a podcast word triggers it, are unknown. A miss
 sends the request (it can still be rejected at its approval card); a false hit puts the text back in
 the box. `KESTREL_WAKE_THRESHOLD=0.9` was chosen on the same 30 clips and 1 h of background it was
@@ -309,7 +309,7 @@ false-wake count at 0.90 is 1 or 2 per hour on the same recording.
 docs/voice-wake.md, and "cancel" is tried live (said 10 times in a countdown, plus a podcast during
 countdowns) with the result recorded there.
 
-### KI-pending-wake-window-start. ~~The Listening window started before the trace write and two Windows calls~~ (closed 2026-10-28)
+### 65. ~~The Listening window started before the trace write and two Windows calls~~ (closed 2026-10-28)
 **Labels:** `voice`, `closed`
 `WakeService.on_wake` read the clock, then wrote the wake to the trace store, woke the display and
 brought the console to the front, and only then set the end of Listening from that first reading. The

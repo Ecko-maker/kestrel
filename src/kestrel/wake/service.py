@@ -113,7 +113,7 @@ class WakeSettings:
     talk: bool = True  # KESTREL_TALK=off: a wake only greets (no spoken requests)
     talk_model: str = DEFAULT_TALK_MODEL  # KESTREL_TALK_MODEL: base.en-q5_1 or tiny.en-q5_1
     min_confidence: float = DEFAULT_MIN_CONFIDENCE  # KESTREL_TALK_MIN_CONFIDENCE
-    # The vocabulary hint: off by default (KESTREL_TALK_HINT=on to use it; known issue #49: pooled over
+    # The vocabulary hint: off by default (KESTREL_TALK_HINT=on to use it; known issue #63: pooled over
     # 31 recorded requests it was worse, 17.62% vs 14.18% normalised WER). Names: KESTREL_TALK_VOCAB_FILE.
     talk_prompt: str = ""
     send_countdown_s: float = SEND_COUNTDOWN_S  # fixed; a field so tests can shorten it

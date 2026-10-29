@@ -7,7 +7,7 @@ moment on_wake returns, against the window the wake event announces (`listen_sec
 
     uv run python scripts/wake_window_measure.py [--json out.json]
 
-Known issue KI-pending-wake-window-start. No model, microphone or network is used.
+Known issue #65. No model, microphone or network is used.
 """
 
 import argparse

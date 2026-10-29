@@ -622,7 +622,7 @@ def test_the_hint_is_passed_to_whisper_cpp_and_can_be_turned_off():
 
 
 def test_the_vocabulary_hint_is_off_by_default_and_can_be_switched_on(monkeypatch):
-    """Owner decision 2026-10-24 (known issue #49): pooled over both recorded sets the hint was worse."""
+    """Owner decision 2026-10-24 (known issue #63): pooled over both recorded sets the hint was worse."""
     monkeypatch.delenv("KESTREL_TALK_HINT", raising=False)
     assert WakeSettings.from_env().talk_prompt == ""
     assert WakeSettings().talk_prompt == ""
