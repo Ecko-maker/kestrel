@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChartColumn, ChartGantt, FlaskConical, MessagesSquare, Monitor, Moon, Sun } from "lucide-react";
+import { AppWindow, ChartColumn, ChartGantt, FlaskConical, MessagesSquare, Monitor, Moon, Radar, Sun } from "lucide-react";
 import { api, AuthError, type SessionInfo, type Stats } from "./api";
 import { cx } from "./components/ui";
+import { BootSequence } from "./hud/BootSequence";
+import { FalconMark } from "./hud/FalconMark";
+import { storageGet, storageSet, useLook, type Look } from "./hud/useLook";
 import { ChatPage } from "./pages/ChatPage";
 import { StatsPage } from "./pages/StatsPage";
 import { TracesPage } from "./pages/TracesPage";
@@ -9,16 +12,18 @@ import { useChat } from "./useChat";
 
 type Theme = "light" | "dark" | "system";
 
-function useTheme(): [Theme, (t: Theme) => void] {
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem("kestrel-theme") as Theme) || "system");
+// The HUD look is dark only; the classic look follows this light / system / dark choice.
+function useTheme(look: Look): [Theme, (t: Theme) => void] {
+  const [theme, setTheme] = useState<Theme>(() => (storageGet("kestrel-theme") as Theme) || "system");
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && media.matches));
+    const apply = () =>
+      document.documentElement.classList.toggle("dark", look === "hud" || theme === "dark" || (theme === "system" && media.matches));
     apply();
-    localStorage.setItem("kestrel-theme", theme);
+    storageSet("kestrel-theme", theme);
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [theme]);
+  }, [theme, look]);
   return [theme, setTheme];
 }
 
@@ -44,10 +49,46 @@ function Logo() {
   return (
     <div className="flex items-center gap-2.5">
       <img src="/kestrel.svg" alt="" className="size-8 rounded-lg shadow-sm" />
-      <div className="leading-tight">
+      <div className="hidden leading-tight sm:block">
         <div className="font-semibold tracking-tight">Kestrel</div>
         <div className="text-[11px] text-stone-500 dark:text-stone-400">personal agent</div>
       </div>
+    </div>
+  );
+}
+
+function HudLogo() {
+  return (
+    <div className="flex items-center gap-2.5 text-accent-300">
+      <FalconMark className="size-8 drop-shadow-[0_0_6px_rgb(34_211_238/0.6)]" />
+      <div className="hidden leading-tight sm:block">
+        <div className="hud-wordmark text-sm">KESTREL</div>
+        <div className="hud-font text-[9px] uppercase text-stone-400">personal agent</div>
+      </div>
+    </div>
+  );
+}
+
+function LookSwitch({ look, setLook }: { look: Look; setLook: (l: Look) => void }) {
+  const options: [Look, string][] = [["classic", "Classic"], ["hud", "HUD"]];
+  return (
+    <div className="inline-flex rounded-lg bg-stone-200/60 p-0.5 text-[11px] font-semibold dark:bg-stone-800/80" role="radiogroup" aria-label="Look">
+      {options.map(([value, label]) => (
+        <button
+          key={value}
+          role="radio"
+          aria-checked={look === value}
+          aria-label={label}
+          onClick={() => setLook(value)}
+          className={cx(
+            "flex items-center gap-1 rounded-md px-2 py-1",
+            look === value ? "bg-white text-stone-900 shadow-sm dark:bg-stone-700 dark:text-white" : "text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200",
+          )}
+        >
+          {value === "hud" ? <Radar className="size-3.5" /> : <AppWindow className="size-3.5 sm:hidden" />}
+          <span className="hidden sm:inline">{label}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -74,7 +115,8 @@ function ThemeSwitch({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) =
 
 export function App() {
   const [route, navigate] = useHashRoute();
-  const [theme, setTheme] = useTheme();
+  const [look, setLook] = useLook();
+  const [theme, setTheme] = useTheme(look);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [authError, setAuthError] = useState(false);
@@ -108,12 +150,13 @@ export function App() {
   return (
     <div className="flex h-dvh flex-col md:flex-row">
       <nav className="flex shrink-0 items-center gap-1 border-b border-stone-200/70 bg-white/60 px-3 py-2 backdrop-blur dark:border-stone-800/70 dark:bg-stone-900/40 md:w-56 md:flex-col md:items-stretch md:gap-0 md:border-b-0 md:border-r md:px-3 md:py-4">
-        <div className="mr-2 md:mb-6 md:mr-0 md:px-2"><Logo /></div>
+        <div className="mr-2 md:mb-6 md:mr-0 md:px-2">{look === "hud" ? <HudLogo /> : <Logo />}</div>
         <div className="flex gap-1 md:flex-col">
           {NAV.map(({ id, label, icon: Icon }) => (
             <a
               key={id}
               href={`#/${id}`}
+              aria-current={page === id ? "page" : undefined}
               className={cx(
                 "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
                 page === id ? "bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900" : "text-stone-600 hover:bg-stone-200/60 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100",
@@ -126,7 +169,7 @@ export function App() {
         </div>
         <div className="ml-auto flex items-center gap-3 md:mt-auto md:ml-0 md:flex-col md:items-stretch md:gap-3 md:px-2">
           {session?.demo && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-800 dark:bg-violet-950/60 dark:text-violet-200">
+            <span className="hidden items-center gap-1.5 rounded-md bg-violet-100 sm:inline-flex px-2 py-1 text-[11px] font-semibold text-violet-800 dark:bg-violet-950/60 dark:text-violet-200">
               <FlaskConical className="size-3.5" /> Demo mode
             </span>
           )}
@@ -145,7 +188,10 @@ export function App() {
             <span className={cx("size-1.5 rounded-full", chat.state === "open" ? "bg-emerald-500" : chat.state === "connecting" ? "bg-amber-400" : "bg-red-500")} />
             {chat.state === "open" ? "Connected" : chat.state === "connecting" ? "Connecting" : "Disconnected"}
           </span>
-          <ThemeSwitch theme={theme} setTheme={setTheme} />
+          <div className="flex items-center gap-2 md:flex-col md:items-stretch">
+            <LookSwitch look={look} setLook={setLook} />
+            {look === "classic" && <ThemeSwitch theme={theme} setTheme={setTheme} />}
+          </div>
         </div>
       </nav>
 
@@ -155,9 +201,10 @@ export function App() {
         ) : page === "stats" ? (
           <StatsPage stats={stats} />
         ) : (
-          <ChatPage chat={chat} session={session} stats={stats} onRated={refreshStats} />
+          <ChatPage chat={chat} session={session} stats={stats} onRated={refreshStats} look={look} />
         )}
       </main>
+      {look === "hud" && <BootSequence session={session} connection={chat.state} />}
     </div>
   );
 }
