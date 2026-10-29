@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-28 late evening EDT, from the 10-28 gate session (`phase3/tiers-v2`, then this docs PR on `main`; log below).
+2026-10-28 late evening EDT, from the 10-28 branch-cleanup session on `main` (Branches below; earlier the gate session, log below).
 
 ## Now
 
@@ -67,25 +67,18 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | `phase3/results-analysis` | 3 | PR #14 merged into `phase3/tiers-v2` (`caff0f8`, 2026-10-28) | proposed: delete |
 | `phase3/tiers-v2` | 3 | gate decided: ship (`ffe502e`); #14 merged (`caff0f8`); `main` merged in, conflicts resolved, numbers assigned | PR to `main` 10-29 after ~15:45 EDT (~56k) |
 | `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | last: rebase onto `main` after voice; fix #42 and the main-meta test; then merge (~56k) |
-| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI green (wake-word `88bb9d1`, talk `5e36551`; old talk tip = tag `archive/voice-talk-4155004`) | fix `KI-pending-wake-window-start`; rebase onto `main` after console; one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
+| `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI green (wake-word `88bb9d1`, talk `8a4e22b`; old talk tip = tag `archive/voice-talk-4155004`); `KI-pending-wake-window-start` fixed and closed on talk (`8a4e22b`, `evals/reports/wake-window-start.md`) | rebase onto `main` after console (renumber its 37/43–45 to 54–57 then); one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
 | `console/hud-theme` | console | stacked on tiers-v2 `75ce54c`; console only | rebase onto `main` after tiers-v2; merge (no evals) |
-| `labels/judge-calibration` | 2 | 3 owner labels | merged to `main` via PR (2026-10-26) |
 | `docs/merge-plan` | – | merge-rehearsal report (stale on memory-rag, the phase4 tip and the voice hashes after the 10-27 rebase) | merge whenever (no evals) |
-| `docs/status-2026-10-26` | – | this file, `progress.md`, CLAUDE.md rewrite | merged to `main` as PR #18 (2026-10-26) |
-| `docs/approvals-2026-10-26` | – | Groq approvals log | merged to `main` as PR #20 (2026-10-27) |
-| `docs/status-2026-10-27` | – | STATUS update | merged to `main` as PR #21 (2026-10-27) |
-| `docs/status-2026-10-27-voice` | – | STATUS update (voice CI) | merged to `main` as PR #22 (2026-10-28) |
-| `docs/status-2026-10-28` | – | STATUS update (after-run stopped, resume plan, retry KI) | merged to `main` as PR #23 (2026-10-28) |
-| `docs/status-2026-10-28-verdict` | – | STATUS update (after-run finished, verdict, known issue #53) | merged to `main` as PR #24 (2026-10-28) |
-| `docs/status-2026-10-28-gate` | – | this update (gate decision, #14 merged, tiers-v2 PR plan) | merge to `main` (no evals) |
 | `phase3/memory-rag` | 3 | memory + hybrid RAG design, parked (option B) | park until after the Phase 4 measurements |
 | `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
 | `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
 | `phase3/memory-evals` | 3 | memory split m1.0 (in `phase3/memory`) | park; then archive as tag, delete |
-| `phase3/memory-safety` | 3 | tip = tag `safety-before`; its content is in tiers-v2 | proposed: delete (tag exists) |
-| `phase4/trace-dataset-v0` | 4 | first distill attempt, replaced | proposed: archive as tag, delete |
-| `dev`, `phase2/kestrelbench`, `master` | 1–2 | fully merged into `main` | proposed: delete |
-| `main` | – | = `origin/main` `6b929e8` (before this PR) | – |
+| `fix/quota-retry-spend` | 3 | from tiers-v2 `d5b46d5`; known issue #53 fixed in code (`ee496a0`): budget checked inside the retry loop, back-off covers spent tokens, Groq's limit text in the `[quota]` line; agent fingerprint unchanged (`35fac5ba6277`); CI green | owner: merge into tiers-v2 before its PR (no extra Groq), or its own PR later (~56k) |
+| `docs/status-2026-10-28-branches` | – | this update (branch cleanup) | merge to `main` (no evals) |
+| `main` | – | = `origin/main` `818a434` (before this PR) | – |
+
+**Deleted 2026-10-28** (owner OK; local and `origin`): `master`, `dev`, `phase2/kestrelbench` (merged into `main`); `docs/status-2026-10-27`, `-27-voice`, `-28`, `-28-verdict`, `-28-gate` (merged); `docs/status-2026-10-26`, `docs/approvals-2026-10-26`, `labels/judge-calibration` (squash-merged as PRs #18, #20, #19; GitHub keeps their tips under the PRs); `phase3/memory-safety` (tip kept by tag `safety-before`, `6f58ee5`); `phase4/trace-dataset-v0` (tip kept by the new tag `archive/phase4-trace-dataset-v0-289274e`). Kept for now: `phase3/results-analysis` (in tiers-v2 via #14; delete without a tag once tiers-v2 is in `main`), `docs/merge-plan`, the Dependabot branches (open PRs).
 
 Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates); they cost no evals.
 
