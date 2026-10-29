@@ -907,6 +907,30 @@ def test_level_events_carry_one_number_and_only_while_listening(tmp_path):
     assert wake["listen_seconds"] == 0.4
 
 
+def test_a_slow_trace_write_or_windows_call_does_not_shorten_listening(tmp_path):
+    """The window counts from when Listening starts, after the trace write and the two Windows calls."""
+    now = [1000.0]
+    service, _, events, _, power, *_ = make_service(tmp_path, clock=lambda: now[0], listen_seconds=0.4)
+
+    def slow(seconds):
+        def call(*args):
+            now[0] += seconds
+            return True
+
+        return call
+
+    service.record_wake = slow(0.5)  # longer than the whole window
+    power.wake_display, power.bring_to_front = slow(0.1), slow(0.1)
+    assert service.on_wake()
+    wake = next(e for e in events if e["type"] == "wake")
+    assert wake["listen_seconds"] == 0.4
+    assert service.attending()
+    now[0] += 0.39
+    assert service.attending()  # the full announced window, from here
+    now[0] += 0.02
+    assert not service.attending()
+
+
 def test_level_events_come_about_ten_times_a_second(tmp_path):
     from kestrel.wake.audio import CHUNK_FRAMES
     from kestrel.wake.detector import SAMPLE_RATE
