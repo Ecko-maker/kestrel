@@ -8,17 +8,16 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Now
 
-Phase 3's tiers gate is **decided: ship tiers v2.1** (owner, 2026-10-28; design decision 17 (was `D-pending-tiers-v2-gate`), `ffe502e` on `phase3/tiers-v2`, `docs/tiers-v2-design.md` §5). Safety gate PASS (strict system-level ASR 0/29, CI 0–12%). Rule C: gate not met (a), 0 escalations (`evals/reports/rule-c-verdict.md`, after − references −3 points, 95% CI −7 to +1), merge per the frozen §5 consequence. Rule A: part 1 not met (12/18 → 11/18), parts 2 and 3 hold; recorded as an **owner override, not a pass**. PR #14 is merged into tiers-v2 (`caff0f8`). Nothing is running.
+Phase 3's tiers gate is **decided: ship tiers v2.1** (owner, 2026-10-28; `D-pending-tiers-v2-gate`, `ffe502e` on `phase3/tiers-v2`, `docs/tiers-v2-design.md` §5). Safety gate PASS (strict system-level ASR 0/29, CI 0–12%). Rule C: gate not met (a), 0 escalations (`evals/reports/rule-c-verdict.md`, after − references −3 points, 95% CI −7 to +1), merge per the frozen §5 consequence. Rule A: part 1 not met (12/18 → 11/18), parts 2 and 3 hold; recorded as an **owner override, not a pass**. PR #14 is merged into tiers-v2 (`caff0f8`). Nothing is running.
 
-**The single next step:** open the tiers-v2 → `main` PR on **10-29 after ~15:45 EDT** (once the Groq window has room; approval line below, ~56k). `main` is already merged into the branch, its conflicts resolved and its decisions and issues numbered (decisions 15–17, issues 54–59; log below), so the PR should open with no conflicts. Any extra push to the open PR needs a new approval line. After the merge: console (no evals), then the fix for known issue #53 on its own branch.
+**The single next step:** open the tiers-v2 → `main` PR on **10-29 after ~15:45 EDT** (once the Groq window has room; approval line below, ~56k). Before it opens, resolve the 2 doc conflicts on the branch (`CLAUDE.md` ×3 hunks: take `main`'s and move the branch's rules into `main`'s docs; `docs/known-issues.md` ×1: keep both), and assign numbers to the pending decisions and issues at merge. Any extra push to the open PR needs a new approval line. After the merge: console (no evals), then the fix for known issue #53 on its own branch.
 
 ## 2026-10-28 (gate session)
 
-0. **`main` merged into `phase3/tiers-v2`** (conflicts as rehearsed: `CLAUDE.md` = `main`'s, plus the branch's file-layout lines and env settings; `docs/known-issues.md` = the branch's #22 text plus `main`'s #53). **Numbers assigned for `main`:** decisions 15 (safety repeats), 16 (tiers v2), 17 (tiers gate, was `D-pending-tiers-v2-gate`); issues 54 (tool not found, was 37 on the branch), 55 (errored-row fingerprint, was 43), 56 (content check silent, was 44), 57 (taint on run, was 45, closed), 58 (main-suite drift), 59 (draft-and-ask). Console and voice carry the old 37/43–45 and must renumber when they rebase onto `main`.
-1. **Phase 3 tiers gate: ship tiers v2.1** (owner decision, design decision 17, `ffe502e` on `phase3/tiers-v2`). Rule A part 1 not met and overridden (not a pass); the next safety measurement pre-registers the s1.1 rule from `evals/reports/rule-a-power.md` before its before-side runs. Caveats carried: #58 (main-suite drift), 18 benign tasks (±14 points), #56, #23, #21, #53, image policy unrecorded on the main split. New issues: #58 (main-suite drift), #59 (draft-and-ask).
+1. **Phase 3 tiers gate: ship tiers v2.1** (owner decision, `D-pending-tiers-v2-gate`, `ffe502e` on `phase3/tiers-v2`). Rule A part 1 not met and overridden (not a pass); the next safety measurement pre-registers the s1.1 rule from `evals/reports/rule-a-power.md` before its before-side runs. Caveats carried: `KI-pending-main-suite-drift`, 18 benign tasks (±14 points), #44, #23, #21, #53, image policy unrecorded on the main split. New issues: `KI-pending-main-suite-drift`, `KI-pending-draft-and-ask`.
 2. **PR #14 merged** into `phase3/tiers-v2` (`caff0f8`, no evals). Checks re-run locally on the merged branch: 544 passed, 4 xfailed.
 3. **tiers-v2 → `main` PR opens 10-29 after ~15:45 EDT**, with its approval line (~56k). Dry-run merge (`git merge-tree`): 2 doc conflicts (`CLAUDE.md` ×3, `docs/known-issues.md` ×1); 24 eval-trigger files, so CI evals run.
-4. **Known issue #57 (taint on run; #45 on the branch until the numbering in item 0) closed** on `phase3/tiers-v2` (`635da8e`): the fix is measured, 0 escalations in the rule C after-run.
+4. **Known issue #45 (taint on run) closed** on `phase3/tiers-v2` (`635da8e`): the fix is measured, 0 escalations in the rule C after-run.
 
 ## 2026-10-28 (verdict session)
 
@@ -65,7 +64,7 @@ Merge order: PR #14 → `phase3/tiers-v2` → `console/hud-theme` → voice → 
 | Branch | Phase | State | Next action |
 |---|---|---|---|
 | `phase3/results-analysis` | 3 | PR #14 merged into `phase3/tiers-v2` (`caff0f8`, 2026-10-28) | proposed: delete |
-| `phase3/tiers-v2` | 3 | gate decided: ship (`ffe502e`); #14 merged (`caff0f8`); `main` merged in, conflicts resolved, numbers assigned | PR to `main` 10-29 after ~15:45 EDT (~56k) |
+| `phase3/tiers-v2` | 3 | gate decided: ship (`ffe502e`); #14 merged (`caff0f8`); #45 closed (`635da8e`); 2 doc conflicts with `main` | resolve conflicts; PR to `main` 10-29 after ~15:45 EDT (~56k) |
 | `phase4/trace-dataset` | 4 | built on v0.2.0, before #9/#11; 8 conflicting files (`evals/reports/merge-rehearsal.md`) | last: rebase onto `main` after voice; fix #42 and the main-meta test; then merge (~56k) |
 | `voice/wake-word` + `voice/talk` | 5 | stacked on tiers-v2 `75ce54c`; CI green (wake-word `88bb9d1`, talk `8a4e22b`; old talk tip = tag `archive/voice-talk-4155004`); `KI-pending-wake-window-start` fixed and closed on talk (`8a4e22b`, `evals/reports/wake-window-start.md`) | rebase onto `main` after console (renumber its 37/43–45 to 54–57 then); one PR (~56k); keeps decisions 19–20 only if it merges first (numbers are assigned at merge) |
 | `console/hud-theme` | console | stacked on tiers-v2 `75ce54c`; console only | rebase onto `main` after tiers-v2; merge (no evals) |
@@ -114,7 +113,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 
 ## Owner decisions open
 
-1. ~~**Phase 3 tiers gate**~~: decided 2026-10-28, ship tiers v2.1 (owner override on rule A part 1; design decision 17, lands with tiers-v2).
+1. ~~**Phase 3 tiers gate**~~: decided 2026-10-28, ship tiers v2.1 (owner override on rule A part 1; `D-pending-tiers-v2-gate`, lands with tiers-v2).
 2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). It is recorded only on unmerged branches (`phase4/trace-dataset` CLAUDE.md, `docs/memory-rag-design.md`); it lands with them.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
@@ -127,9 +126,9 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 
 | Pending name | Branch(es) | Number used there |
 |---|---|---|
-| D-pending-safety-repeats | memory-safety line (tiers-v2 and all descendants, memory-*) | **final 15** with tiers-v2 (same text everywhere) |
-| D-pending-tiers-v2 | tiers-v2, results-analysis, memory-rag, console, voice, v0 | **final 16** with tiers-v2 |
-| D-pending-tiers-v2-gate | tiers-v2 | **final 17** with tiers-v2 |
+| D-pending-safety-repeats | memory-safety line (tiers-v2 and all descendants, memory-*) | 15 (same text everywhere) |
+| D-pending-tiers-v2 | tiers-v2, results-analysis, memory-rag, console, voice, v0 | **16** |
+| D-pending-tiers-v2-gate | tiers-v2 (`ffe502e`) | – |
 | D-pending-memory-split | memory-evals, search-spike, memory | **16** |
 | D-pending-memory-search | memory | **17** |
 | D-pending-hud-console | console, voice | **17** |
@@ -138,19 +137,19 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | D-pending-voice-wake | wake-word, talk | **18** |
 | D-pending-talk-whisper, D-pending-send-countdown | talk | **19, 20** |
 | D-pending-distill-data, -distill-taskset, -distill-overlap, -distill-rubric-checks, -student-qlora, -prompt-format, -router-v1 | phase4 | **19, 20**, 21–25 |
-| KI-pending-tool-not-found, -errored-row-fingerprint, -content-check-silent, -taint-on-run | tiers-v2 (final); console and voice still use 37, 43–45 | **final 54, 55, 56, 57** with tiers-v2 (57 closed) |
+| KI-pending-tool-not-found, -errored-row-fingerprint, -content-check-silent, -taint-on-run | tiers-v2 and descendants | 37, 43, 44, 45 (45 closed on tiers-v2) |
 | KI-pending-console-taint | console, voice | 46 |
 | KI-pending-wake-owner-machine, -self-interruption, -vocab-hint (closed), -cancel-unmeasured | voice | 47–50 |
 | KI-pending-wake-window-start | voice (not yet written on the branch) | – |
 | ~~KI-pending-quota-retry-spend~~ | numbered on `main` as #53 (this PR); fix branch not yet created | 53 |
-| KI-pending-main-suite-drift, -draft-and-ask | tiers-v2 | **final 58, 59** with tiers-v2 |
+| KI-pending-main-suite-drift, -draft-and-ask | tiers-v2 (`ffe502e`) | – |
 | KI-pending-memory-isolation, -memory-attack-surface, -memory-split-limits | memory-evals, search-spike, memory | **25, 26**, 27 |
 | KI-pending-memory-search-limits, -estimate-from-cache | memory | 28, 29 |
 | KI-pending-safety-prompts-pinned … -router-tiers-v2 (12 issues) | phase4 | 30–36, 38–42 |
 | KI-pending-student-no-memory | phase4 | 51 |
 | KI-pending-training-on-bench, -secret-scrub-v0 | trace-dataset-v0 | **25, 26** |
 
-Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. With tiers-v2, `main` takes decisions 15–17 and issues 54–59 (also 52 `kestrel export`, 53 retry spend), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60** once tiers-v2 merges.
+Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. On `main` the next free numbers are decision 15 and issue 25; #52 is `kestrel export` and #53 is the retry spend (this PR), so a new issue on `main` takes #54 (above every number in use).
 
 ## Data outside git
 
