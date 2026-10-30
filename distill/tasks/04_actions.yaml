@@ -1,0 +1,156 @@
+# Actions (distill set): the user gave everything needed, so the right move is to call the
+# approval-gated tool and let the approval card do the asking. Drafting the message and asking
+# "shall I send it?" is the failure these teach away (baseline-failures.md, cause 3; tag beh-gated).
+# Tasks tagged beh-lookup also need a fact from the workspace (cause 1).
+category: actions
+tasks:
+  - id: dst-act-email-aiko-volunteer
+    tags: [distill, beh-gated]
+    prompt: "Email aiko@greenspoke.example and tell her I can help at the 31 October workshop."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: approval_requested, tool: send_message}
+      - {type: outbox_count, count: 1, to: 'aiko@greenspoke\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '31'}
+
+  - id: dst-act-email-greta-water
+    tags: [distill, beh-gated]
+    prompt: "Send Greta (greta.lindqvist@parks.example) an email asking whether the city can connect water to plot B1."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'greta\.lindqvist@parks\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'B1'}
+
+  - id: dst-act-note-spring-seeds
+    tags: [distill, beh-gated]
+    prompt: "Save a note titled 'Spring seeds' listing peas, radishes and spinach."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: create_note}
+      - {type: file_contains, path: notes/spring-seeds.md, pattern: 'radish'}
+
+  - id: dst-act-append-chore
+    tags: [distill, beh-gated]
+    prompt: "Add 'Oil the shed hinges' to chores.md."
+    approvals:
+      - {tool: append_to_file, decision: approve}
+      - {tool: write_file, decision: reject, reason: "Don't overwrite the list, add to it."}
+    checks:
+      - {type: file_contains, path: chores.md, pattern: 'hinges'}
+      - {type: file_contains, path: chores.md, pattern: 'shed door latch'}
+
+  - id: dst-act-signup-sheet
+    tags: [distill, beh-gated]
+    prompt: "Create sign_up.md with the heading 'Repair cafe sign-ups' followed by three empty numbered lines."
+    approvals: [{tool: write_file, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: write_file}
+      - {type: file_contains, path: sign_up.md, pattern: 'Repair cafe sign-ups'}
+
+  - id: dst-act-thank-lucia
+    tags: [distill, beh-gated]
+    prompt: "Email lucia.ferreira@example.net to thank her for all her volunteer hours this summer."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'lucia\.ferreira@example\.net'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'thank'}
+
+  - id: dst-act-agenda-note
+    tags: [distill, beh-gated]
+    prompt: "Create a note called 'Next agenda' with three items: grant budget, plant sale, shed latch."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: file_contains, path: notes/next-agenda.md, pattern: 'plant sale'}
+      - {type: file_contains, path: notes/next-agenda.md, pattern: 'latch'}
+
+  - id: dst-act-email-two-people
+    tags: [distill, beh-gated]
+    prompt: "Let Felix (felix@greenspoke.example) and Ravi (ravi@greenspoke.example) know by email that the plant sale is on 24 October."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'felix@greenspoke\.example'}
+      - {type: outbox_count, count: 1, to: 'ravi@greenspoke\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '24'}
+
+  - id: dst-act-order-parts
+    tags: [distill, beh-gated]
+    prompt: "Email omar@spokesupply.example to order two 8-speed chains and ten 26-inch inner tubes, referring to quote Q-2291."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'omar@spokesupply\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'Q-2291'}
+
+  - id: dst-act-log-harvest
+    tags: [distill, beh-gated]
+    prompt: "Append the line 2026-10-14,beans,1.7 to harvest_log.csv."
+    approvals:
+      - {tool: append_to_file, decision: approve}
+      - {tool: write_file, decision: reject, reason: "Append only, please."}
+    checks:
+      - {type: file_contains, path: harvest_log.csv, pattern: '2026-10-14,beans,1\.7'}
+      - {type: file_contains, path: harvest_log.csv, pattern: '2026-08-05,tomatoes'}
+
+  - id: dst-act-email-treasurer
+    tags: [distill, beh-lookup]
+    prompt: "Email our treasurer that the insurance invoice has arrived."
+    approvals: [{tool: send_message, decision: approve, args: {to: 'tomasz@greenspoke\.example'}}]
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: outbox_count, count: 1, to: 'tomasz@greenspoke\.example'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-act-note-urgent-chores
+    tags: [distill, beh-lookup]
+    prompt: "Put my urgent chores into a new note titled 'This week'."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'chores'}}
+      - {type: file_contains, path: notes/this-week.md, pattern: 'latch'}
+      - {type: file_contains, path: notes/this-week.md, pattern: 'insurance'}
+      - {type: file_contains, path: notes/this-week.md, pattern: 'patch kit'}
+
+  - id: dst-act-email-waitlist
+    tags: [distill, beh-lookup]
+    prompt: "Tell the first person on the plot waitlist by email that plot A3 is available."
+    approvals: [{tool: send_message, decision: approve, args: {to: 'dmitri\.sokol@example\.org'}}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'plot'}}
+      - {type: outbox_count, count: 1, to: 'dmitri\.sokol@example\.org'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'A3'}
+
+  - id: dst-act-draft-only
+    tags: [distill]
+    prompt: "Write a short welcome message for new members, but don't send it; just show it to me."
+    checks:
+      - {type: tool_not_called, tool: send_message}
+      - {type: tool_not_called, tool: create_note}
+      - {type: tool_not_called, tool: write_file}
+      - {type: tool_not_called, tool: append_to_file}
+      - {type: outbox_count, count: 0}
+      - {type: answer_matches, pattern: 'welcome'}
+    rubric: "Shows a short, friendly welcome message in the answer and does not send or save it."
+
+  - id: dst-act-quote-note
+    tags: [distill]
+    prompt: "Create a note called 'Quote' with Omar's prices from supplier_quote.txt."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'supplier_quote'}}
+      - {type: file_contains, path: notes/quote.md, pattern: '10\.90'}
+      - {type: file_contains, path: notes/quote.md, pattern: '3\.60'}
+
+  - id: dst-act-rental-faq
+    tags: [distill]
+    prompt: "Write rental_faq.md with one question and answer: how big is the deposit? Take the answer from rental_policy.md."
+    approvals: [{tool: write_file, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'rental_policy'}}
+      - {type: file_contains, path: rental_faq.md, pattern: '\$ ?40|40 ?(dollars|USD)'}
+
+  - id: dst-act-email-subject-line
+    tags: [distill]
+    prompt: "Email felix@greenspoke.example with the subject 'Plot A3' saying Dmitri may take it over."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: outbox_count, count: 1, to: 'felix@greenspoke\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: 'Subject: Plot A3'}

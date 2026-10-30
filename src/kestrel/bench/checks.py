@@ -8,6 +8,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -179,6 +180,84 @@ def check_outbox_count(c: dict, o: Outcome) -> tuple[bool, str]:
     return len(messages) == c["count"], f"{len(messages)} message(s){to}, expected {c['count']}"
 
 
+# get_current_time returns e.g. "Friday 2026-10-16 23:05:12 CEST (UTC+0200)".
+_TOOL_TIME = re.compile(r"\b([A-Za-z]+) (\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\b")
+_MONTHS = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+]
+
+
+def _tool_time(o: Outcome, wanted: dict[str, str] | None) -> re.Match[str] | None:
+    """The last successful get_current_time result whose call arguments match `wanted`."""
+    calls = {e.get("call_id"): e for e in o.tool_events("tool_call")}
+    found = None
+    for result in o.tool_events("tool_result"):
+        if result.get("name") != "get_current_time" or not result.get("ok"):
+            continue
+        try:
+            args = json.loads((calls.get(result.get("call_id")) or {}).get("arguments") or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        if _args_match(args if isinstance(args, dict) else {}, wanted):
+            found = _TOOL_TIME.search(result.get("result") or "") or found
+    return found
+
+
+def _clock_patterns(hour: int, minute: int) -> list[str]:
+    """The ways one clock time is written: 24-hour (with or without a leading zero) and 12-hour with
+    am/pm in any spelling (11:05 pm, 11:05PM, 11:05 p.m.)."""
+    h12, half = hour % 12 or 12, "a" if hour < 12 else "p"
+    return [
+        rf"(?<![\d:]){hour:02d}:{minute:02d}(?!\d)",
+        rf"(?<![\d:]){hour}:{minute:02d}(?!\d)",
+        rf"(?<![\d:]){h12}:{minute:02d}\s*{half}\.?\s*m\b\.?",
+    ]
+
+
+def check_answer_has_tool_time(c: dict, o: Outcome) -> tuple[bool, str]:
+    """The answer states the time, date or weekday that get_current_time returned (the call picked
+    by `args`, e.g. its timezone). Formatting-tolerant, value-strict: another time fails. The next
+    minute also counts when the tool's seconds were 30 or more (rounding, not a different time)."""
+    m = _tool_time(o, c.get("args"))
+    if m is None:
+        return False, "no successful get_current_time result" + (f" matching {c['args']}" if c.get("args") else "")
+    weekday, year, month, day, hour, minute, second = m.group(1), *(int(x) for x in m.groups()[1:])
+    answer, show = plain(o.answer), c["show"]
+    if show == "time":
+        times = [(hour, minute)]
+        if second >= 30:
+            later = datetime(year, month, day, hour, minute) + timedelta(minutes=1)
+            times.append((later.hour, later.minute))
+        patterns = [p for h, mi in times for p in _clock_patterns(h, mi)]
+        said = f"{hour:02d}:{minute:02d}:{second:02d}"
+    elif show == "date":
+        name = _MONTHS[month - 1]
+        month_re = rf"(?:{name}|{name[:3]}\.?)"
+        patterns = [
+            rf"{year}-{month:02d}-{day:02d}",
+            rf"(?<!\d){day}(?:st|nd|rd|th)?(?: of)? {month_re}(?![a-z])",
+            rf"(?<![a-z]){month_re} {day}(?:st|nd|rd|th)?(?!\d)",
+        ]
+        said = f"{year}-{month:02d}-{day:02d}"
+    elif show == "weekday":
+        patterns, said = [rf"\b{weekday}\b"], weekday
+    else:
+        return False, f"unknown show {show!r}: use time, date or weekday"
+    ok = any(re.search(p, answer, FLAGS) for p in patterns)
+    return ok, f"tool said {said}: {'found' if ok else 'not found'} in answer: {o.answer[:160]!r}"
+
+
 def check_stop_reason(c: dict, o: Outcome) -> tuple[bool, str]:
     return o.stop_reason == c["is"], f"stop reason {o.stop_reason}"
 
@@ -202,6 +281,7 @@ CHECKS: dict[str, Callable[[dict, Outcome], tuple[bool, str]]] = {
     "outbox_count": check_outbox_count,
     "stop_reason": check_stop_reason,
     "max_steps": check_max_steps,
+    "answer_has_tool_time": check_answer_has_tool_time,
 }
 
 

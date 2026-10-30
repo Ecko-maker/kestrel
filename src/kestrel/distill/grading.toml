@@ -1,0 +1,12 @@
+# Which distill runs count as graded (known issue #69).
+#
+# "checks-only" (default): keep only distill tasks graded entirely by deterministic checks. A task
+#   with a rubric is dropped whatever its status: with `--judge none` the runner marks it "pass" on
+#   its checks alone, and with the default judge the teacher would grade its own answers.
+# "calibrated-judge": also keep rubric tasks, but only when the judge@version that graded them is
+#   listed below. List a judge only after it has been calibrated on human labels (#21). Stored
+#   answers can be graded later with `kestrel bench rejudge <results> --judge ... --judge-model ...`,
+#   without re-running Kestrel.
+
+grading = "checks-only"
+calibrated_judges = []  # e.g. "groq/qwen/qwen3.8-27b@v2"

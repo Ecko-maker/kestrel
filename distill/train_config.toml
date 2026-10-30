@@ -1,0 +1,71 @@
+# QLoRA fine-tuning of the Kestrel student (Phase 4). Read by distill/train.py; copied whole into each
+# run's lineage.json. Change settings here, never in the code.
+
+seed = 2026
+
+[base_model]
+# Apache-2.0, text-only, Hermes-style <tool_call> chat template, served by Ollama as
+# qwen3:4b-instruct-2507. Pinned to an exact revision (Hugging Face commit, 2025-09-17).
+id = "Qwen/Qwen3-4B-Instruct-2507"
+revision = "cdbee75f17c01a7cc42f958dc650907174af0554"
+
+[data]
+# Longer examples stop the run (never truncated); rebuild the dataset with a lower --max-tokens.
+max_length = 8192
+
+[quantization]
+# 4-bit NF4 weights with double quantization; T4 and P100 have no bfloat16, so compute in float16.
+load_in_4bit = true
+quant_type = "nf4"
+double_quant = true
+compute_dtype = "float16"
+
+[lora]
+r = 16
+alpha = 32
+dropout = 0.05
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+[training]
+epochs = 5                   # an upper bound: early stopping on val loss usually ends sooner
+batch_size = 1
+gradient_accumulation = 8    # effective batch of 8 examples
+learning_rate = 1e-4
+scheduler = "cosine"
+warmup_steps = 5
+early_stopping_patience = 1  # stop after one epoch without a lower val loss; the best epoch is kept
+gradient_checkpointing = true
+fp16 = true
+logging_steps = 5
+
+[smoke]
+# `train.py --smoke`: CPU, no 4-bit, a tiny randomly initialized Qwen3 with the real tokenizer (same
+# chat template), a few steps. Checks the pipeline end to end, not the model.
+max_steps = 4
+eval_steps = 2
+hidden_size = 64
+intermediate_size = 128
+num_hidden_layers = 2
+num_attention_heads = 4
+num_key_value_heads = 2
+head_dim = 16
+
+[gpu_smoke]
+# `train.py --gpu-smoke` (Kaggle, before a real run): the real base model in 4-bit overfits a fixed batch
+# of the synthetic smoke examples. Passes if the loss falls by min_loss_drop, every example has trainable
+# tokens, and a greedy generation afterwards makes a tool call train_format can parse.
+batch_examples = 4
+steps = 30
+learning_rate = 5e-4
+min_loss_drop = 0.5
+max_new_tokens = 128
+
+[pins]
+# The versions uv.lock resolved and the notebook installs (a test keeps the three equal). torch isn't
+# pinned: Kaggle's preinstalled CUDA build is used and reported.
+transformers = "5.20.1"
+peft = "0.21.2"
+trl = "1.16.0"
+datasets = "5.1.0"
+accelerate = "1.15.0"
+bitsandbytes = "0.50.2"

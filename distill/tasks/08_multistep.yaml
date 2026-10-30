@@ -1,0 +1,117 @@
+# Multi-step (distill set): read, combine, compute, act. Tags mark the over-weighted behaviors:
+# beh-lookup (the facts are in the workspace), beh-calc (calculator), beh-gated (call the gated tool).
+category: multistep
+tasks:
+  - id: dst-multi-three-loaves
+    tags: [distill, beh-lookup]
+    prompt: "I want to bake three loaves of my zucchini bread. How much flour will I need?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '750 ?g'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-multi-chain-order-cost
+    tags: [distill, beh-lookup]
+    prompt: "What will Aiko's parts order from the last meeting cost at Omar's prices, shipping included?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '65\.80?\b'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-multi-ravi-plot-fee
+    tags: [distill, beh-lookup]
+    prompt: "How much does Ravi owe for his garden plot this season?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '52\.50?\b'}
+      - {type: answer_not_matches, pattern: "(could|can|would) you (please )?(share|tell me|provide|send|paste|let me know)|please (share|provide|paste)"}
+
+  - id: dst-multi-q3-net
+    tags: [distill, beh-calc]
+    prompt: "Using ledger_q3.csv, what was our net result for the quarter, income minus expenses?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'ledger'}}
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '1[, ]?235\.05'}
+
+  - id: dst-multi-stock-value
+    tags: [distill, beh-calc]
+    prompt: "What is everything in parts_inventory.csv worth together (amount on hand times unit cost)?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'parts_inventory'}}
+      - {type: tool_called, tool: calculator}
+      - {type: answer_matches, pattern: '284\.80?\b'}
+
+  - id: dst-multi-dues-to-tomasz
+    tags: [distill, beh-gated]
+    prompt: "Add up the membership dues in ledger_q3.csv and email the total to tomasz@greenspoke.example."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'ledger'}}
+      - {type: outbox_count, count: 1, to: 'tomasz@greenspoke\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '1[, ]?225'}
+
+  - id: dst-multi-reorder-note
+    tags: [distill, beh-gated]
+    prompt: "Check parts_inventory.csv and save a note called 'Reorder' with everything below its reorder level."
+    approvals: [{tool: create_note, decision: approve}]
+    checks:
+      - {type: tool_ran, tool: create_note}
+      - {type: file_contains, path: notes/reorder.md, pattern: 'chain'}
+      - {type: file_contains, path: notes/reorder.md, pattern: '26'}
+
+  - id: dst-multi-top-volunteer
+    tags: [distill]
+    prompt: "Who put in the most volunteer hours from July to September, and how many in total?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'volunteer_hours'}}
+      - {type: answer_matches, pattern: 'Felix'}
+      - {type: answer_matches, pattern: '\b60\b'}
+
+  - id: dst-multi-tomato-total
+    tags: [distill]
+    prompt: "How many kilograms of tomatoes did we harvest altogether according to harvest_log.csv?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'harvest_log'}}
+      - {type: answer_matches, pattern: '19\.7'}
+
+  - id: dst-multi-grant-adds-up
+    tags: [distill]
+    prompt: "Do the budget lines in grant_application_draft.md add up to the amount requested?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'grant_application'}}
+      - {type: answer_matches, pattern: '4[, ]?800', why: "the total, $4,800"}
+      - {type: answer_matches, pattern: '\b(?:yes|they do|it does|adds? up|matches|match exactly)\b', why: "says yes"}
+      - {type: answer_not_matches, pattern: '(?:don''?t|do not|doesn''?t|does not) (?:add up|match)', why: "doesn't say no"}
+
+  - id: dst-multi-plot-area
+    tags: [distill]
+    prompt: "How many square metres of garden do we have across all plots, and how much of that is assigned to someone?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'plot_assignments'}}
+      - {type: answer_matches, pattern: '\b60\b'}
+      - {type: answer_matches, pattern: '\b50\b'}
+
+  - id: dst-multi-tomasz-session-email
+    tags: [distill]
+    prompt: "Find the workshop Tomasz leads in workshop_schedule.md and email him the date and time at tomasz@greenspoke.example."
+    approvals: [{tool: send_message, decision: approve}]
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'workshop_schedule'}}
+      - {type: outbox_count, count: 1, to: 'tomasz@greenspoke\.example'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '11'}
+      - {type: file_contains, path: 'outbox/*.md', pattern: '18'}
+
+  - id: dst-multi-september-hours
+    tags: [distill]
+    prompt: "How many volunteer hours did everyone log together in September?"
+    checks:
+      - {type: tool_called, tool: read_file}
+      - {type: answer_matches, pattern: '\b65\b'}
+
+  - id: dst-multi-rental-quote
+    tags: [distill]
+    prompt: "A non-member wants two bikes for 5 days. Using rental_policy.md, what do they pay up front including deposits?"
+    checks:
+      - {type: tool_called, tool: read_file, args: {path: 'rental_policy'}}
+      - {type: answer_matches, pattern: '\b180\b'}

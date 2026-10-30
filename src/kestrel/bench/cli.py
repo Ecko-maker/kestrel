@@ -20,8 +20,8 @@ from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
 from kestrel.bench.preview import preview
 from kestrel.bench.quota import QuotaWait
-from kestrel.bench.report import markdown, pct, summarize, write_results
-from kestrel.bench.runner import TaskResult, agent_fingerprint, billable_tokens, run_suite
+from kestrel.bench.report import markdown, pct, routing_lines, summarize, write_results
+from kestrel.bench.runner import ROUTER_STOP, TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.safety import (
     SAFETY_DIR,
     SAFETY_VERSION,
@@ -35,10 +35,34 @@ from kestrel.bench.safety import (
 )
 from kestrel.bench.safety_report import markdown_safety
 from kestrel.bench.scripted import MODELS, ScriptedSafetyModel
-from kestrel.bench.stats import SEED, compare, judge_label, merge_references, stratified_sample
+from kestrel.bench.stats import (
+    PENDING,
+    PREREG_CONTEXT_RATIO,
+    PREREG_RATIO,
+    SEED,
+    compare,
+    extended_passes,
+    judge_label,
+    merge_references,
+    phase4_gate,
+    preregistered_quality,
+    quality_ratio,
+    stratified_sample,
+    without_extended_passes,
+)
 from kestrel.bench.stubs import USERS, build_registry, make_setup
-from kestrel.bench.tasks import SUITE_VERSION, Task, TaskError, load_tasks, select, task_sha
+from kestrel.bench.tasks import (
+    SUITE_VERSION,
+    TASKS_DIR,
+    WORKSPACE_DIR,
+    Task,
+    TaskError,
+    load_tasks,
+    select,
+    task_sha,
+)
 from kestrel.bench.validate import check_network_rules, concerns, markers_of, validate
+from kestrel.distill import DISTILL_DB, DISTILL_DIR, DISTILL_VERSION
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
 from kestrel.tracing import Tracer
 
@@ -58,7 +82,8 @@ PINNED_REFERENCE = RESULTS_DIR.parent / "baselines" / "run2-v1.1-judge-v2-final.
 GROQ_FREE_DAILY = {"tokens": 200_000, "requests": 1_000}  # gpt-oss-120b free tier, cached tokens excluded
 DONE = ("pass", "fail", "excluded")  # results a resumed run keeps
 WAITING = "not run yet: waiting for the daily limit (checkpoint; --resume continues)"
-SPLITS = ("main", "safety")
+SPLITS = ("main", "safety")  # what `validate` checks
+RUN_SPLITS = (*SPLITS, "distill")  # what `run` runs
 REUSABLE = ("pass", "fail")
 
 
@@ -81,9 +106,18 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         "definitions only), so --repeat 3 costs two new runs per task",
     )
     run.add_argument(
-        "--split", choices=SPLITS, default="main", help="main (the 100 v1.1 tasks) or safety (attacks + benign)"
+        "--split",
+        choices=RUN_SPLITS,
+        default="main",
+        help="main (the 100 v1.1 tasks), safety (attacks + benign) or distill (the Phase 4 training task set in "
+        "distill/, not KestrelBench; traces go to logs/distill.db)",
     )
-    run.add_argument("--split-dir", type=Path, help="safety split folder (default evals/kestrelbench/safety)")
+    run.add_argument(
+        "--split-dir",
+        type=Path,
+        help="safety: the split folder (default evals/kestrelbench/safety); distill: a folder with tasks/ and "
+        "workspace/ (default distill)",
+    )
     run.add_argument(
         "--scripted",
         choices=MODELS,
@@ -178,6 +212,25 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         metavar="A2",
         help="a second run of the reference agent: A and A2 count as per-task repeats (main split; rule C)",
     )
+    prereg = comp.add_argument_group(
+        "Phase 4 pre-registration (docs/phase4-plan.md section 8): A = the teacher after-run x3, B = routed x5"
+    )
+    prereg.add_argument(
+        "--metric",
+        choices=["pass", "checks"],
+        default="pass",
+        help="checks: also print section 8's verdict (deterministic checks primary, full rule secondary)",
+    )
+    prereg.add_argument(
+        "--b-references",
+        type=Path,
+        nargs="+",
+        metavar="REF",
+        help="section 8.1 (b): the other teacher references (the two pinned baselines), merged with A",
+    )
+    prereg.add_argument("--cost-shown", choices=["yes", "no"], help="section 8.2: the cost upper bound is < 0")
+    prereg.add_argument("--safety", choices=["held", "failed"], help="section 8.4: the routed safety gate")
+    prereg.add_argument("--drift", choices=["none", "drift"], help="section 8.3: the same-week drift guard")
 
     val = actions.add_parser(
         "validate", help="check task files before running them (schema, canaries, fixtures, checks)"
@@ -224,6 +277,13 @@ def _git_sha() -> str | None:
         return None
 
 
+def _repo_relative(path: Path) -> str:
+    """A folder as recorded in results meta: relative to the repo when it's inside it."""
+    resolved = path.resolve()
+    root = RESULTS_DIR.parents[1]
+    return resolved.relative_to(root).as_posix() if resolved.is_relative_to(root) else resolved.as_posix()
+
+
 def _progress(r: TaskResult) -> None:
     mark = {"pass": "PASS", "fail": "FAIL", "error": "ERR ", "excluded": "EXCL", "skipped": "SKIP"}[r.status]
     extra = f"  judge {r.judge['score']}" if r.judge else ""
@@ -260,11 +320,22 @@ def _refuse_incomplete(args: argparse.Namespace) -> None:
         )
 
 
+def _split_dirs(args: argparse.Namespace) -> tuple[Path, Path]:
+    """(tasks folder, fixture workspace) for the main and distill splits. main is exactly what it always was."""
+    split = getattr(args, "split", "main")
+    if split == "distill":
+        root = args.split_dir or DISTILL_DIR
+        return root / "tasks", root / "workspace"
+    if split == "main" and getattr(args, "split_dir", None):
+        sys.exit("--split-dir applies to --split safety or distill only.")
+    return TASKS_DIR, WORKSPACE_DIR
+
+
 def _pick_tasks(args: argparse.Namespace) -> list[Task]:
     if args.split == "safety":
         pool = [st.task for st in _safety(args).tasks if args.kinds in ("all", st.meta.kind)]
     else:
-        pool = load_tasks()
+        pool = load_tasks(_split_dirs(args)[0])
     tasks = select(pool, args.subset, args.category, args.task, skip_tags=("network",) if args.skip_network else ())
     if args.tasks:
         patterns = [p.strip() for p in args.tasks.split(",") if p.strip()]
@@ -281,7 +352,9 @@ def _pick_tasks(args: argparse.Namespace) -> list[Task]:
     return tasks
 
 
-def _reusable(path: Path, provider: str, model: str, judge: str | None, tasks: list[Task]) -> list[TaskResult]:
+def _reusable(
+    path: Path, provider: str, model: str, judge: str | None, tasks: list[Task], workspace: Path = WORKSPACE_DIR
+) -> list[TaskResult]:
     """Graded runs from an earlier file that may stand in for repeat 1: same model, same judge and
     judge version, and an identical task definition (fingerprint), so nothing is mixed."""
     old = _load(path)
@@ -290,7 +363,7 @@ def _reusable(path: Path, provider: str, model: str, judge: str | None, tasks: l
         sys.exit(f"--reuse: {path.name} was run on {m.get('provider')}/{m.get('model')}, not {provider}/{model}.")
     if judge_label(m) != (f"{judge}@{JUDGE_VERSION}" if judge else "none"):
         sys.exit(f"--reuse: {path.name} was graded by {judge_label(m)}; this run uses {judge}@{JUDGE_VERSION}.")
-    shas = {t.id: task_sha(t) for t in tasks}
+    shas = {t.id: task_sha(t, workspace) for t in tasks}
     usable, stale = [], 0
     for d in old["tasks"]:
         if d["id"] in shas and d["status"] in REUSABLE and d.get("repeat", 1) == 1:
@@ -347,13 +420,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     if args.split == "main" and (args.scripted or args.split_dir or args.user != "strict" or args.kinds != "all"):
         sys.exit("--scripted, --split-dir, --user and --kinds apply to --split safety only.")
+    if args.split == "distill" and (args.scripted or args.user != "strict" or args.kinds != "all"):
+        sys.exit("--scripted, --user and --kinds apply to --split safety only.")
     if args.split == "safety":
         args.judge = "none"  # graded by deterministic guards only
         if args.reuse:
             sys.exit("--reuse is for the main split; use --resume to continue a safety run.")
         if args.scripted:
             args.provider = "scripted"
-    label = f"safety-{args.scripted or args.provider}" if args.split == "safety" else args.provider
+    label = {"safety": f"safety-{args.scripted or args.provider}", "distill": f"distill-{args.provider}"}.get(
+        args.split, args.provider
+    )
     args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{label}.json"
     if args.dry_run:
         return _run(args)
@@ -371,10 +448,17 @@ def _run(args: argparse.Namespace) -> int:
         sys.exit("No tasks match.")
     if args.repeat < 1:
         sys.exit("--repeat must be at least 1")
-    for name in (args.provider, args.judge):
+    routed = args.provider == "routed"  # the Phase 4 router (kestrel/router.py), configured by KESTREL_ROUTER_*
+    for name in (args.judge,) if routed else (args.provider, args.judge):
         if name not in ("none", "scripted") and name not in PROVIDERS:
-            sys.exit(f"Unknown provider {name!r}. Choose from: {', '.join(PROVIDERS)}")
-    model = args.scripted or args.model or PROVIDERS[args.provider].default_model
+            sys.exit(f"Unknown provider {name!r}. Choose from: {', '.join(PROVIDERS)} (or routed)")
+    if routed:
+        from kestrel.router import RouterConfig
+
+        router_config = RouterConfig.from_env()
+        model = router_config.label()
+    else:
+        model = args.scripted or args.model or PROVIDERS[args.provider].default_model
     judge_model = (args.judge_model or PROVIDERS[args.judge].default_model) if args.judge != "none" else None
     judge_name = f"{args.judge}/{judge_model}" if judge_model else None
 
@@ -384,6 +468,7 @@ def _run(args: argparse.Namespace) -> int:
     resolved = args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
     agent = agent_fingerprint(args.provider, resolved, registry)
     previous: dict[tuple[str, int, str | None], TaskResult] = {}  # (task, repeat, user)
+    tasks_dir, workspace = _split_dirs(args)
     if args.resume:
         old = _load(args.resume)
         old_meta = old.get("meta", {})
@@ -411,7 +496,7 @@ def _run(args: argparse.Namespace) -> int:
                 f"{judge_name}@{JUDGE_VERSION} and mix two judges in one score. Re-grade it first: "
                 f"uv run kestrel bench rejudge {args.resume}"
             )
-        version = SAFETY_VERSION if safety else SUITE_VERSION
+        version = {"safety": SAFETY_VERSION, "distill": DISTILL_VERSION}.get(args.split, SUITE_VERSION)
         if old_meta.get("split_version") not in (None, version):  # files from before versions were recorded pass
             sys.exit(
                 f"{args.resume.name} was run on {args.split} split version {old_meta['split_version']}, not {version}: "
@@ -427,7 +512,9 @@ def _run(args: argparse.Namespace) -> int:
             (d["id"], d.get("repeat", 1), d.get("user")): TaskResult(**d) for d in old["tasks"] if d["status"] in DONE
         }
     if args.reuse:
-        for r in _reusable(args.reuse, args.provider, model, judge_name, tasks):
+        if _load(args.reuse).get("meta", {}).get("split", "main") != args.split:
+            sys.exit(f"--reuse: {args.reuse.name} is not a {args.split} split run.")
+        for r in _reusable(args.reuse, args.provider, model, judge_name, tasks, workspace):
             previous.setdefault((r.id, 1, None), r)
 
     users: list[str | None] = (["strict", "rubber-stamp"] if args.user == "both" else [args.user]) if safety else [None]
@@ -437,8 +524,11 @@ def _run(args: argparse.Namespace) -> int:
     refs = args.estimate_from or [p for p in (args.reuse, args.resume) if p]
     est = _estimate([(t, k) for t, k, _ in todo], refs or _default_reference(args.split, args.provider, model))
     times = f"{args.repeat}" + (f" x {len(users)} users ({', '.join(str(u) for u in users)})" if safety else "")
+    name = {"safety": "KestrelBench safety split", "distill": f"Distill set {DISTILL_VERSION} (not KestrelBench)"}.get(
+        args.split, "KestrelBench"
+    )
     print(
-        f"KestrelBench{' safety split' if safety else ''}: {len(tasks)} tasks x {times} = {len(all_jobs)} runs on "
+        f"{name}: {len(tasks)} tasks x {times} = {len(all_jobs)} runs on "
         f"{args.provider}/{model}, judge {judge_name or 'none'} ({JUDGE_VERSION}); {len(todo)} to run, "
         f"{len(all_jobs) - len(todo)} kept"
     )
@@ -472,7 +562,8 @@ def _run(args: argparse.Namespace) -> int:
             model = llm.model
         else:
             llm, _ = build_llm([args.provider], args.model)
-            model = llm.llms[0].model
+            if not routed:  # a routed run keeps the router's label (RoutedLLM has no .llms)
+                model = llm.llms[0].model
         judge = _judge(args.judge, args.judge_model) if args.judge != "none" else None
     except LLMError as e:
         sys.exit(f"Can't start the benchmark: {e}")
@@ -481,7 +572,7 @@ def _run(args: argparse.Namespace) -> int:
     policy = AnswerPolicy.from_env()  # what the console loads from an answer by itself
     meta = {
         "suite_version": SUITE_VERSION,
-        "split": args.split,
+        "split": args.split,  # `kestrel distill build` trains only on "distill" runs, never on KestrelBench
         "split_version": SAFETY_VERSION if safety else SUITE_VERSION,
         # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
         "agent": agent_fingerprint(args.provider, model, registry),  # the model actually built
@@ -504,6 +595,14 @@ def _run(args: argparse.Namespace) -> int:
         "shard": args.shard,
         "git": _git_sha(),
     }
+    if args.split == "distill":
+        meta |= {
+            "suite_version": DISTILL_VERSION,  # so `bench compare` never pairs it with KestrelBench
+            "split_version": DISTILL_VERSION,
+            "task_dir": _repo_relative(tasks_dir),
+            "workspace_dir": _repo_relative(workspace),
+        }
+
     fresh: list[TaskResult] = []
     out = args.out
 
@@ -520,12 +619,12 @@ def _run(args: argparse.Namespace) -> int:
         sections = {"safety": score_dict(score([r.to_dict() for r in rows]))} if safety else None
         write_results(out, rows, meta, extra=sections)
 
-    tracer = Tracer(BENCH_DB)
+    tracer = Tracer(DISTILL_DB if args.split == "distill" else BENCH_DB)
     for user in users:  # one pass per scripted user (main split: one pass)
         jobs = [(t, k) for t, k, u in todo if u == user]
         if not jobs:
             continue
-        extra: dict[str, Any] = {}
+        extra: dict[str, Any] = {"base_workspace": workspace}  # main or distill fixtures
         if split is not None and user is not None:
             print(f"-- user: {user}")
             if isinstance(llm, ScriptedSafetyModel):
@@ -548,6 +647,7 @@ def _run(args: argparse.Namespace) -> int:
             token_budget=None if args.token_budget is None else max(0, args.token_budget - spent),
             repeats=[k for _, k in jobs],
             stop_after_errors=args.stop_after_errors or None,
+            student_health_limit=router_config.max_student_health if routed else None,
             quota=QuotaWait(
                 total=len(all_jobs),
                 done_before=len(previous) + len(fresh),
@@ -583,10 +683,16 @@ def _run(args: argparse.Namespace) -> int:
         f"{s['tokens_total'] + s['judge_tokens_total']:,} tokens ({s['billable_tokens_total']:,} billable)"
         f"\nResults: {out}\nReport:  {out.with_suffix('.md')}"
     )
+    if routing := s.get("routing"):
+        print("\n".join(routing_lines(routing, s["pass_rate"])))
 
     failed = []
     if args.min_pass_rate is not None and (s["pass_rate"] or 0) < args.min_pass_rate:
         failed.append(f"pass rate {pct(s['pass_rate'])} is below the minimum {pct(args.min_pass_rate)}")
+    router_stop = next((r.error for r in results if r.status == "skipped" and ROUTER_STOP in (r.error or "")), None)
+    if router_stop:
+        failed.append(router_stop)
+        print(f"ROUTER STOPPED: {router_stop}")
     stopped = sum(r.status == "skipped" and "errors in a row" in (r.error or "") for r in results)
     if args.max_errors is not None and s["errors"] + stopped > args.max_errors:
         failed.append(f"{s['errors']} runs errored and {stopped} were skipped after errors (max {args.max_errors})")
@@ -709,13 +815,23 @@ def cmd_unlock(args: argparse.Namespace) -> int:
     return 0
 
 
+def _rejudge_sources(meta: dict[str, Any]) -> tuple[Path, Path]:
+    """(task folder, trace database) of the run a results file came from. KestrelBench files are
+    exactly as before; a distill run uses the task folder it recorded and logs/distill.db, so its
+    stored rubric answers can be graded later without re-running Kestrel."""
+    if meta.get("split") == "distill" and meta.get("task_dir"):
+        return RESULTS_DIR.parents[1] / meta["task_dir"], DISTILL_DB
+    return TASKS_DIR, BENCH_DB
+
+
 def _rejudge(args: argparse.Namespace, out: Path) -> int:
     """Grade the stored answers again (new judge prompt or model) and write a NEW results file.
     Kestrel is never re-run; checks keep their stored outcome; only the judge's part changes."""
     data = _load(args.results)
     if out.resolve() == args.results.resolve():
         sys.exit("rejudge writes a new file; it never overwrites the original results.")
-    by_id = {t.id: t for t in load_tasks()}
+    tasks_dir, trace_db = _rejudge_sources(data.get("meta", {}))
+    by_id = {t.id: t for t in load_tasks(tasks_dir)}
 
     def wanted(d: dict[str, Any]) -> bool:
         task = by_id.get(d["id"])
@@ -728,11 +844,11 @@ def _rejudge(args: argparse.Namespace, out: Path) -> int:
         return not (args.only_missing and current)
 
     todo = [d for d in data["tasks"] if wanted(d)]
-    sources = Counter(cal.tool_log_for(d, BENCH_DB)[1] for d in todo)
+    sources = Counter(cal.tool_log_for(d, trace_db)[1] for d in todo)
     request_tokens = sum(
         sum(
             len(m["content"])
-            for m in build_request(list(t.prompts), t.rubric, cal.tool_log_for(d, BENCH_DB)[0], d["answer"])
+            for m in build_request(list(t.prompts), t.rubric, cal.tool_log_for(d, trace_db)[0], d["answer"])
         )
         // 4
         for d in todo
@@ -759,7 +875,7 @@ def _rejudge(args: argparse.Namespace, out: Path) -> int:
             assert task is not None and task.rubric
             if graded and args.pause:
                 time.sleep(args.pause)
-            log, _ = cal.tool_log_for(d, BENCH_DB)
+            log, _ = cal.tool_log_for(d, trace_db)
             before = (r.status, (r.judge or {}).get("score"), (r.judge or {}).get("version") or "v1")
             v = judge.grade(list(task.prompts), task.rubric, log, r.answer)
             graded += 1
@@ -822,6 +938,15 @@ def cmd_compare(args: argparse.Namespace) -> int:
     for label, ids in (("better in B", c.better_in_b), ("worse in B", c.worse_in_b)):
         if ids:
             print(f"  {label}: {', '.join(ids)}")
+    if any(r.get("routing") for r in b["tasks"]):  # B is a routed run: the Phase 4 quality verdict
+        print(quality_verdict(a, b))
+    if getattr(args, "metric", "pass") == "checks":
+        if second:
+            sys.exit("--metric checks compares with the after-run alone (a); give the others as --b-references.")
+        try:
+            print(preregistered_verdict(args, a, b))
+        except ValueError as e:
+            sys.exit(f"Can't use the --b-references: {e}")
     within = c.within(args.margin)
     print(
         f"Within {args.margin * 100:.0f} points of A (95% confidence): "
@@ -956,6 +1081,82 @@ def cmd_show(args: argparse.Namespace) -> int:
         sys.exit(f"No safety task {args.task_id!r}. Run `kestrel bench validate --split safety` for the list.")
     print(preview(split, args.task_id), end="")
     return 0
+
+
+def quality_verdict(teacher: dict[str, Any], routed: dict[str, Any], threshold: float = 0.95) -> str:
+    """Decision 28: routed / teacher, lower end of the 95% paired interval >= threshold. Stated twice:
+    as measured, and with every pass that needed more than max_steps counted as a fail. The claim must
+    hold without them."""
+    lines = []
+    extended = extended_passes(routed["tasks"])
+    without = {**routed, "tasks": without_extended_passes(routed["tasks"])}
+    for label, data in (("as measured", routed), (f"without the {len(extended)} passes past max_steps", without)):
+        ratio = quality_ratio(teacher, data)
+        if ratio is None:
+            lines.append(f"Quality B/A {label}: no shared graded tasks")
+            continue
+        verdict = "HOLDS" if ratio.low >= threshold else "NOT SHOWN"
+        lines.append(
+            f"Quality B/A {label}: {ratio.value:.3f} (95% CI {ratio.low:.3f}-{ratio.high:.3f}, n={ratio.n}): "
+            f">= {threshold:.2f} {verdict}"
+        )
+    if extended:
+        lines.append(f"Passed only past max_steps: {', '.join(extended)} (the claim must hold without them)")
+    return "\n".join(lines)
+
+
+def preregistered_verdict(args: argparse.Namespace, teacher: dict[str, Any], routed: dict[str, Any]) -> str:
+    """Section 8 of docs/phase4-plan.md, as frozen on 2026-10-30: D = routed - 0.95 x teacher per task, the
+    95% paired bootstrap bound of mean(D); primary on the deterministic checks, secondary on the full rule,
+    0.90 for context; then section 8.5's outcome from what is known (the rest given as options)."""
+
+    def flag(name: str, yes: str) -> bool | None:
+        value = getattr(args, name, None)
+        return None if value is None else value == yes
+
+    lines = ["Phase 4 pre-registration (docs/phase4-plan.md section 8):"]
+    primary = preregistered_quality(teacher, routed, "checks")
+    for res, label in (
+        (primary, "primary, deterministic checks"),
+        (preregistered_quality(teacher, routed, "pass"), "secondary, full rule"),
+    ):
+        if res.d is None or res.context is None:
+            lines.append(f"  {label}: no task graded in both")
+            continue
+        lines.append(
+            f"  {label}: mean(routed - {PREREG_RATIO:.2f} x teacher) {res.d.value:+.4f} "
+            f"(95% CI {res.d.low:+.4f} to {res.d.high:+.4f}, n={res.d.n}) -> {res.outcome}; "
+            f"at {PREREG_CONTEXT_RATIO:.2f} for context: lower bound {res.context.low:+.4f}"
+        )
+        lines += [f"    not the pre-registered design: {p}" for p in res.problems]
+    quality_b = None
+    if refs := getattr(args, "b_references", None):
+        merged = teacher
+        for ref in refs:
+            merged = merge_references(merged, _load(ref), other_agents=True)
+        quality_b = preregistered_quality(merged, routed, "checks", teacher_repeats=None).outcome
+        lines.append(f"  (b) against A + {len(refs)} more reference(s): {quality_b}")
+    gate = phase4_gate(
+        primary.outcome,
+        quality_b,
+        cost_shown=flag("cost_shown", "yes"),
+        safety_held=flag("safety", "held"),
+        drift_ok=flag("drift", "none"),
+    )
+    missing = [
+        what
+        for what, value in (
+            ("(b) --b-references", refs),
+            ("--cost-shown", getattr(args, "cost_shown", None)),
+            ("--safety", getattr(args, "safety", None)),
+            ("--drift", getattr(args, "drift", None)),
+        )
+        if not value
+    ]
+    lines.append(
+        f"  Outcome (section 8.5): {gate}" + (f" (still needed: {', '.join(missing)})" if gate == PENDING else "")
+    )
+    return "\n".join(lines)
 
 
 def cmd_report(args: argparse.Namespace) -> int:

@@ -1,0 +1,12 @@
+# KestrelBench sources that aren't on this branch's disk, pinned by commit.
+#
+# The safety split lives on the Phase 3 branches until they merge. Its prompts and fixtures are read
+# from this exact commit with git (never from a moving branch or tag). If the tag below exists
+# locally it must still resolve to this commit, or every overlap check and every
+# `kestrel distill build` stops. If the commit isn't in the local clone (e.g. a shallow CI checkout),
+# only the files on disk are used, and the report or manifest says so.
+
+[safety_split]
+commit = "6f58ee528ce53bc011653c9b783973e0da077eba"  # tag safety-before: memory-safety, final attack texts
+tag = "safety-before"
+path = "evals/kestrelbench/safety"

@@ -1,0 +1,19 @@
+# Teachers: the only (provider, model) pairs whose outputs may become training data.
+# Every model step of a trace must match one entry, or the trace is dropped.
+#
+# Open-weight models only (key decision 3, design decision 9): Claude, GPT and Gemini terms forbid
+# training other models on their outputs, and the demo provider is scripted text, not a model.
+# The loader refuses such entries, so editing this file can't let them in either.
+
+# Exactly one entry is active: the teacher chosen under known issue #72 (distill/COLLECTION.md, step 0).
+
+# Option a: Groq's hosted gpt-oss-120b.
+[[teacher]]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+
+# Option c: gpt-oss-20b served by Ollama (on a Kaggle GPU). To switch, comment out option a and
+# uncomment these three lines.
+# [[teacher]]
+# provider = "ollama"
+# model = "gpt-oss:20b"

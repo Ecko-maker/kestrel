@@ -2,6 +2,9 @@
 
 Usage: uv run python scripts/check_results.py <results.json>... [--suite 1.1] [--judge v2] [--safety s1.0] [--partial]
 
+A distill run (meta.split "distill") is checked against the task folder it recorded, its own version
+(d1.1 unless --suite is given), and, when it ran with --judge none, no judge version.
+
 Checks: the file is valid JSON with no duplicate keys, every task id of the suite appears exactly
 once (per repeat), statuses are known, and the file and every judge verdict record the expected
 suite and judge versions. Exit code 1 if anything is wrong.
@@ -24,7 +27,8 @@ from typing import Any
 
 from kestrel.bench.safety import SAFETY_VERSION, load_safety
 from kestrel.bench.stats import GRADED
-from kestrel.bench.tasks import load_tasks
+from kestrel.bench.tasks import SUITE_VERSION, TASKS_DIR, load_tasks
+from kestrel.distill import DISTILL_VERSION, ROOT
 
 STATUSES = {"pass", "fail", "error", "excluded", "skipped"}
 
@@ -37,7 +41,7 @@ def no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return dict(pairs)
 
 
-def check(path: Path, suite: str, judge: str, safety: str = SAFETY_VERSION, partial: bool = False) -> list[str]:
+def check(path: Path, suite: str | None, judge: str, safety: str = SAFETY_VERSION, partial: bool = False) -> list[str]:
     problems: list[str] = []
     try:
         data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=no_duplicate_keys)
@@ -46,13 +50,17 @@ def check(path: Path, suite: str, judge: str, safety: str = SAFETY_VERSION, part
     meta, tasks = data.get("meta", {}), data.get("tasks", [])
     if meta.get("split") == "safety":
         return check_safety(meta, tasks, safety, partial)
+    distill = meta.get("split") == "distill"
+    suite = suite or (DISTILL_VERSION if distill else SUITE_VERSION)
     if meta.get("suite_version") != suite:
         problems.append(f"meta.suite_version is {meta.get('suite_version')!r}, expected {suite!r}")
-    if (meta.get("judge_version") or "v1") != judge:
+    unjudged = distill and meta.get("judge") is None  # a distill run with --judge none
+    if not unjudged and (meta.get("judge_version") or "v1") != judge:
         problems.append(f"meta.judge_version is {meta.get('judge_version')!r}, expected {judge!r}")
     runs = Counter((t["id"], t.get("repeat", 1)) for t in tasks)
     problems += [f"{tid} (repeat {k}) appears {n} times" for (tid, k), n in runs.items() if n > 1]
-    suite_ids = {t.id for t in load_tasks()}
+    tasks_dir = ROOT / meta["task_dir"] if distill and meta.get("task_dir") else TASKS_DIR
+    suite_ids = {t.id for t in load_tasks(tasks_dir)}
     found = {tid for tid, _ in runs}
     problems += [f"missing task {tid}" for tid in sorted(suite_ids - found)]
     problems += [f"unknown task {tid}" for tid in sorted(found - suite_ids)]
@@ -118,7 +126,9 @@ def check_safety(meta: dict[str, Any], tasks: list[dict[str, Any]], version: str
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("files", type=Path, nargs="+")
-    parser.add_argument("--suite", default="1.1")
+    parser.add_argument(
+        "--suite", help=f"expected suite version (default {SUITE_VERSION}, or {DISTILL_VERSION} for distill)"
+    )
     parser.add_argument("--judge", default="v2")
     parser.add_argument("--safety", default=SAFETY_VERSION, help="expected safety split version")
     parser.add_argument("--partial", action="store_true", help="safety files: skip the coverage check (--task runs)")
