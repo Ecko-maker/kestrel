@@ -1147,6 +1147,7 @@ wake = [
 dev = [
     { name = "httpx" },
     { name = "mypy" },
+    { name = "numpy" },
     { name = "playwright" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -1186,6 +1187,7 @@ provides-extras = ["wake", "train", "export"]
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mypy", specifier = ">=2.4.0" },
+    { name = "numpy", specifier = ">=2.5.4" },
     { name = "playwright", specifier = ">=1.63.0" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pytest", specifier = ">=9.1.1" },

@@ -196,6 +196,112 @@ def quality_ratio(teacher: dict[str, Any], routed: dict[str, Any], **kw: Any) ->
     return ratio_ci([pa[t] for t in shared], [pb[t] for t in shared], **kw)
 
 
+# --- Phase 4 pre-registration (docs/phase4-plan.md section 8) ----------------------------------------
+
+PREREG_RATIO = 0.95  # section 8.1: routed >= 95% of the teacher's quality
+PREREG_CONTEXT_RATIO = 0.90  # section 8.2: reported for context only, never the verdict
+PREREG_ROUTED_REPEATS = 5  # section 8.3: fixed in advance
+PREREG_TEACHER_REPEATS = 3  # the 10-28 after-run x3
+PASS, FAIL, NOT_SHOWN, PENDING = "PASS", "FAIL", "NOT SHOWN", "PENDING"
+ROUTER_STOP = "router stopped the run"  # the error the runner gives the rows a student-health stop skips
+
+
+def run_passes(r: dict[str, Any], metric: str) -> bool:
+    """One graded run under a metric: "checks" = every deterministic check ok (the judge ignored);
+    "pass" = the full pass rule. A pass past max_steps (the router's fresh teacher budget) never counts."""
+    if (r.get("routing") or {}).get("over_max_steps"):
+        return False
+    if metric == "checks":
+        return r["status"] in GRADED and all(c.get("ok") for c in r.get("checks") or [])
+    return r["status"] == "pass"
+
+
+def per_task_score(results: list[dict[str, Any]], metric: str, *, errors_fail: bool) -> dict[str, list[float]]:
+    """Task id -> the run outcomes (1/0) the pre-registered statistic averages. errors_fail: an errored
+    run counts as a fail (the routed side); otherwise it is left out (the teacher side, which has none)."""
+    runs: dict[str, list[float]] = defaultdict(list)
+    for r in results:
+        if r["status"] in GRADED or (errors_fail and r["status"] == "error"):
+            runs[r["id"]].append(1.0 if r["status"] != "error" and run_passes(r, metric) else 0.0)
+    return dict(runs)
+
+
+@dataclass(frozen=True)
+class Preregistered:
+    """Section 8.2's statistic on one metric: mean over tasks of D = routed - ratio x teacher."""
+
+    metric: str
+    d: Estimate | None  # at PREREG_RATIO
+    context: Estimate | None  # at PREREG_CONTEXT_RATIO
+    outcome: str  # PASS / FAIL / NOT SHOWN (section 8.5's quality rule)
+    problems: list[str]  # why the comparison isn't the pre-registered design (then never PASS)
+
+
+def preregistered_quality(
+    teacher: dict[str, Any],
+    routed: dict[str, Any],
+    metric: str = "checks",
+    teacher_repeats: int | None = PREREG_TEACHER_REPEATS,
+) -> Preregistered:
+    """PASS when the 95% paired bootstrap lower bound of mean(D) is > 0, FAIL when its upper bound is < 0,
+    NOT SHOWN otherwise (10,000 resamples, seed 2026). Every teacher task must have the routed system's
+    PREREG_ROUTED_REPEATS runs and teacher_repeats teacher runs (None: any number, for check (b), whose
+    merged references have more); anything else is reported as a problem and can't give PASS. A routed run
+    stopped by the student-health rule is a problem too."""
+    t = per_task_score(teacher["tasks"], metric, errors_fail=False)
+    r = per_task_score(routed["tasks"], metric, errors_fail=True)
+    problems = []
+    if missing := sorted(set(t) - set(r)):
+        problems.append(f"{len(missing)} teacher task(s) have no routed run: {', '.join(missing[:5])}")
+    if short := sorted(k for k, v in r.items() if k in t and len(v) != PREREG_ROUTED_REPEATS):
+        problems.append(f"{len(short)} task(s) without exactly {PREREG_ROUTED_REPEATS} routed runs")
+    if teacher_repeats is not None and (odd := sorted(k for k, v in t.items() if len(v) != teacher_repeats)):
+        problems.append(f"{len(odd)} task(s) without exactly {teacher_repeats} teacher runs")
+    if any(
+        row["status"] == "skipped" and str(row.get("error") or "").startswith(ROUTER_STOP) for row in routed["tasks"]
+    ):
+        problems.append("the routed run was stopped by the student-health rule")
+    shared = sorted(set(t) & set(r))
+
+    def bound(ratio: float) -> Estimate | None:
+        return bootstrap_ci([sum(r[k]) / len(r[k]) - ratio * sum(t[k]) / len(t[k]) for k in shared])
+
+    d = bound(PREREG_RATIO)
+    if d is None or d.high < 0:
+        outcome = FAIL if d is not None else NOT_SHOWN
+    elif d.low > 0 and not problems:
+        outcome = PASS
+    else:
+        outcome = NOT_SHOWN
+    return Preregistered(metric, d, bound(PREREG_CONTEXT_RATIO), outcome, problems)
+
+
+def phase4_gate(
+    quality_a: str,
+    quality_b: str | None = None,
+    *,
+    cost_shown: bool | None = None,
+    safety_held: bool | None = None,
+    drift_ok: bool | None = None,
+) -> str:
+    """Section 8.5's outcome. quality_a / quality_b: the primary outcome against the after-run alone (a)
+    and against all three references (b). FAIL on a quality FAIL (a) or a failed safety gate; PASS only
+    when (a) and (b) are PASS, cost is shown, safety holds and the drift guard is clean; NOT SHOWN when
+    (a) is not shown, (a) and (b) disagree, cost isn't shown or the drift guard shows drift; PENDING
+    while a condition needed for that decision isn't known yet."""
+    if quality_a == FAIL or safety_held is False:
+        return FAIL
+    if safety_held is None:  # anything short of FAIL can still become one
+        return PENDING
+    if quality_a == NOT_SHOWN or drift_ok is False or cost_shown is False:
+        return NOT_SHOWN
+    if quality_b is not None and quality_b != quality_a:
+        return NOT_SHOWN
+    if None in (quality_b, cost_shown, drift_ok):
+        return PENDING
+    return PASS
+
+
 @dataclass
 class Comparison:
     a_rate: Estimate | None
@@ -213,11 +319,13 @@ class Comparison:
         return None if self.diff is None else self.diff.low > -margin
 
 
-def merge_references(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+def merge_references(first: dict[str, Any], second: dict[str, Any], *, other_agents: bool = False) -> dict[str, Any]:
     """Two reference runs of the same agent as one results file, the second's runs numbered as later
     repeats: per_task_pass then gives each task the mean of its graded runs in both files (rule C,
     docs/tiers-v2-design.md section 5; the same as scripts/main_suite_power.py assumes). Refuses two files
-    that can't be repeats of one reference: another split, suite version or judge."""
+    that can't be repeats of one reference: another split, suite version or judge, or another agent unless
+    other_agents (decision 5's check (b), docs/phase4-plan.md section 8.1: the after-run plus the two pinned
+    baselines of the earlier agent, on purpose)."""
     m1, m2 = first.get("meta", {}), second.get("meta", {})
     for what, v1, v2 in (
         ("split", m1.get("split") or "main", m2.get("split") or "main"),
@@ -229,7 +337,7 @@ def merge_references(first: dict[str, Any], second: dict[str, Any]) -> dict[str,
     if (m1.get("split") or "main") != "main":
         raise ValueError("two references are for the main split only")
     a1, a2 = (m1.get("agent") or {}).get("sha"), (m2.get("agent") or {}).get("sha")
-    if a1 and a2 and a1 != a2:
+    if a1 and a2 and a1 != a2 and not other_agents:
         raise ValueError(f"the two references are different agents ({a1} vs {a2})")
     offset = max((r.get("repeat") or 1 for r in first["tasks"]), default=0)
     tasks = [dict(r, repeat=r.get("repeat") or 1) for r in first["tasks"]]

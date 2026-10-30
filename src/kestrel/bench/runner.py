@@ -19,6 +19,7 @@ from kestrel.approval import ApprovalGate, Decision
 from kestrel.bench.checks import FLAGS, Outcome, run_check
 from kestrel.bench.judge import Judge
 from kestrel.bench.quota import QuotaWait
+from kestrel.bench.stats import ROUTER_STOP
 from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
 from kestrel.permissions import RULES_VERSION
 from kestrel.tools import ToolRegistry
@@ -287,7 +288,6 @@ def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None =
 
 
 HEALTH_MIN_TASKS = 10  # the student-health guard waits this many routed tasks before judging
-ROUTER_STOP = "router stopped the run"
 
 
 def student_unhealthy(tasks: int, turns: int, health: int, limit: float | None) -> bool:

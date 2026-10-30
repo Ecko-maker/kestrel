@@ -36,11 +36,16 @@ from kestrel.bench.safety import (
 from kestrel.bench.safety_report import markdown_safety
 from kestrel.bench.scripted import MODELS, ScriptedSafetyModel
 from kestrel.bench.stats import (
+    PENDING,
+    PREREG_CONTEXT_RATIO,
+    PREREG_RATIO,
     SEED,
     compare,
     extended_passes,
     judge_label,
     merge_references,
+    phase4_gate,
+    preregistered_quality,
     quality_ratio,
     stratified_sample,
     without_extended_passes,
@@ -207,6 +212,25 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         metavar="A2",
         help="a second run of the reference agent: A and A2 count as per-task repeats (main split; rule C)",
     )
+    prereg = comp.add_argument_group(
+        "Phase 4 pre-registration (docs/phase4-plan.md section 8): A = the teacher after-run x3, B = routed x5"
+    )
+    prereg.add_argument(
+        "--metric",
+        choices=["pass", "checks"],
+        default="pass",
+        help="checks: also print section 8's verdict (deterministic checks primary, full rule secondary)",
+    )
+    prereg.add_argument(
+        "--b-references",
+        type=Path,
+        nargs="+",
+        metavar="REF",
+        help="section 8.1 (b): the other teacher references (the two pinned baselines), merged with A",
+    )
+    prereg.add_argument("--cost-shown", choices=["yes", "no"], help="section 8.2: the cost upper bound is < 0")
+    prereg.add_argument("--safety", choices=["held", "failed"], help="section 8.4: the routed safety gate")
+    prereg.add_argument("--drift", choices=["none", "drift"], help="section 8.3: the same-week drift guard")
 
     val = actions.add_parser(
         "validate", help="check task files before running them (schema, canaries, fixtures, checks)"
@@ -916,6 +940,13 @@ def cmd_compare(args: argparse.Namespace) -> int:
             print(f"  {label}: {', '.join(ids)}")
     if any(r.get("routing") for r in b["tasks"]):  # B is a routed run: the Phase 4 quality verdict
         print(quality_verdict(a, b))
+    if getattr(args, "metric", "pass") == "checks":
+        if second:
+            sys.exit("--metric checks compares with the after-run alone (a); give the others as --b-references.")
+        try:
+            print(preregistered_verdict(args, a, b))
+        except ValueError as e:
+            sys.exit(f"Can't use the --b-references: {e}")
     within = c.within(args.margin)
     print(
         f"Within {args.margin * 100:.0f} points of A (95% confidence): "
@@ -1071,6 +1102,60 @@ def quality_verdict(teacher: dict[str, Any], routed: dict[str, Any], threshold: 
         )
     if extended:
         lines.append(f"Passed only past max_steps: {', '.join(extended)} (the claim must hold without them)")
+    return "\n".join(lines)
+
+
+def preregistered_verdict(args: argparse.Namespace, teacher: dict[str, Any], routed: dict[str, Any]) -> str:
+    """Section 8 of docs/phase4-plan.md, as frozen on 2026-10-30: D = routed - 0.95 x teacher per task, the
+    95% paired bootstrap bound of mean(D); primary on the deterministic checks, secondary on the full rule,
+    0.90 for context; then section 8.5's outcome from what is known (the rest given as options)."""
+
+    def flag(name: str, yes: str) -> bool | None:
+        value = getattr(args, name, None)
+        return None if value is None else value == yes
+
+    lines = ["Phase 4 pre-registration (docs/phase4-plan.md section 8):"]
+    primary = preregistered_quality(teacher, routed, "checks")
+    for res, label in (
+        (primary, "primary, deterministic checks"),
+        (preregistered_quality(teacher, routed, "pass"), "secondary, full rule"),
+    ):
+        if res.d is None or res.context is None:
+            lines.append(f"  {label}: no task graded in both")
+            continue
+        lines.append(
+            f"  {label}: mean(routed - {PREREG_RATIO:.2f} x teacher) {res.d.value:+.4f} "
+            f"(95% CI {res.d.low:+.4f} to {res.d.high:+.4f}, n={res.d.n}) -> {res.outcome}; "
+            f"at {PREREG_CONTEXT_RATIO:.2f} for context: lower bound {res.context.low:+.4f}"
+        )
+        lines += [f"    not the pre-registered design: {p}" for p in res.problems]
+    quality_b = None
+    if refs := getattr(args, "b_references", None):
+        merged = teacher
+        for ref in refs:
+            merged = merge_references(merged, _load(ref), other_agents=True)
+        quality_b = preregistered_quality(merged, routed, "checks", teacher_repeats=None).outcome
+        lines.append(f"  (b) against A + {len(refs)} more reference(s): {quality_b}")
+    gate = phase4_gate(
+        primary.outcome,
+        quality_b,
+        cost_shown=flag("cost_shown", "yes"),
+        safety_held=flag("safety", "held"),
+        drift_ok=flag("drift", "none"),
+    )
+    missing = [
+        what
+        for what, value in (
+            ("(b) --b-references", refs),
+            ("--cost-shown", getattr(args, "cost_shown", None)),
+            ("--safety", getattr(args, "safety", None)),
+            ("--drift", getattr(args, "drift", None)),
+        )
+        if not value
+    ]
+    lines.append(
+        f"  Outcome (section 8.5): {gate}" + (f" (still needed: {', '.join(missing)})" if gate == PENDING else "")
+    )
     return "\n".join(lines)
 
 
