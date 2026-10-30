@@ -188,7 +188,7 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 **Still open:** a decision on the proposal. It is to keep 75% (derived, not just a margin) and change nothing in `ci.yml`; a later option is a rerun on failure. Also open: the subset can't see 1-2 task regressions, which is what the full suite with `kestrel bench compare` is for.
 **Done when:** the owner accepts the threshold (or picks another from the table in the report), and it is recorded in design-decisions.
 
-### 53. ~~The `--wait-for-quota` retry loop spends quota on attempts Groq drops~~ (fixed in code 2026-10-28, `fix/quota-retry-spend`)
+### 53. ~~The `--wait-for-quota` retry loop spends quota on attempts Groq drops~~ (closed 2026-10-30: fixed in code 2026-10-28 on `fix/quota-retry-spend`, brought into `phase4/trace-dataset`; its tests pass there)
 **Labels:** `evals`, `cost`, `closed`
 When Groq's daily token limit is reached mid-task, `kestrel bench run --wait-for-quota` waits and retries. A retried attempt can spend tokens before Groq refuses it, and the loop ignores `--token-budget`. The spent tokens keep the rolling 24 h window full, so the next attempt fails too: the run livelocks while burning quota. The 10-26–27 main-suite after-run (`main-after-v21-x3.json`) spent ~225k tokens in dropped attempts before the owner stopped it at 198/300. Nothing was lost (finished runs stay in the file).
 **Workaround (until fixed):** one single `--resume` per quiet 24 h window, never a loop. The 10-28 resume finished the remaining 102 runs in one go (~176k billable, under its 180k budget).
