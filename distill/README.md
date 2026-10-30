@@ -2,7 +2,7 @@
 
 122 tasks in KestrelBench's task format, with their own fixture workspace (a community garden and bike
 co-op), used only to collect **training data** for the student model. They are *not* KestrelBench:
-the student is judged on KestrelBench, so it must never train on it. Design decisions 19-21 in
+the student is judged on KestrelBench, so it must never train on it. Design decisions 22-24 in
 `docs/design-decisions.md`, plus 22 for the check conversions.
 
 - `tasks/`: 10 files, one per category, in the main suite's proportions x1.2 (time has two extra
@@ -20,7 +20,7 @@ the student is judged on KestrelBench, so it must never train on it. Design deci
 `kestrel distill build` keeps a distill result only if it passed, its task is unchanged since the run,
 and (under `grading = "checks-only"`, the default in `src/kestrel/distill/grading.toml`) the task is
 graded entirely by deterministic checks. Tasks with a rubric are dropped (`rubric_task`) until a judge
-is calibrated and listed in `calibrated_judges` (known issue #33).
+is calibrated and listed in `calibrated_judges` (known issue #69).
 
 **Under checks-only, 93 of the 122 tasks can become training data** (78 of 120 before d1.2):
 
@@ -79,7 +79,7 @@ changed here). Measured on Groq gpt-oss-120b, 64-75% of tokens are billable.
   which leaves ~2,075 billable tokens per task for the agent.
 - The collection pass runs with `--judge none`: 122 x ~2,075 = **~253k**. From the raw side instead,
   3,103 raw tokens per task x 64-75% billable = 1,986-2,327 per task = **~242k-284k**.
-- With the judge on it would be ~272k (29 rubric tasks x ~640; but the judge would be the teacher, #33).
+- With the judge on it would be ~272k (29 rubric tasks x ~640; but the judge would be the teacher, #69).
 - With `--token-budget 180000` the pass stops starting new tasks at about 180k on day one and finishes
   with `--resume` on day two (Groq's token limit is a rolling ~24 h window). Distill tasks are not
   measured yet; multistep and file tasks may run longer than the main suite's average.
@@ -89,7 +89,7 @@ changed here). Measured on Groq gpt-oss-120b, 64-75% of tokens are billable.
 Serve both through the same Kestrel Modelfile: `python distill/export.py --base ... --create --verify` builds the
 untrained base exactly like the student (same template, stops, sampling, `num_ctx`; only the GGUF differs).
 Never compare against Ollama's packaged `qwen3:4b-instruct-2507`: its template garbles tool schemas (known
-issue #38), which would handicap the base. Serve both with `KESTREL_MCP=off` (the tools they were trained and
+issue #73), which would handicap the base. Serve both with `KESTREL_MCP=off` (the tools they were trained and
 compared on).
 
 How to run it: `COLLECTION.md`. Training the student on the result: `TRAINING.md`; serving it: `EXPORT.md`.

@@ -347,78 +347,78 @@ requests per hour); only timing fields moved.
 
 ## Distillation (Phase 4)
 
-(Numbered after the Phase 3 branches' issues, which reach 29.)
+(Issues 66-78 were 30-36, 38-42 and 51 on `phase4/trace-dataset`; numbered when the branch was rebased onto `main` on 2026-10-30, after voice's 61-65.)
 
-### 30. The safety split's prompts are read from a pinned commit until Phase 3 merges
+### 66. The safety split's prompts are read from a pinned commit until Phase 3 merges
 **Labels:** `distillation`, `evals`, `low`
 The safety split isn't on main yet. Since step 3, the overlap check and `kestrel distill build` read its prompts and fixtures with git from the commit pinned in `src/kestrel/distill/bench_sources.toml` (`6f58ee5…`, tag `safety-before`), and fail loudly if the tag no longer resolves to it. Remaining gap: a clone without that commit (e.g. a shallow CI checkout) uses the files on disk only; the report and the manifest then say so.
 **Done when:** Phase 3 is merged (the safety split is on disk everywhere) and the pin is either kept as a second source or removed on purpose.
 
-### 31. The secret scrub only finds what it can recognize
+### 67. The secret scrub only finds what it can recognize
 **Labels:** `security`, `distillation`, `medium`
 Missed: a canary payload without its `KCAN` prefix that is split or encoded in other ways (ROT13, reversed, spelled out), secrets with no known key pattern that aren't in the environment at build time, and personal data that isn't a secret (names, email addresses, phone numbers). The canary decoder is a small copy of `bench/canaries.py` from the Phase 3 branches, which main doesn't have yet.
 **Done when:** after the Phase 3 merge, the scrub uses `bench/canaries.py` (one decoder) with the safety split's canary payloads, and a sample of kept examples is read by hand before the first fine-tune.
 
-### 32. Distill data needs a run
+### 68. Distill data needs a run
 **Labels:** `distillation`, `medium`
 The distill task set (`distill/`, 122 tasks, `d1.2`) is the source of graded training data, but it hasn't been run yet: about 253k billable Groq tokens, 2 days (`distill/README.md`), after the Phase 3 merge (`distill/COLLECTION.md`) and with the owner's OK for quota.
 **Fixed in step 3:** reworded KestrelBench prompts in chats. `kestrel distill build` now drops any example whose user message is a near-duplicate of a bench prompt (`near_duplicate`, the overlap check's fail thresholds: word 3-gram Jaccard >= 0.23 or a shared run of >= 5 words), including chats rated /good.
 **Done when:** the distill set has been run on the teacher and built into a dataset.
 
-### 33. The distill set's rubric tasks would be judged by the teacher itself
+### 69. The distill set's rubric tasks would be judged by the teacher itself
 **Labels:** `distillation`, `evals`, `medium`
 42 of the 120 distill tasks have a rubric. With the default `--judge groq`, gpt-oss-120b would grade its own answers, and only passed runs become training data, so its self-preference bias (docs/kestrelbench.md, "Judge independence") would pick the examples.
-**Mitigated (step 3):** `grading = "checks-only"` (`src/kestrel/distill/grading.toml`, the default) keeps only the tasks graded entirely by checks (78 in step 3, 93 of 122 since step 4); rubric tasks are dropped (`rubric_task`) whatever their status, and collection runs with `--judge none`. Their stored answers can be graded later with `kestrel bench rejudge`, without re-running Kestrel. **Shrunk (step 4):** 13 rubric tasks whose every line has a deterministic check were converted (new check `answer_has_tool_time` for time answers) and two check-only time tasks added: time 0 -> 6 usable tasks, safety 2 -> 10. Still rubric-only: 29 tasks (yes/no judgments about the time, "does not invent" lines, open-ended writing, and 5 of 7 web tasks), listed in design decision 22.
+**Mitigated (step 3):** `grading = "checks-only"` (`src/kestrel/distill/grading.toml`, the default) keeps only the tasks graded entirely by checks (78 in step 3, 93 of 122 since step 4); rubric tasks are dropped (`rubric_task`) whatever their status, and collection runs with `--judge none`. Their stored answers can be graded later with `kestrel bench rejudge`, without re-running Kestrel. **Shrunk (step 4):** 13 rubric tasks whose every line has a deterministic check were converted (new check `answer_has_tool_time` for time answers) and two check-only time tasks added: time 0 -> 6 usable tasks, safety 2 -> 10. Still rubric-only: 29 tasks (yes/no judgments about the time, "does not invent" lines, open-ended writing, and 5 of 7 web tasks), listed in design decision 25.
 **Done when:** an independent judge (candidate `qwen/qwen3.8-27b`) is calibrated on human labels (#21), listed in `calibrated_judges`, and the rubric answers are re-graded with it.
 
-### 34. The near-duplicate filter also drops some ordinary chat
+### 70. The near-duplicate filter also drops some ordinary chat
 **Labels:** `distillation`, `low`
 The pipeline's near-duplicate filter compares every user message with every KestrelBench prompt. Generic requests that share a bench prompt's wording are lost from training: of 12 everyday requests in `evals/reports/distill-overlap.md`, 4 are dropped (2 exact matches such as "What time is it in Tokyo?", 2 near-duplicates), and any "What time is it in <city>?" is dropped by its 5-word run. Intended: KestrelBench stays a fair test, and the distill set covers the same behaviors in other words.
 **Done when:** a review of a real chat export shows how much is lost; if it matters, the filter could ignore runs made only of very common words.
 
-### 35. ~~The training script has only run on CPU, without 4-bit~~ (superseded by #40, 2026-10-18)
+### 71. ~~The training script has only run on CPU, without 4-bit~~ (superseded by #75, 2026-10-18)
 **Labels:** `distillation`, `medium`
 `distill/train.py --smoke` runs end to end on CPU (tiny random Qwen3, real tokenizer, no 4-bit), and the formatter is tested on the real tokenizer. The GPU path (bitsandbytes 4-bit loading, `prepare_model_for_kbit_training`, float16 on a T4) has not run yet, and Kaggle's preinstalled torch may not match the pinned transformers/trl. The P100 may not support bitsandbytes' 4-bit kernels (use a T4).
 **Done when:** the first Kaggle run on a real dataset finishes, its `lineage.json` is checked (`distill/TRAINING.md`, step 5), and any version fix is pinned.
 
-### 36. Groq's Services Agreement §6.3(e): provisional reading (a), waiting for Groq
+### 72. Groq's Services Agreement §6.3(e): provisional reading (a), waiting for Groq
 **Labels:** `distillation`, `process`, `medium`
-Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no output restrictions, but §6.3(e) bars using the Cloud Services to "develop or improve products, services, or other offerings that are similar or compete" with them (agreement last modified 2026-06-22). **Provisional reading (a):** a small locally served student for a personal agent is neither similar to nor competing with Groq's inference platform. The owner emailed Groq support on 2026-10-18 for written confirmation and is waiting for the reply. `distill/COLLECTION.md` is blocked until the owner confirms, and its first lines say so. Fallback if the answer is no: gpt-oss-20b served locally by Ollama as the teacher (design decision 19).
+Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no output restrictions, but §6.3(e) bars using the Cloud Services to "develop or improve products, services, or other offerings that are similar or compete" with them (agreement last modified 2026-06-22). **Provisional reading (a):** a small locally served student for a personal agent is neither similar to nor competing with Groq's inference platform. The owner emailed Groq support on 2026-10-18 for written confirmation and is waiting for the reply. `distill/COLLECTION.md` is blocked until the owner confirms, and its first lines say so. Fallback if the answer is no: gpt-oss-20b served locally by Ollama as the teacher (design decision 22).
 **Done when:** the owner confirms (with Groq's written reply, or by accepting (a) explicitly), or switches to the fallback teacher.
 
-### 38. Ollama's own qwen3:4b-instruct-2507 template garbles tool schemas
+### 73. Ollama's own qwen3:4b-instruct-2507 template garbles tool schemas
 **Labels:** `distillation`, `serving`, `medium`
 Found by the template parity check (distill/EXPORT.md): with Ollama 0.40.6, the template in Ollama's own `qwen3:4b-instruct-2507` package prints each tool as a Go struct dump (`{read_file Read a file. {object <nil> <nil> [path] {...}}}`) instead of JSON, because `{{ .Function }}` has no JSON form in that version. It also adds a newline before `<tool_call>` and gives each tool result its own turn. Any comparison that serves the **base** model through that package (e.g. "base vs student" in Phase 4) would handicap the base model. The student is served with Kestrel's template, which is checked byte for byte.
 **Done when:** the base model is served for comparisons with Kestrel's template too (the same Modelfile on the base GGUF), or Ollama fixes its template.
 
-### 39. Ollama drops tool-schema keys it doesn't know (e.g. `default`)
+### 74. Ollama drops tool-schema keys it doesn't know (e.g. `default`)
 **Labels:** `serving`, `low`
 Ollama's tool types keep only anyOf, type, items, description, enum, properties and required. Kestrel's schemas use `default` twice (e.g. `web_search` max_results); no model served by Ollama ever sees those defaults. The student is trained on the same reduced schemas, so training and serving agree.
 **Done when:** the defaults that matter are stated in the descriptions, or Ollama keeps the key.
 
-### 40. A real training run and the export of a real adapter haven't run yet
+### 75. A real training run and the export of a real adapter haven't run yet
 **Labels:** `distillation`, `medium`
-Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). GPU smoke test: **passed on Kaggle 2026-10-20** (Tesla T4, Python 3.13.15, torch 2.11.0+cu128, CUDA 12.8; the real base in 4-bit, loss 3.8575 -> 0.0001, a parsed tool call; transformers 5.20.1, peft 0.21.2, trl 1.16.0, datasets 5.1.0, accelerate 1.15.0 and bitsandbytes 0.50.2, all six at their pins; `distill/TRAINING.md`), so 4-bit loading, float16 on a T4 and Kaggle's preinstalled torch work. Not run: a real training on a collected dataset (blocked on #36), and an export of the real 4B adapter (needs the ~8 GB base download on the laptop).
+Run on CPU: `train.py --smoke`, and the whole export chain on its adapter (merge, GGUF, Q4_K_M, `ollama create`, 20/20 token counts). GPU smoke test: **passed on Kaggle 2026-10-20** (Tesla T4, Python 3.13.15, torch 2.11.0+cu128, CUDA 12.8; the real base in 4-bit, loss 3.8575 -> 0.0001, a parsed tool call; transformers 5.20.1, peft 0.21.2, trl 1.16.0, datasets 5.1.0, accelerate 1.15.0 and bitsandbytes 0.50.2, all six at their pins; `distill/TRAINING.md`), so 4-bit loading, float16 on a T4 and Kaggle's preinstalled torch work. Not run: a real training on a collected dataset (blocked on #72), and an export of the real 4B adapter (needs the ~8 GB base download on the laptop).
 **Done when:** a real adapter is trained on Kaggle and exported with `--verify` 20/20.
 
-### 41. With MCP on, Kestrel sends the student tools it never saw
+### 76. With MCP on, Kestrel sends the student tools it never saw
 **Labels:** `distillation`, `serving`, `low`
 The training text holds Kestrel's built-in tools only (`kestrel distill build` doesn't start MCP servers). When Kestrel runs with MCP on, the agent also sends the tools of the servers in `kestrel.mcp.json` (`fetch`, `time`), which the student was never trained with. `export.py --verify` compares against the built-in registry and prints a note naming those servers.
 **Done when:** the student is served with `KESTREL_MCP=off`, or MCP tools are part of collection and training (and of the fingerprint).
 
-### 42. Router v1 is tested with the risk-tier gate only, not with tiers v2
-**Labels:** `distillation`, `safety`, `medium`
+### 77. ~~Router v1 is tested with the risk-tier gate only, not with tiers v2~~ (closed 2026-10-30)
+**Labels:** `distillation`, `safety`, `medium`, `closed`
 `phase4/trace-dataset` branches from main, where tiers v2 (capabilities, taint, the content check) isn't merged yet. The router tests show that the approval gate applies unchanged to the teacher's and the student's calls (cards, forbidden tools, one card per action), but not that taint and the content check do: e.g. the student reads a file, escalation hands the turn over, and the teacher's egress call must still get the taint card.
 **Done when:** after Phase 3 merges and this branch is rebased, tests cover taint and the content check across an escalation (student reads, teacher egresses; teacher reads, next turn's student egresses).
+**Fixed (2026-10-30, at the rebase onto `main`):** `tests/test_router.py` runs both cases with the real gate and tiers v2.1: the student reads, an invalid call hands the turn to the teacher, and the teacher's fetch carrying the file's text gets the taint and content card; the teacher reads in turn 1, and the student's fetch in turn 2 gets the same card. The test approver now takes the gate's `notice=` (its old signature was what broke 3 router tests after the rebase).
 
-### 51. The first student doesn't know the memory tools, so routed setups run with memory off
+### 78. The first student doesn't know the memory tools, so routed setups run with memory off
 **Labels:** `distillation`, `serving`, `memory`, `medium`
-Owner decision 2026-10-26 (`docs/phase4-plan.md`, "Phase 4 before long-term memory"): Phase 4 is collected and trained before long-term memory exists. The router's pre-route rule sends a turn to the teacher whenever the tools sent differ from the student's `lineage.json` fingerprint, so with `memory_search` / `memory_save` registered **every turn would go to the teacher**, and a routed run would measure the teacher alone (the #41 mechanism).
+Owner decision 2026-10-26 (`docs/phase4-plan.md`, "Phase 4 before long-term memory"): Phase 4 is collected and trained before long-term memory exists. The router's pre-route rule sends a turn to the teacher whenever the tools sent differ from the student's `lineage.json` fingerprint, so with `memory_search` / `memory_save` registered **every turn would go to the teacher**, and a routed run would measure the teacher alone (the #76 mechanism).
 **Rule until a student is retrained with memory:** any routed setup runs with memory off, its tools not registered.
 - Nothing to configure today: memory isn't on main.
 - When memory merges, it must ship `KESTREL_MEMORY=off`, bench `--memory-backend none` (the default) for routed runs, and a guard in `build_router`: a `RouterSetupError` if memory tools would be registered and the lineage lacks them.
 - Results meta records `memory_backend`.
-- (Numbered 51 because `voice/talk` already uses 46-50.)
 **Done when:** a student trained with the memory tools (distill d1.3 with memory tasks, collection with `--memory-backend sqlite`) passes `export.py --verify`, and the routed runs are repeated with memory on; or the guard is in place and every routed results file shows `memory_backend: none`.
 
 ---

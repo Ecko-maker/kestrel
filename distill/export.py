@@ -15,7 +15,7 @@
 4. --create: `ollama create NAME -f Modelfile`.
 5. --verify, first the tool schemas: the student's lineage.json records a hash of the exact tool schemas in
    its training text (from the code that built the dataset); they must equal what Kestrel's agent sends now
-   (its tool registry, after Ollama's dropping of unknown keys, known issue #39). A mismatch fails and lists
+   (its tool registry, after Ollama's dropping of unknown keys, known issue #74). A mismatch fails and lists
    the tools that differ. MCP tools (kestrel.mcp.json) aren't in the registry until Kestrel starts them and
    weren't in training: serve the student with KESTREL_MCP=off.
    Then every fixed conversation of distill/parity/cases.json goes to the created model through
@@ -25,7 +25,7 @@
 
 --base exports the untrained base model through the same GGUF path and the same Modelfile (only the
 GGUF differs), so a base-vs-student comparison is like for like: never compare against Ollama's packaged
-template (known issue #38).
+template (known issue #73).
 
 Needs the optional extras `train` and `export`, the pinned llama.cpp build (distill/EXPORT.md says where
 to get it) and Ollama. No model calls beyond the local Ollama server.

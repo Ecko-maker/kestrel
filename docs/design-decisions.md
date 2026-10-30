@@ -313,9 +313,9 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Alternatives:** always "check first" (every spoken request needs Enter: voice stops being hands-free); a higher confidence floor (confident mistakes still pass); a client-side timer (two consoles or a reload could send twice).
 
-## 19. Distillation data: open-weight teacher only, no KestrelBench tasks, drop on any secret
+## 22. Distillation data: open-weight teacher only, no KestrelBench tasks, drop on any secret
 
-(Numbered after the Phase 3 branches' decisions, which reach 18, so the merge doesn't collide.)
+(Decisions 22-28 were 19-25 on `phase4/trace-dataset`; numbered when the branch was rebased onto `main` on 2026-10-30, after voice's 19-21.)
 
 **Decision:** `kestrel distill build` (`src/kestrel/distill/dataset.py`) turns a copy of a traces database into `train.jsonl`, `val.jsonl` and `manifest.json`. Filters run in a fixed order and each drop is counted: no stored messages, teacher, contamination (bench run, bench prompt), quality, secrets (canary, redaction pattern, `.env` line, env value), length, duplicate.
 - **Teacher (hard):** every model step's (provider, model) must be listed in `src/kestrel/distill/teachers.toml` (default `groq` + `openai/gpt-oss-120b`). There is no flag for other providers, and the loader refuses Gemini, Claude, GPT and demo entries, so editing the file can't admit them either.
@@ -331,15 +331,15 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Truncate long examples.** A cut-off tool call or tool result teaches a broken trajectory.
 - **Split by trace.** Turns of one conversation share context, so val would partly measure memorization.
 
-**Fallback teacher (added 2026-10-18, known issue #36):** if Groq's terms turn out to forbid this use, the teacher becomes **gpt-oss-20b served locally by Ollama** (`gpt-oss:20b`, Apache-2.0, ~14 GB): no service agreement applies at all. Trade-offs: a much weaker teacher (20B against 120B), so lower-quality traces and a lower ceiling for the student; too large to run next to anything else on the 16 GB laptop, so collection would run in Kaggle GPU sessions (T4, 16 GB), slowly and within the weekly GPU quota; `teachers.toml` would list `ollama` + `gpt-oss:20b`, and the two teachers' traces must not be mixed in one dataset without saying so in the manifest.
+**Fallback teacher (added 2026-10-18, known issue #72):** if Groq's terms turn out to forbid this use, the teacher becomes **gpt-oss-20b served locally by Ollama** (`gpt-oss:20b`, Apache-2.0, ~14 GB): no service agreement applies at all. Trade-offs: a much weaker teacher (20B against 120B), so lower-quality traces and a lower ceiling for the student; too large to run next to anything else on the 16 GB laptop, so collection would run in Kaggle GPU sessions (T4, 16 GB), slowly and within the weekly GPU quota; `teachers.toml` would list `ollama` + `gpt-oss:20b`, and the two teachers' traces must not be mixed in one dataset without saying so in the manifest.
 
-**Fair comparisons (added 2026-10-18):** any base-vs-student comparison serves both models through the same Kestrel Modelfile (`train_format.OLLAMA_TEMPLATE`, same stops, sampling and `num_ctx`), never through Ollama's packaged template, which garbles tool schemas in 0.40.6 (known issue #38). `distill/export.py --base` builds the untrained base that way; its Modelfile is byte-identical to the student's (checked on the smoke export), and `--verify` runs on it too. Both are served with `KESTREL_MCP=off`, so they see the same tools.
+**Fair comparisons (added 2026-10-18):** any base-vs-student comparison serves both models through the same Kestrel Modelfile (`train_format.OLLAMA_TEMPLATE`, same stops, sampling and `num_ctx`), never through Ollama's packaged template, which garbles tool schemas in 0.40.6 (known issue #73). `distill/export.py --base` builds the untrained base that way; its Modelfile is byte-identical to the student's (checked on the smoke export), and `--verify` runs on it too. Both are served with `KESTREL_MCP=off`, so they see the same tools.
 
-**Why:** the student should learn only behavior that a teacher it may learn from produced, that passed a check other than the benchmark it will be judged on, and that contains no planted or real secret. Every dropped example is counted by reason, so a small dataset is explained, not silent. Open items: known issues #30-#32.
+**Why:** the student should learn only behavior that a teacher it may learn from produced, that passed a check other than the benchmark it will be judged on, and that contains no planted or real secret. Every dropped example is counted by reason, so a small dataset is explained, not silent. Open items: known issues #66-#68.
 
 ---
 
-## 20. Distill task set: disjoint from KestrelBench, told apart by metadata
+## 23. Distill task set: disjoint from KestrelBench, told apart by metadata
 
 **Decision:** graded teacher data comes from a separate task set, `distill/` (120 tasks in the main format, version `d1.0`, its own fixture workspace), run with `kestrel bench run --split distill`.
 - **Disjoint by construction:** it lives outside `evals/kestrelbench/`, with a different setting (a community garden and bike co-op), people, addresses (all on example domains), numbers and file names. `scripts/distill_overlap.py` compares every distill prompt with every KestrelBench prompt (all splits; case, punctuation and whitespace ignored): an exact match or word 3-gram Jaccard >= 0.5 fails, >= 0.3 is listed for review. At `d1.0`: 0 fail, 0 in review (closest 0.23), also against the Phase 3 safety split.
@@ -357,7 +357,7 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 ---
 
-## 21. Distill overlap thresholds from the bench's own distribution; checks-only grading
+## 24. Distill overlap thresholds from the bench's own distribution; checks-only grading
 
 **Decision:**
 - **Overlap thresholds** come from how similar KestrelBench prompts are to *each other*: word 3-gram Jaccard and the longest shared run of words over every pair of bench prompts (main suite on disk plus the safety split at its pinned commit, 155 prompts), leaving out pairs from the same task and identical-text twins (benign/attack pairs share their prompt on purpose). Fail just above that p99.9 (Jaccard >= 0.23, run >= 5 words), review just above the p99 (Jaccard >= 0.08, run >= 4 words). Fixtures fail on a shared file name or a shared content line of 8+ words. A test recomputes the distribution with the same exclusions and fails if the thresholds fall below it. Report: `evals/reports/distill-overlap.md`. At `d1.1`: 0 fail, 38 in review, 0 fixture problems; one task (`dst-web-uv-tool`) failed the new thresholds and was reworded, so `d1.0` became `d1.1`.
@@ -369,14 +369,14 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **A fixed 0.5 Jaccard** (step 2): not grounded in anything; the bench's own pairs show 0.5 is far above where copying starts.
 - **The bench's p99 as the fail line:** a single shared 3-gram ("what time is it") would fail, which is ordinary phrasing, not copying.
 - **Include the twins in the distribution:** they are copies by design and push p99.9 up (0.286 instead of 0.222).
-- **Judge rubric tasks with the teacher:** self-preference bias would choose the training examples (#33).
+- **Judge rubric tasks with the teacher:** self-preference bias would choose the training examples (#69).
 - **Read the safety split from the tag or a branch:** both can move; a commit can't.
 
 **Why:** "too similar" should mean "more similar than the benchmark's own distinct tasks ever are", measured, not guessed. And until a judge is shown to agree with humans, only deterministic checks decide what the student learns from.
 
 ---
 
-## 22. Distill rubric tasks converted to checks only where every rubric line has one
+## 25. Distill rubric tasks converted to checks only where every rubric line has one
 
 **Decision:** each of the 42 distill rubric tasks (d1.1) was classified:
 - **A, fully checkable (13):** every rubric line has a deterministic check, so the rubric is removed. 4 time (`dst-time-warsaw`, `-nairobi-date`, `-buenos-aires`, `-cairo-weekday`), 8 safety (`dst-forbid-remove-harvest`, `-old-minutes`, `-all-csv`, `-old-quote`, `-notes-folder`, `dst-sandbox-dotenv`, `dst-safe-dotenv-by-email`, `dst-safe-no-address`), 1 multistep (`dst-multi-grant-adds-up`). Every converted task keeps its old checks; each new check carries a `why` naming the rubric line it replaces.
@@ -395,7 +395,7 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 ---
 
-## 23. Student Qwen3-4B-Instruct-2507, QLoRA with transformers + peft + trl, trained on Kaggle
+## 26. Student Qwen3-4B-Instruct-2507, QLoRA with transformers + peft + trl, trained on Kaggle
 
 **Decision (owner, 2026-10-16):**
 - **Student:** `Qwen/Qwen3-4B-Instruct-2507`, revision `cdbee75f17c01a7cc42f958dc650907174af0554` (4.02B, text-only, Apache-2.0, Hermes-style `<tool_call>` chat template; Ollama `qwen3:4b-instruct-2507`, 2.5 GB at q4_K_M, "tools" capability).
@@ -414,19 +414,19 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 ---
 
-## 24. One prompt format, rendered twice and checked against Ollama's own code; export through GGUF
+## 27. One prompt format, rendered twice and checked against Ollama's own code; export through GGUF
 
 **Decision:**
 - **The format** is defined in `src/kestrel/distill/train_format.py`: Qwen3's structure (tools in the system turn, `<tool_call>` blocks, consecutive tool results in one user turn), with tool schemas and arguments serialized as Go's `json.Marshal` writes them (compact, map keys sorted, Ollama's struct field order, `<>&` escaped, unknown schema keys dropped), and Ollama's `collate()` (system messages joined, consecutive same-role messages merged).
 - **Written twice:** `render()` in Python (training text and label spans; no Hugging Face chat template is used) and `OLLAMA_TEMPLATE` in Go (the Modelfile).
 - **Checked exactly:** `distill/parity/main.go` runs Ollama's own `openai.FromChatRequest` + `template.Execute` at the installed version (v0.40.6, pinned in go.mod) on 20 generation points of 10 fixed conversations (Kestrel's real tool schemas, several calls per turn, consecutive tool results, multi-turn, collate, tricky JSON). `scripts/template_parity.py` requires byte-for-byte equality and prints the first differing line; `golden.json` lets every pytest run (CI included) check the Python side. Proven sensitive: one extra space, or Python's json.dumps instead of Go's encoding, fails it.
 - **Checked at runtime:** `export.py --verify` sends the same conversations to the created model through the OpenAI-compatible endpoint (Kestrel's path) and requires Ollama's prompt token counts to equal training's (20/20 on the smoke export; Ollama's own qwen3 template on the same GGUF: 1/20).
-- **Tool schemas are pinned:** the schemas in the training text come from the code that ran `kestrel distill build` (`registry.schemas()`, no MCP), not from the traces (traces don't store them), so the dataset is built at the collection commit. `lineage.json` records a fingerprint of their exact training-text form (`tool_schemas`: SHA-256 of the block and per tool); `export.py --verify` recomputes it from Kestrel's registry, as the agent sends it, and fails on any difference, naming the tools (changed, added, removed, reordered). Keys Ollama drops (#39) can't cause a difference, because both sides see the post-dropping form.
+- **Tool schemas are pinned:** the schemas in the training text come from the code that ran `kestrel distill build` (`registry.schemas()`, no MCP), not from the traces (traces don't store them), so the dataset is built at the collection commit. `lineage.json` records a fingerprint of their exact training-text form (`tool_schemas`: SHA-256 of the block and per tool); `export.py --verify` recomputes it from Kestrel's registry, as the agent sends it, and fails on any difference, naming the tools (changed, added, removed, reordered). Keys Ollama drops (#74) can't cause a difference, because both sides see the post-dropping form.
 - **Export:** peft merge (float16, CPU) -> llama.cpp `convert_hf_to_gguf.py` -> `llama-quantize` Q4_K_M (pinned build b11712) -> Modelfile (template, stops, Qwen's sampling defaults, `num_ctx 16384`) -> `ollama create`. Served by Kestrel's existing Ollama provider (`OLLAMA_MODEL`), no code change.
 
 **Alternatives:**
 - **Keep Hugging Face's Qwen template for training** and write a matching Go template: impossible byte for byte, since a Go template can only write JSON through Go's encoder (no spaces), and Jinja can't call it.
-- **Use Ollama's own `qwen3:4b-instruct-2507` template:** checkable the same way, but in 0.40.6 it garbles tool schemas (#38).
+- **Use Ollama's own `qwen3:4b-instruct-2507` template:** checkable the same way, but in 0.40.6 it garbles tool schemas (#73).
 - **A Python port of Go's text/template, or reading prompts from Ollama's logs:** no maintained port; Ollama logs only the prompt length (checked with OLLAMA_DEBUG=2).
 - **Ollama's safetensors import (`FROM ./merged`, `--quantize`):** in 0.40.6 it needs the MLX engine, not available on Windows, and offers only int4/int8/nvfp4/mxfp4/mxfp8.
 
@@ -434,10 +434,10 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 ---
 
-## 25. Phase 4 measurement and router v1 (owner decisions, 2026-10-18)
+## 28. Phase 4 measurement and router v1 (owner decisions, 2026-10-18)
 
 **Decision** (`docs/phase4-plan.md`, decisions table):
-- **Router v1:** a cascade in the model layer. The student answers first. Two exact pre-route rules send a request to the teacher: the tool set Kestrel would send differs from the student's training fingerprint (#41), or the prompt is longer than the student's context. Escalation mid-turn on an invalid tool call, `max_steps`, an empty answer, or a provider error or timeout. No refusal signal. The approval gate and tiers v2 apply unchanged to whichever model answers.
+- **Router v1:** a cascade in the model layer. The student answers first. Two exact pre-route rules send a request to the teacher: the tool set Kestrel would send differs from the student's training fingerprint (#76), or the prompt is longer than the student's context. Escalation mid-turn on an invalid tool call, `max_steps`, an empty answer, or a provider error or timeout. No refusal signal. The approval gate and tiers v2 apply unchanged to whichever model answers.
 - **Hand-over:** the teacher continues from the transcript with the tools that actually ran and their results, without the student's malformed call. Nothing runs twice (no tool, no approval card). A rejected approval never escalates.
 - **Quality claim:** routed/teacher main-suite pass rate (v1.1, frozen), lower end of the 95% paired-bootstrap interval >= 0.95; also on the 57 check-only tasks (the judge is the teacher, uncalibrated). R=3 per system first, then decide on 5 from the measured per-task disagreement.
 - **Teacher reference:** Phase 3's main-suite after-run (same tiers-v2 code). The pinned baselines are secondary, and count as repeats only if the after-run is within +-6 points of each (the measured identical-run interval); otherwise fresh teacher repeats on the current code before any claim.
@@ -447,6 +447,6 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Alternatives:** in `docs/phase4-plan.md`, sections 1-3 (router options a-d, the power table, the hard split's cost).
 
-**Implementation (step 8, 2026-10-18).** `src/kestrel/router.py`: a `RoutedLLM` with FallbackLLM's interface, built only for `routed`. The agent gained three guarded hooks (`begin_turn` with the registry's `prepare` for checking tool calls without running them, `escalate("max_steps")` with a fresh teacher budget capped at 2 x max_steps, and route attributes on llm_call spans); without a router none of them runs, and the agent fingerprint stays `cc5c16377662`. Escalation reasons are split into pre_route, quality and student_health; a routed bench run stops above `KESTREL_ROUTER_MAX_STUDENT_HEALTH` (default 10% of turns, after 10 tasks). Pre-routing on context uses `KESTREL_ROUTER_CTX_MARGIN` (default 80%). Steps per turn are recorded, and the quality verdict is stated with and without passes that needed more than max_steps; the claim must hold without them. Decision 5 refined: the verdict against the after-run alone and against all three references must agree, or fresh teacher repeats are needed. The approval gate is tested with the teacher's calls; tiers v2 isn't on this branch yet (#42).
+**Implementation (step 8, 2026-10-18).** `src/kestrel/router.py`: a `RoutedLLM` with FallbackLLM's interface, built only for `routed`. The agent gained three guarded hooks (`begin_turn` with the registry's `prepare` for checking tool calls without running them, `escalate("max_steps")` with a fresh teacher budget capped at 2 x max_steps, and route attributes on llm_call spans); without a router none of them runs, and the agent fingerprint stays `cc5c16377662`. Escalation reasons are split into pre_route, quality and student_health; a routed bench run stops above `KESTREL_ROUTER_MAX_STUDENT_HEALTH` (default 10% of turns, after 10 tasks). Pre-routing on context uses `KESTREL_ROUTER_CTX_MARGIN` (default 80%). Steps per turn are recorded, and the quality verdict is stated with and without passes that needed more than max_steps; the claim must hold without them. Decision 5 refined: the verdict against the after-run alone and against all three references must agree, or fresh teacher repeats are needed. The approval gate is tested with the teacher's calls; tiers v2 isn't on this branch yet (#77).
 
 **Why:** a claim the noise can't support is worse than none. Tying the teacher reference to the same code as the routed system, and refusing to reuse old runs when they disagree beyond measured noise, keeps the comparison like for like. Making the router fail safe (deterministic signals, no repeated actions, user rejections respected) means routing can never weaken the approval model.

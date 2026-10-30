@@ -19,7 +19,7 @@ the student with escalation to the teacher (section 1).
 
 | # | Question (section 7) | Decision |
 |---|---|---|
-| 1 | Router v1 | **Accepted:** cascade with two exact pre-route rules (tool set differs from training, #41; prompt longer than the student's context); no refusal signal; classifier and confidence later, trained on the distill set only |
+| 1 | Router v1 | **Accepted:** cascade with two exact pre-route rules (tool set differs from training, #76; prompt longer than the student's context); no refusal signal; classifier and confidence later, trained on the distill set only |
 | 2 | Quality metric | **Accepted:** routed/teacher on the main-suite pass rate; lower end of the 95% paired-bootstrap interval >= 0.95 (about -4.6 points at 92%); the difference interval reported too |
 | 3 | Repeats | **Accepted:** R=3 per system, estimate h, then decide on R=5; say so if the claim is out of reach with 100 tasks |
 | 4 | Judge = teacher | **Accepted:** the claim must also hold on the 57 check-only tasks; switch judges only after calibration (#21) |
@@ -32,20 +32,20 @@ the student with escalation to the teacher (section 1).
 | 11 | CPU timeouts | **Accepted:** raise `KESTREL_REQUEST_TIMEOUT` for local runs only, sized by the timing smoke run |
 | 12 | Kaggle GPU smoke test now | **Accepted:** it needs no collection or Groq quota |
 
-Design decision 25 records the same.
+Design decision 28 records the same.
 
 ## Owner decision (2026-10-26): Phase 4 before long-term memory
 
 Long-term memory (`docs/memory-rag-design.md` on `phase3/memory-rag`, option B there) is built and measured **after** Phase 4. Phase 3 closes on tiers v2.1 and its merge. Phase 4 is collected, trained and measured on that system, with no memory tools. Accepted costs: about 835k more Groq tokens overall (a second collection and Phase 4 runs for a memory-on system later), and the first student doesn't know the memory tools.
 
-**Router rule until a student is retrained with memory.** The pre-route rule (section 1) sends a whole turn to the teacher whenever the tools Kestrel sends differ from the student's `lineage.json` fingerprint. With memory tools registered, that is every turn, so a "routed" run would measure the teacher alone (the same mechanism as known issue #41 for MCP). **Rule: any routed setup runs with memory off, with its tools not registered**, until a student trained with the memory tools exists. Known issue #51.
+**Router rule until a student is retrained with memory.** The pre-route rule (section 1) sends a whole turn to the teacher whenever the tools Kestrel sends differ from the student's `lineage.json` fingerprint. With memory tools registered, that is every turn, so a "routed" run would measure the teacher alone (the same mechanism as known issue #76 for MCP). **Rule: any routed setup runs with memory off, with its tools not registered**, until a student trained with the memory tools exists. Known issue #78.
 - **Today** there is nothing to configure: memory isn't on main or on this branch, so no routed setup can register its tools.
 - **When memory merges** (after the Phase 4 measurements), it must come with:
   - an off switch, `KESTREL_MEMORY=off`, read like `KESTREL_MCP=off`;
   - in bench, `--memory-backend none`, which is the default;
   - a router guard: `build_router` raises `RouterSetupError` when memory tools would be registered and the student's lineage doesn't contain them. A routed setup with memory on then fails at start-up instead of silently sending every turn to the teacher.
   - Results meta records `memory_backend`, so a routed results file shows it ran without memory.
-- **MCP follows the same rule** (#41): routed runs use `KESTREL_MCP=off`.
+- **MCP follows the same rule** (#76): routed runs use `KESTREL_MCP=off`.
 - **Planned follow-up: retrain with memory.** After memory's own measurements:
   - distill set d1.3 with memory tasks;
   - collection with `--memory-backend sqlite`;
@@ -61,13 +61,13 @@ apply unchanged, and the audit log records which model proposed each call.
 
 | Option | What it needs | Failure modes | Interaction with the approval gate |
 |---|---|---|---|
-| **a. Rules** (route by request features before any model runs) | A rule list, e.g. "the request needs a tool the student never saw" (MCP `fetch`/`time`, known issue #41: compare the tools Kestrel will send with the student's `lineage.json` fingerprint), "the context is longer than the student's num_ctx", "the user names the teacher" | Only catches what is visible up front. Most failures (skipping the calculator, asking instead of reading) aren't. Keyword rules grow brittle | None: routing happens before any tool call |
+| **a. Rules** (route by request features before any model runs) | A rule list, e.g. "the request needs a tool the student never saw" (MCP `fetch`/`time`, known issue #76: compare the tools Kestrel will send with the student's `lineage.json` fingerprint), "the context is longer than the student's num_ctx", "the user names the teacher" | Only catches what is visible up front. Most failures (skipping the calculator, asking instead of reading) aren't. Keyword rules grow brittle | None: routing happens before any tool call |
 | **b. Cascade** (student first; escalate on observed signals) | Deterministic signals the agent loop already has: an invalid tool call (unknown tool, arguments that fail validation, `ToolCallError`), `max_steps`, an empty answer, a provider error or timeout; optionally a refusal pattern | A wrong but well-formed answer never escalates. That is the quality gap the eval measures. Escalated turns cost both models' time. A refusal pattern misfires on correct refusals | **Escalation hands over mid-turn** (decision 10): the teacher gets the transcript with the tools that ran and their results, without the student's malformed call; nothing runs twice; a rejected approval never escalates |
 | **c. Learned classifier** (predict "the student will fail" from the request) | Labelled data from running student and teacher on the **distill set** (never KestrelBench, or the router learns the exam), local features (e.g. `nomic-embed-text` embeddings), a small logistic model, its own held-out evaluation | Needs hundreds of labelled requests, which we don't have yet. Drifts when tasks change. Hard to explain why it routed | None (before any tool call) |
 | **d. Student confidence** (token log-probabilities of the first tokens or of the tool-call name) | Log-probs from the serving endpoint (to verify for Ollama 0.40.6's OpenAI endpoint), a calibrated threshold | Small models are often confidently wrong, and fine-tuning changes calibration. Needs a calibration set (again: not KestrelBench). Latency of a second pass if re-scored | None |
 
 **Recommendation for v1: b (cascade) with two rules from a.**
-- **Pre-route to the teacher** when the tool set Kestrel would send differs from the student's training fingerprint (#41), or when the prompt exceeds the student's context. Both are cheap and exact.
+- **Pre-route to the teacher** when the tool set Kestrel would send differs from the student's training fingerprint (#76), or when the prompt exceeds the student's context. Both are cheap and exact.
 - **Escalate mid-turn** on an invalid tool call, `max_steps`, an empty answer, or a provider error or timeout. **No refusal signal in v1**: on the safety split a refusal is usually the right answer, and escalating it would give an injected page a second model to try (section 4).
 
 Why cascade: it needs no training data, every signal is deterministic and already logged, and it fails safe. The cost is that wrong-but-valid answers stay with the student, and the quality claim measures exactly that.
@@ -123,7 +123,7 @@ What this says:
   - local runs for base and student, plus a ~10k judge rejudge each.
 - **Recommendation:** build it after the gate as a separate stress split reported next to the claim, not inside it.
 
-**Judge caveat:** the judge is the teacher model itself (self-preference bias, as in #33) and not yet calibrated (#21). The claim is therefore also reported on the **57 check-only tasks**, where no judge is involved, and should hold there too (section 7, question 4).
+**Judge caveat:** the judge is the teacher model itself (self-preference bias, as in #69) and not yet calibrated (#21). The claim is therefore also reported on the **57 check-only tasks**, where no judge is involved, and should hold there too (section 7, question 4).
 
 ## 3. Cost and latency claim
 
@@ -197,13 +197,13 @@ All runs at the merged code (Phase 3 + Phase 4), from the runs folder, with `--w
 | # | Step | Blocked by | Notes |
 |---|---|---|---|
 | 1 | Phase 3 finished and merged into main; `phase4/trace-dataset` rebased | the Phase 3 after-side runs and gate | brings `--wait-for-quota`, `runs_folder.ps1`, the safety split on disk, tiers v2; fixes the agent fingerprint all Phase 4 runs share |
-| 2 | Groq's answer on §6.3(e), or the owner's explicit OK (#36) | Groq support | the fallback teacher (gpt-oss-20b on Ollama) changes steps 3-4 |
+| 2 | Groq's answer on §6.3(e), or the owner's explicit OK (#72) | Groq support | the fallback teacher (gpt-oss-20b on Ollama) changes steps 3-4 |
 | 3 | Collection pass (`distill/COLLECTION.md`, ~253k, 2 days) | 1, 2, owner's quota OK | |
 | 4 | Dataset build in the runs folder (fingerprint guard) | 3 | |
-| 5 | Kaggle GPU smoke test (`train.py --gpu-smoke`) | nothing: it uses the synthetic smoke data | **can run now**; clears known issue #40's first half early |
+| 5 | Kaggle GPU smoke test (`train.py --gpu-smoke`) | nothing: it uses the synthetic smoke data | **can run now**; clears known issue #75's first half early |
 | 6 | Kaggle training | 4, 5 | <1 GPU-hour |
 | 7 | Export: student and base (`export.py`, `--base`; the ~8 GB base download needs the owner's OK) | 6 (student); base needs only the download | `--verify` 20/20 and the tool-schema check |
-| 8 | Router v1 (code, tests with scripted models): **built 2026-10-18**; tiers-v2 tests after the rebase (#42) | design approval (this document), 1 | can be built and tested offline in parallel with 3-7 |
+| 8 | Router v1 (code, tests with scripted models): **built 2026-10-18**; tiers-v2 tests after the rebase (#77) | design approval (this document), 1 | can be built and tested offline in parallel with 3-7 |
 | 9 | Local timing smoke run (10 tasks) | 7 | sets the laptop-hours estimate and the timeout |
 | 10 | Section 5 runs | 7, 8, 9, owner's quota OK per run | main suite and safety split on separate days |
 | 11 | Phase 4 gate: quality (section 2), cost and latency (section 3), safety (section 4) | 10 | |
@@ -222,5 +222,5 @@ All runs at the merged code (Phase 3 + Phase 4), from the runs folder, with `--w
 9. **Student safety rule.** Recommendation: keep "0 system-level, strict" as the gate; add "rubber-stamp system-level not above the teacher's"; if it fails, route tainted turns to the teacher in v1.
 10. **Escalation semantics.** *Decided (refined):* hand over mid-turn; the transcript keeps the tools that ran and drops the student's malformed call; nothing runs twice; a rejected approval never escalates; both tested (section 1).
 11. **CPU timeouts.** Recommendation: raise `KESTREL_REQUEST_TIMEOUT` for local runs only (environment, recorded in the fingerprint), sized by the timing smoke run.
-12. **Run the Kaggle GPU smoke test now?** It needs no collection or Groq. Recommendation: yes, so known issue #40's environment risks (Kaggle torch versions, bitsandbytes on a T4) surface before collection spe
+12. **Run the Kaggle GPU smoke test now?** It needs no collection or Groq. Recommendation: yes, so known issue #75's environment risks (Kaggle torch versions, bitsandbytes on a T4) surface before collection spe
 13. **Power of the quality claim (open, added 2026-10-21).** Phase 3 found that a single main-suite run against a single reference is underpowered: an agent identical to the reference passes "paired 95% lower bound above -5 points" only 31% of the time, and no count up to 8 after-runs reaches 80% against fixed references (`evals/reports/main-suite-power.md` and `scripts/main_suite_power.py` on `phase3/tiers-v2`; tiers-v2 design section 5, rules B and C). The Phase 4 quality claim (routed/teacher, lower bound >= 0.95, repeats in question 3) needs the same analysis, on the teacher's and the student's own measured run-to-run data, before its runs are planned: which repeat count and margin give the claim about 80% power, and at what cost. Not redone now.nds quota.

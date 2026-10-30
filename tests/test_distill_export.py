@@ -166,7 +166,7 @@ def test_added_removed_and_reordered_tools() -> None:
 
 
 def test_a_dropped_key_is_not_a_difference() -> None:
-    """Ollama never sends keys it doesn't know (#39), so they can't make training and serving differ."""
+    """Ollama never sends keys it doesn't know (#74), so they can't make training and serving differ."""
     tools = json.loads(json.dumps(served()))
     lineage = {"tool_schemas": tf.tools_fingerprint(tools)}
     tools[0]["function"]["parameters"]["properties"] = {

@@ -228,7 +228,7 @@ def test_the_teachers_budget_is_capped_at_twice_max_steps() -> None:
 
 def test_a_tool_the_student_never_saw_sends_the_turn_to_the_teacher() -> None:
     world = World()
-    trained = [s for s in world.registry.schemas() if s["function"]["name"] != "send"]  # e.g. an MCP tool (#41)
+    trained = [s for s in world.registry.schemas() if s["function"]["name"] != "send"]  # e.g. an MCP tool (#76)
     agent, router, s, _t, _ = make(world, [], [answer("teacher")], trained=trained)
     assert agent.run("hi").text == "teacher" and s.requests == []
     (turn,) = router.take_turns()
@@ -321,7 +321,7 @@ def test_the_gate_applies_to_the_teachers_calls() -> None:
     )
 
 
-# --- Tiers v2 across an escalation (known issue #42) ---------------------------------------------------
+# --- Tiers v2 across an escalation (known issue #77) ---------------------------------------------------
 
 CODE = "7HQX29PLMV83KDRT5WZNB4YC"  # 24 characters of private text in the file
 

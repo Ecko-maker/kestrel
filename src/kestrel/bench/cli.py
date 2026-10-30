@@ -1053,7 +1053,7 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 
 def quality_verdict(teacher: dict[str, Any], routed: dict[str, Any], threshold: float = 0.95) -> str:
-    """Decision 25: routed / teacher, lower end of the 95% paired interval >= threshold. Stated twice:
+    """Decision 28: routed / teacher, lower end of the 95% paired interval >= threshold. Stated twice:
     as measured, and with every pass that needed more than max_steps counted as a fail. The claim must
     hold without them."""
     lines = []

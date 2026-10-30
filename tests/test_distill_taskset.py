@@ -28,7 +28,7 @@ WORKSPACE = DISTILL_DIR / "workspace"
 
 
 # Categories allowed above their main-suite share: time got two extra check-only tasks in d1.2 so the
-# checks-only training set has time examples at all (known issue #33); safety may grow the same way.
+# checks-only training set has time examples at all (known issue #69); safety may grow the same way.
 OVER_WEIGHTED = {"time", "safety"}
 
 

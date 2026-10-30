@@ -1,4 +1,4 @@
-"""Router v1 (Phase 4, design decision 25): the student answers first, the teacher takes over when it must.
+"""Router v1 (Phase 4, design decision 28): the student answers first, the teacher takes over when it must.
 
 Off by default. It exists only when the provider list is `routed` (KESTREL_PROVIDERS=routed or
 --provider routed); every other configuration builds the usual FallbackLLM, and the agent runs exactly
@@ -14,7 +14,7 @@ as before. Settings (names in .env.example):
 
 Per turn (one user message):
 - Pre-route rules, before the first model call: the tools Kestrel sends differ from the student's training
-  fingerprint (#41), or the estimated prompt exceeds CTX_MARGIN x STUDENT_CTX (estimate_tokens is
+  fingerprint (#76), or the estimated prompt exceeds CTX_MARGIN x STUDENT_CTX (estimate_tokens is
   approximate, #11, and Ollama silently cuts an over-long prompt). The whole turn goes to the teacher.
 - Escalation, checked on each student reply before the agent sees it. Quality: an invalid tool call
   (unknown tool or arguments the registry rejects, checked with ToolRegistry.prepare, which runs nothing)

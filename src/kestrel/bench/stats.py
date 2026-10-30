@@ -190,7 +190,7 @@ def ratio_ci(
 
 
 def quality_ratio(teacher: dict[str, Any], routed: dict[str, Any], **kw: Any) -> Estimate | None:
-    """Routed / teacher pass rate on the tasks graded in both (decision 25: the claim needs low >= 0.95)."""
+    """Routed / teacher pass rate on the tasks graded in both (decision 28: the claim needs low >= 0.95)."""
     pa, pb = per_task_pass(teacher["tasks"]), per_task_pass(routed["tasks"])
     shared = sorted(set(pa) & set(pb))
     return ratio_ci([pa[t] for t in shared], [pb[t] for t in shared], **kw)

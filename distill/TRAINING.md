@@ -3,7 +3,7 @@
 The student is **Qwen/Qwen3-4B-Instruct-2507** (Apache-2.0), pinned to revision `cdbee75f…` in
 `train_config.toml`. Training adds a small LoRA adapter on top of the 4-bit base model; the base
 weights never change. Libraries: transformers + peft + trl + bitsandbytes (the versions in `uv.lock`;
-the notebook installs exactly those). Design decision 23.
+the notebook installs exactly those). Design decision 26.
 
 **Before you start:** you need a dataset from one collection pass (`COLLECTION.md`), i.e. a folder
 with `train.jsonl`, `val.jsonl` and `manifest.json` from `kestrel distill build`. And a Kaggle account

@@ -11,7 +11,7 @@ adapter + base (fp16) --merge--> merged/ (safetensors) --convert--> model-f16.gg
 
 Why GGUF and not Ollama's own safetensors import: in Ollama 0.40 that import runs through its MLX engine,
 which isn't available on Windows ("MLX runtime is not available"), and its `--quantize` no longer offers
-`q4_K_M`. GGUF is what Ollama's llama.cpp backend runs on every platform. Design decision 24.
+`q4_K_M`. GGUF is what Ollama's llama.cpp backend runs on every platform. Design decision 27.
 
 ## 1. Tools (once)
 
@@ -85,7 +85,7 @@ uv run --no-sync python distill/export.py --base --out $env:TEMP\kestrel-base-ex
 
 Same GGUF path and **byte-identical Modelfile** as the student (only the GGUF differs), so a base-vs-student
 comparison is like for like. Uses the same ~8 GB base download as the student's merge. Never compare against
-Ollama's packaged `qwen3:4b-instruct-2507` (known issue #38).
+Ollama's packaged `qwen3:4b-instruct-2507` (known issue #73).
 
 ## Template parity: the student sees exactly what it was trained on
 
@@ -117,7 +117,7 @@ uv run --no-sync python scripts/template_parity.py --write-golden  # after an in
 
 The module cache (~460 MB) can be removed with `go clean -modcache`; the built renderer keeps working.
 
-What the check found in Ollama's own `qwen3:4b-instruct-2507` package (known issue #38): its template
+What the check found in Ollama's own `qwen3:4b-instruct-2507` package (known issue #73): its template
 prints each tool's schema as a Go struct dump (`{read_file Read a file. {object <nil> <nil> [path] ...}}`)
 instead of JSON, adds a newline before `<tool_call>` and gives each tool result its own turn. The student
 is served with Kestrel's template instead.

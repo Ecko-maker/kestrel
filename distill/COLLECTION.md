@@ -1,10 +1,10 @@
 # Collecting distill data: one pass
 
-> **BLOCKED until the owner confirms (known issue #36).** The provisional reading of Groq's Services
+> **BLOCKED until the owner confirms (known issue #72).** The provisional reading of Groq's Services
 > Agreement §6.3(e) is (a): a locally served student doesn't compete with GroqCloud. The owner has asked
 > Groq for written confirmation (2026-10-18) and is waiting for the reply. Don't run anything below
 > until the owner says so. Fallback if the answer is no: gpt-oss-20b served locally by Ollama as the
-> teacher (design decision 19).
+> teacher (design decision 22).
 
 > **Prerequisite: these commands work only after Phase 3 has been merged into main and
 > `phase4/trace-dataset` has been rebased onto it.** They use `scripts\runs_folder.ps1` and
