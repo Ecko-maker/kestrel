@@ -4,13 +4,22 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-30 afternoon EDT, from the 10-30 phase4 PR prep session (log below).
+2026-10-30 evening EDT, from the 10-30 phase4 merge session (log below).
 
 ## Now
 
-**Tiers v2.1, the console and voice are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals) and voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
+**Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) and `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
 
-**The single next step:** the PR `phase4/trace-dataset` → `main` (rebased, tip `f0a877b`; approval line below, up to 70k). It opens only when 200,000 − Groq use in the last 24 h − 15,000 ≥ 70,000, i.e. after the 10-29 tiers-v2 merge run ages out (~10-30 17:10 EDT). The owner merges it (merge commit).
+**The single next step:** the teacher decision (#72) on 10-31: option a (Groq gpt-oss-120b) or option c (gpt-oss:20b on Kaggle), one setting in `src/kestrel/distill/teachers.toml` (`distill/COLLECTION.md`, step 0). Then the collection pass, with its own approval line (option a) or the owner's OK for Kaggle GPU hours (option c). Nothing has been collected or trained.
+
+## 2026-10-30 (phase4 merge session)
+
+1. **Before the PR, on `phase4/trace-dataset`** (no Groq): the Harmony-leak filter in `distill build` (#54); `distill/COLLECTION.md` as a checklist for either teacher; the routed path checked end to end on local Ollama only; the **Phase 4 pre-registration** (`docs/phase4-plan.md` section 8, frozen 2026-10-30, before any teacher data), its power script `scripts/phase4_power.py` (reproduced exactly by a test) and its statistic in `kestrel bench compare --metric checks`. Agent fingerprint unchanged (`35fac5ba6277`).
+2. **Quota check before opening** (17:25 EDT): 200,000 − 103,956 used in the last 24 h (PR #31 run, voice merge run, drift control) − 15,000 = 81,044 ≥ 70,000; no other Groq consumer.
+3. **PR #37** (run `41131505114`, 17:30 EDT): all jobs green; KestrelBench CI subset **88%** (14/16, 95% CI 69–100%), 0 errored, failed `act-email-sam`, `multi-scale-recipe`; **30,911 billable**.
+4. **Merged** by the owner as `4290fc6` (merge commit, 17:45 EDT). Its push-to-main run `41133429864` was **cancelled** at 17:48, before KestrelBench started (0 tokens), because Dependabot #17 and #15 were merged at 17:47 and CI cancels older `main` runs; the `d3fcfb7` run that replaced it was green but "KestrelBench not run" (its diff held only #15). With the owner's OK the cancelled run was **re-run** (18:20–18:27 EDT, at `4290fc6`): all jobs green; subset **94%** (15/16, 95% CI 81–100%), 0 errored, failed `multi-scale-recipe`; **29,685 billable**.
+5. **Total for the phase4 merge: 60,596 billable** (30,911 + 29,685), within the 70k approval; no extra pushes to the open PR.
+6. **Dependabot #15 and #17 merged** (owner, 17:47 EDT). #15 changes `ci.yml` (setup-uv 10.2.0 → 10.3.0) without a `run-evals`-labelled run (CLAUDE.md: a change to the gate is proved with the label); the re-run above still used 10.2.0. #33 is still open.
 
 ## 2026-10-30 (rebase session)
 
@@ -76,18 +85,18 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 1 Foundation | done | tag `v0.1.0`; `main` |
 | 2 Evals | done, except judge calibration (#21: 3 labels so far) | README baseline 92%; `evals/baselines/` on `main`; labels on `labels/judge-calibration` |
 | 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29, decision 17); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); `phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) |
-| 4 Distillation | in progress: tooling done, GPU smoke passed 2026-10-20, no teacher data collected | `phase4/trace-dataset` (`docs/phase4-plan.md`, `distill/*.md`) |
+| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30), claim pre-registered (`docs/phase4-plan.md` section 8); no teacher data collected | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
 | 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video and posts not started | `voice/talk` (`docs/voice-wake.md`); CI green |
 
 ## Branches
 
-Merge order: ~~PR #14 → `phase3/tiers-v2`~~ (done, `02c1d2e`) → ~~`console/hud-theme`~~ (done, `7664103`) → ~~voice~~ (done, `d746e9c`) → `phase4/trace-dataset` (rebased 10-30, with `fix/quota-retry-spend`; PR next). The merge rehearsal (`evals/reports/merge-rehearsal.md` on `docs/merge-plan`) planned this order; it is **superseded** (2026-10-30): every branch before phase4 is merged and phase4 is rebased onto `main`, so its hashes and conflict lists no longer apply. Nothing is deleted yet: the last column only proposes.
+Merge order: ~~PR #14 → `phase3/tiers-v2`~~ (done, `02c1d2e`) → ~~`console/hud-theme`~~ (done, `7664103`) → ~~voice~~ (done, `d746e9c`) → ~~`phase4/trace-dataset`~~ (done, PR #37, `4290fc6`, with `fix/quota-retry-spend`). The merge rehearsal (`evals/reports/merge-rehearsal.md` on `docs/merge-plan`) planned this order; it is **superseded** (2026-10-30): every branch before phase4 is merged and phase4 is rebased onto `main`, so its hashes and conflict lists no longer apply. Nothing is deleted yet: the last column only proposes.
 
 | Branch | Phase | State | Next action |
 |---|---|---|---|
 | `phase3/results-analysis` | 3 | in `main` via tiers-v2 (PR #14 → `caff0f8`) | proposed: delete (no tag needed) |
 | `phase3/tiers-v2` | 3 | **merged into `main`** (PR #27, `02c1d2e`, 2026-10-29) | proposed: delete |
-| `phase4/trace-dataset` | 4 | **rebased onto `main` `d47bf09`** (2026-10-30), tip `f0a877b`, with `fix/quota-retry-spend`; decisions 22–28, issues 66–78 (#53, #77 closed); fingerprint `35fac5ba6277` | PR to `main` (approved up to 70k), once the quota check passes; owner merges |
+| `phase4/trace-dataset` | 4 | **merged into `main`** (PR #37, `4290fc6`, 2026-10-30; decisions 22–28, issues 66–78, #53 and #77 closed) | keep for now (Phase 4 continues there or on a new branch off `main`) |
 | `voice/wake-word` + `voice/talk` | 5 | **merged into `main`** (PR #31, `d746e9c`, 2026-10-29; decisions 19–21, issues 61–65) | proposed: delete (old talk tip kept by tag `archive/voice-talk-4155004`) |
 | `console/hud-theme` | console | **merged into `main`** (PR #29, `7664103`, 2026-10-29; decision 18, issue 60) | proposed: delete |
 | `docs/merge-plan` | – | merge-rehearsal report, **superseded** 2026-10-30 (all merges before phase4 done, phase4 rebased) | proposed: don't merge; archive as tag, delete |
@@ -95,13 +104,14 @@ Merge order: ~~PR #14 → `phase3/tiers-v2`~~ (done, `02c1d2e`) → ~~`console/h
 | `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
 | `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
 | `phase3/memory-evals` | 3 | memory split m1.0 (in `phase3/memory`) | park; then archive as tag, delete |
-| `fix/quota-retry-spend` | 3 | from tiers-v2 `d5b46d5`; known issue #53 fixed in code (`ee496a0`): budget checked inside the retry loop, back-off covers spent tokens, Groq's limit text in the `[quota]` line; agent fingerprint unchanged (`35fac5ba6277`); CI green; **brought into `phase4/trace-dataset`** (`4554331`, 2026-10-30) | rides with the phase4 PR; then proposed: delete |
-| `docs/approval-2026-10-30-phase4` | – | this update (approval line + 10-30 rebase STATUS) | merge to `main` (KestrelBench not run) before the phase4 PR opens |
-| `main` | – | = `origin/main` `d47bf09` (before this PR) | – |
+| `fix/quota-retry-spend` | 3 | from tiers-v2 `d5b46d5`; known issue #53 fixed in code (`ee496a0`): budget checked inside the retry loop, back-off covers spent tokens, Groq's limit text in the `[quota]` line; agent fingerprint unchanged (`35fac5ba6277`); CI green; **in `main` via phase4** (PR #37, `4290fc6`) | proposed: delete |
+| `docs/approval-2026-10-30-phase4` | – | merged (PR #36, `6292bf7`) | proposed: delete |
+| `docs/status-2026-10-30-phase4-merged` | – | this update | merge to `main` (KestrelBench not run) |
+| `main` | – | = `origin/main` `d3fcfb7` (before this PR; PR #37 `4290fc6`, then Dependabot #17 and #15) | – |
 
 **Deleted 2026-10-28** (owner OK; local and `origin`): `master`, `dev`, `phase2/kestrelbench` (merged into `main`); `docs/status-2026-10-27`, `-27-voice`, `-28`, `-28-verdict`, `-28-gate` (merged); `docs/status-2026-10-26`, `docs/approvals-2026-10-26`, `labels/judge-calibration` (squash-merged as PRs #18, #20, #19; GitHub keeps their tips under the PRs); `phase3/memory-safety` (tip kept by tag `safety-before`, `6f58ee5`); `phase4/trace-dataset-v0` (tip kept by the new tag `archive/phase4-trace-dataset-v0-289274e`). Kept for now: `phase3/results-analysis` (in tiers-v2 via #14; delete without a tag once tiers-v2 is in `main`), `docs/merge-plan`, the Dependabot branches (open PRs).
 
-Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates); they cost no evals.
+Dependabot PRs #15 and #17 merged 2026-10-30 (the 10-30 log, item 6); #33 is open. They cost no evals.
 
 ## Groq
 
@@ -111,7 +121,7 @@ Dependabot PRs #15–17 are open (checks green apart from cancelled duplicates);
 - **Each agent-affecting PR costs ~56k:** the PR run (~28k) plus the merge-to-main run (~28k). Every new push to an open PR runs it again.
 - **Calendar:**
   1. ~~After-run resumes~~: done in one resume 10-28 15:22–15:44 EDT; verdict 10-28.
-  2. Merges, one per quota day: #14 (done 10-28, no evals) and tiers-v2 (done 10-29, 59.7k), console (done 10-29, no evals), voice (done 10-29, 64.3k), phase4 rebased (next, approved up to 70k; opens once 10-29's use has freed, ~10-30 17:10 EDT). The no-eval branches go in between.
+  2. Merges, one per quota day: #14 (done 10-28, no evals) and tiers-v2 (done 10-29, 59.7k), console (done 10-29, no evals), voice (done 10-29, 64.3k), phase4 (done 10-30, 60.6k). The no-eval branches go in between.
   3. Teacher data: dry-run estimate first (`distill/README.md` says ~253k, 2 days); needs the owner's OK and the teacher decision (#72).
   4. Kaggle QLoRA training (no Groq; under 1 GPU hour).
   5. Student evals: the student on Ollama locally, the judge only on Groq.
@@ -134,16 +144,16 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 2026-10-29 | tiers-v2 → main PR (one CI run on the PR + one on the merge to main) | ~56k (estimate); **59,741 measured** (PR run 32,783 + main run 26,958) | approved by the owner. Conflicts are resolved on the branch before the PR opens; extra pushes to the open PR need a new approval line. **Ran:** PR #27 (run `40947683871`, 10-29 ~16:20 EDT) and the merge to `main` (run `40954250778`, ~17:02 EDT); no extra pushes. |
 | 2026-10-29 | voice → main PR (`voice/talk`, one CI run on the PR + one on the merge to main) | ~56k (estimate) | approved by the owner, up to 70k billable. Rebased onto `main` `7664103` (after PR #29), agent fingerprint `35fac5ba6277` = main's; extra pushes to the open PR need a new approval line. **PR run:** PR #31 (run `40970175103`, 10-29 19:03–19:06 EDT), **31,289 billable**, 94% (15/16), 0 errors. PR #31 was opened before this line merged (PR #30), so that run started without its approval line on `main`; it stayed within the 70k. The merge-to-main run has up to 38,711 left. **Merge run:** `40985473324` (10-29 ~21:22 EDT), **32,961 billable**, 94% (15/16), 0 errors. Total **64,250** over the 2 runs, within the 70k; no extra pushes. |
 | 2026-10-29 | 10-29 evening: same-day drift control (known issue #58), old agent ×2 and new agent ×0 on the CI subset, approved up to **55,000** billable | old ×2: ~44–56k (22.2k per run on 10-07; 28k per run as the planning estimate) | approved by the owner. One command in `..\kestrel-runs` at `c7c0d4f` (agent `cc5c16377662`): `--subset ci --repeat 2 --token-budget 55000`, no `--wait-for-quota`, results `control-old-ci-2026-10-29.json`. Budget: 200,000 − 91,030 used in the last 24 h (CI runs on PR #27, the tiers-v2 merge and PR #31) − 15,000 margin = 93,970; minus 38,711 kept for the voice merge run = 55,259. A new-agent run (~28k) doesn't fit as well: today's three CI runs of agent `35fac5ba6277` are the new side. Starts only after this line is on `main` and while no other Groq consumer runs. **Ran:** finished 10-29 21:58 EDT (line merged as PR #32 at 20:50 EDT), runs folder at `c7c0d4f`, agent `cc5c16377662`; **39,706 billable**, within the 55k; 84%, 0 errored. Pinned in `evals/controls/`; result under known issue #58. |
-| 2026-10-30 | phase4 → main PR (`phase4/trace-dataset`, one CI run on the PR + one on the merge to main) | ~56k (estimate) | approved by the owner, up to 70k billable. Rebased onto `main` `d47bf09`, tip `f0a877b`, agent fingerprint `35fac5ba6277` = main's. Opens only after this line is on `main`, while no other Groq consumer runs, and when 200,000 − last-24 h use − 15,000 ≥ 70,000. Extra pushes to the open PR need a new approval line. |
+| 2026-10-30 | phase4 → main PR (`phase4/trace-dataset`, one CI run on the PR + one on the merge to main) | ~56k (estimate) | approved by the owner, up to 70k billable. Rebased onto `main` `d47bf09`, tip `f0a877b`, agent fingerprint `35fac5ba6277` = main's. Opens only after this line is on `main`, while no other Groq consumer runs, and when 200,000 − last-24 h use − 15,000 ≥ 70,000. Extra pushes to the open PR need a new approval line. **Ran:** PR #37 run `41131505114` (10-30 17:30 EDT, quota check 81,044 ≥ 70,000), **30,911 billable**, 88% (14/16), 0 errors; merge-to-main run `41133429864` cancelled by the Dependabot merges before it started (0 tokens), re-run with the owner's OK 18:20 EDT, **29,685 billable**, 94% (15/16), 0 errors. Total **60,596**, within the 70k; no extra pushes. |
 
 ## Owner decisions open
 
 1. ~~**Phase 3 tiers gate**~~: decided 2026-10-28, ship tiers v2.1 (owner override on rule A part 1); in `main` as design decision 17 (PR #27).
-2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). It is recorded only on unmerged branches (`phase4/trace-dataset` CLAUDE.md, `docs/memory-rag-design.md`); it lands with them.
+2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). In `main` with phase4 (CLAUDE.md, `docs/phase4-plan.md`); `docs/memory-rag-design.md` is still on `phase3/memory-rag`.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
 5. **Teacher decision (#72, was #36 on the branch; Groq §6.3(e))**: on 10-31 (the phase4 rebase is done, 10-30); send the follow-up first (log item 3). Publishing the weights is decided then.
-6. Also waiting: labels for #21; `docs/phase4-plan.md` open question 13 (power of the quality claim); tiers-v2 §6 questions 4–8.
+6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
 
 ## Docs on unmerged branches
 
@@ -174,7 +184,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-student-no-memory | phase4 (rebased 10-30) | **final 78** (was 51) |
 | KI-pending-training-on-bench, -secret-scrub-v0 | trace-dataset-v0 | **25, 26** |
 
-Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**.
+Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**.
 
 ## Data outside git
 
