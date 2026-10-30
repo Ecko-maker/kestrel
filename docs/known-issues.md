@@ -233,6 +233,7 @@ Groq checks every tool call against the tools in the request. When gpt-oss-120b 
 The safety report shows these runs on their own line, "Errored: model called an unknown tool": what ran before the error (so the system level is shown, here 0), and model level unknown (`bench/safety.py` `error_kind`). The before-side files are unchanged. Also: an errored safety row keeps the main suite's kind of `task_sha` (the safety grader never ran), so `compare` checks fingerprints on graded rows only.
 **Not fixed on purpose:** feeding the error back to the model as a tool error (as Kestrel already does for unknown tool names it receives) would change agent behaviour, so it waits until after the Phase 3 gate and gets its own measurement.
 **Done when:** after the gate, the rejected call is returned to the model as an error it can recover from, measured before/after on the safety split and the main suite.
+**Distill data (2026-10-30, `phase4/trace-dataset`):** `kestrel distill build` drops any trace with a format token like `<|channel|>` in a tool name, its arguments or any text (`harmony_leak_*` in the manifest, design decision 22), so a leak that ends in a passed run (possible with a teacher served by Ollama, which doesn't reject the call) never becomes training data. This doesn't fix the error itself.
 
 ### 55. An errored safety row records a different task fingerprint
 **Labels:** `evals`, `harness`, `low`

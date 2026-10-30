@@ -5,6 +5,9 @@ files. Every trace goes through the filters below in order; the first one it fai
 
   no_messages           the trace stored no conversation (KESTREL_TRACE_CONTENT=off)
   teacher               a model step not on teachers.toml (Gemini, demo, an unknown model, a fallback)
+  harmony_leak_*        a chat-template control token such as <|channel|> or <|message|> (gpt-oss's
+                        Harmony format leaking into the output, known issue #54): _tool_name in a tool
+                        call's name, _arguments in its arguments, _text anywhere else in the example
   contamination_run     the trace belongs to a KestrelBench run: its id is in a results file that isn't
                         a distill run (see is_distill_run; decided from the file's metadata)
   contamination_prompt  a user message equals a KestrelBench prompt (main suite on disk, plus the
@@ -70,6 +73,9 @@ SPLIT_SALT = "2026"
 FILTERS = (
     "no_messages",
     "teacher",
+    "harmony_leak_tool_name",
+    "harmony_leak_arguments",
+    "harmony_leak_text",
     "contamination_run",
     "contamination_prompt",
     "near_duplicate",
@@ -95,6 +101,9 @@ _HEX_TOKEN = re.compile(r"(?:[0-9a-fA-F]{2}){8,}")
 _SECRET_NAME = r"[A-Za-z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Za-z0-9_]*"
 _ENV_LINE = re.compile(rf"(?im)^\s*(?:export\s+)?{_SECRET_NAME}\s*=\s*\S+")
 _SECRET_ENV_NAME = re.compile(r"(?i)(key|token|secret|password)")  # the rule tracing.py redacts by
+# <|channel|>, <|message|>, <|start|>, <|end|>, <|call|>, <|return|>, <|constrain|>, and any other <|word|>
+# (Qwen's <|im_start|> too): format tokens that should never appear in a message's text
+_CONTROL_TOKEN = re.compile(r"<\|[A-Za-z][A-Za-z0-9_]*\|>")
 
 
 # --- Inputs -------------------------------------------------------------------
@@ -311,7 +320,20 @@ def grading_filter(verdict: Verdict | None, grading: Grading) -> str | None:
     return None
 
 
-def text_of(messages: list[dict]) -> str:
+def harmony_filter(messages: list[dict]) -> str | None:
+    """Which part of the example carries a control token: a tool call's name, its arguments, or any other
+    text. Such a trace teaches the student the leak (e.g. a call to "calculator<|channel|>commentary")."""
+    calls = [tc.get("function") or {} for m in messages for tc in m.get("tool_calls") or []]
+    if any(_CONTROL_TOKEN.search(str(fn.get("name") or "")) for fn in calls):
+        return "harmony_leak_tool_name"
+    if any(_CONTROL_TOKEN.search(text_of([fn.get("arguments")])) for fn in calls):
+        return "harmony_leak_arguments"
+    if _CONTROL_TOKEN.search(text_of(messages)):
+        return "harmony_leak_text"
+    return None
+
+
+def text_of(messages: list[Any]) -> str:
     """Every string in the example, one per line: system prompt, user turns, tool-call arguments,
     tool results and the answer. Built from the values, not json.dumps, so quotes and newlines in a
     secret aren't escaped out of recognition."""
@@ -454,10 +476,12 @@ def _check(
         return "no_messages", None
     if not teacher_ok(trace["llm_steps"], teachers):
         return "teacher", None
+    messages = json.loads(trace["messages"])
+    if reason := harmony_filter(messages):
+        return reason, None
     verdict = verdicts.get(trace["trace_id"])
     if verdict is not None and not verdict.distill:
         return "contamination_run", None
-    messages = json.loads(trace["messages"])
     candidates = [m.get("content") for m in messages if m.get("role") == "user"] + [trace.get("user_message")]
     users = [u for u in candidates if isinstance(u, str)]
     if any(index.exact(u) for u in users):

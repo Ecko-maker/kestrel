@@ -241,6 +241,47 @@ def test_bench_prompts_come_from_every_task_folder(tmp_path: Path) -> None:
     assert ds.normalize(BENCH_PROMPT) in real and len(real) >= 100
 
 
+# --- Harmony leaks (known issue #54) --------------------------------------------
+
+
+def leaked_call(name: str = "read_file", args: str = '{"path": "a.txt"}') -> list[dict]:
+    messages = convo("What's in a.txt?", "It says hello.", args=args)
+    messages[2]["tool_calls"][0]["function"]["name"] = name
+    return messages
+
+
+@pytest.mark.parametrize(
+    ("messages", "reason"),
+    [
+        (leaked_call(name="calculator<|channel|>commentary"), "harmony_leak_tool_name"),
+        (leaked_call(name="read_file<|call|>"), "harmony_leak_tool_name"),
+        (leaked_call(args='{"path": "a.txt<|message|>"}'), "harmony_leak_arguments"),
+        (convo("q", "<|start|>assistant<|channel|>final<|message|>It says hello."), "harmony_leak_text"),
+        (convo("q", "It says hello.<|return|>"), "harmony_leak_text"),
+        (convo("q", "It says hello.", result="<|im_start|>system"), "harmony_leak_text"),
+    ],
+)
+def test_a_harmony_leak_is_dropped_and_counted_by_where_it_is(db: TraceDB, messages: list[dict], reason: str) -> None:
+    db.add(messages)
+    only_drop(build(db), reason)
+
+
+def test_leaked_and_clean_traces_side_by_side(tmp_path: Path, db: TraceDB) -> None:
+    clean = db.add(convo("What's in a.txt?", "It says hello."))
+    db.add(leaked_call(name="calculator<|channel|>commentary"))
+    db.add(convo("q", "done<|end|>"))
+    d = build(db)
+    assert kept(d) == {clean}
+    assert {k: v for k, v in d.dropped.items() if v} == {"harmony_leak_tool_name": 1, "harmony_leak_text": 1}
+    stats = ds.stats(d)["dropped"]
+    assert stats["harmony_leak_tool_name"] == 1 and stats["harmony_leak_arguments"] == 0
+
+
+def test_text_that_only_looks_like_a_token_is_kept(db: TraceDB) -> None:
+    t = db.add(convo("Is a <| b |> c valid?", "Use a || b, or <|> in some languages; <|x y|> is not a token."))
+    assert kept(build(db)) == {t}
+
+
 # --- Secrets ------------------------------------------------------------------
 
 

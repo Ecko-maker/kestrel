@@ -66,11 +66,11 @@ rebuild with the rejudged file.
 
 ## Cost of one collection pass
 
-**The dry run says ~133k billable tokens. That figure is too low.** It is 122 tasks x 3,300 raw tokens
-+ 29 rubric tasks x 500 judge tokens = 417k raw, times `BILLABLE_SHARE = 0.32` = 133,472. (It counts
-the judge tokens even with `--judge none`.) The 0.32 share is the
-old, known-wrong estimate (fixed on the Phase 3 branch, `fix/estimator`; the estimator code is not
-changed here). Measured on Groq gpt-oss-120b, 64-75% of tokens are billable.
+**The dry run says ~313k billable tokens (2026-10-30), the high side.** It is 122 tasks x 3,300 raw
+tokens + 29 rubric tasks x 500 judge tokens = 417,100 raw, times the estimator's billable share 0.75 =
+312,825. (It counts the judge tokens even with `--judge none`, and no distill task is measured yet.)
+Before the rebase onto `main` it used the old, known-wrong share 0.32 and said ~133k. Measured on Groq
+gpt-oss-120b, 64-75% of tokens are billable.
 
 **Corrected estimate: about 253k billable tokens (range ~242k-284k), about 2 Groq free-tier days:**
 
