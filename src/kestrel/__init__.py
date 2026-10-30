@@ -240,8 +240,13 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     )
     if token := os.getenv("KESTREL_TOKEN"):  # a fixed token, e.g. so a Docker container keeps the same link
         config.token = token
-    app = create_app(make_agent, tracer, config)
+    from kestrel.wake import build_wake_service
+
+    wake = build_wake_service(tracer.record_wake)  # None unless KESTREL_WAKE=on
+    app = create_app(make_agent, tracer, config, wake=wake)
     print(f"Kestrel console: {config.url()}", flush=True)
+    if wake is not None:
+        dim(f"Wake word on: listening for 'Kestrel' (model {wake.settings.model_dir}). Audio stays in memory.")
     if demo:
         print(f"{YELLOW}{DEMO_NOTICE}{RESET}", flush=True)
     dim("Only this machine can connect; the token in the link is your key. Ctrl+C to stop.")

@@ -9,11 +9,14 @@ your real files and traces are untouched.
 
 --shots also saves docs/screenshots/theme/: idle, thinking, tool, approval and error in the
 classic and HUD looks, the HUD mid answer-burst and at phone width, close-ups of the falcon's
-poses (falcon-*.png), and a WebM recording of one exchange (hud-demo.webm).
+poses (falcon-*.png), a WebM recording of one exchange (hud-demo.webm), and every HUD mode
+(hud-mode-*.png) on a second demo server with a scripted wake word: a synthetic microphone and a
+detector the script triggers (no real microphone, no Windows power calls, no speech).
 """
 
 import argparse
 import json
+import math
 import shutil
 import sys
 import tempfile
@@ -29,6 +32,7 @@ from kestrel.llm import LLMError
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "docs" / "screenshots"
 PORT = 8799
+MODES_PORT = 8798  # the second demo server, with the scripted wake word
 
 NOTE, EMAIL, SUSPICIOUS = DEMO_PROMPTS[3], DEMO_PROMPTS[4], DEMO_PROMPTS[5]
 TOKYO = DEMO_PROMPTS[0]
@@ -47,7 +51,49 @@ class ShotsLLM(DemoLLM):
         return super().chat(messages, tools, on_text)
 
 
-def start_server() -> tuple[str, Path]:
+WAKE_TRIGGER = threading.Event()  # the script says "Kestrel"
+
+
+class TriggerDetector:
+    """Hears "Kestrel" exactly when the screenshot script sets WAKE_TRIGGER."""
+
+    def feed(self, pcm: bytes) -> float | None:
+        if WAKE_TRIGGER.is_set():
+            WAKE_TRIGGER.clear()
+            return 1.0
+        return None
+
+
+class SyntheticMic:
+    """0.1 s chunks of a 220 Hz tone whose loudness rises and falls like speech, in real time."""
+
+    def open(self) -> None:
+        self.t0 = time.monotonic()
+
+    def read(self, timeout: float) -> bytes:
+        time.sleep(0.1)
+        t = time.monotonic() - self.t0
+        envelope = 0.02 + 0.5 * abs(math.sin(t * 2.3)) * abs(math.sin(t * 0.7))
+        n = 1600
+        return b"".join(
+            int(32767 * envelope * math.sin(2 * math.pi * 220 * (t + i / 16000))).to_bytes(2, "little", signed=True)
+            for i in range(n)
+        )
+
+    def close(self) -> None:
+        pass
+
+
+def scripted_wake(tracer):
+    from kestrel.wake import WakeService, WakeSettings
+    from kestrel.wake.power import NullPower
+    from kestrel.wake.speech import NullSpeaker
+
+    settings = WakeSettings(enabled=True, listen_seconds=8.0)  # no name: "I'm here. What do you need?"
+    return WakeService(settings, TriggerDetector, SyntheticMic, NullPower(), NullSpeaker(), tracer.record_wake)
+
+
+def start_server(port: int = PORT, wake: bool = False) -> tuple[str, Path]:
     from kestrel import tools
     from kestrel.agent import Agent
     from kestrel.approval import ApprovalGate
@@ -74,10 +120,9 @@ def start_server() -> tuple[str, Path]:
         "models": [{"provider": "demo", "model": "scripted"}],
         "tools": [{"name": t.name, "risk": t.risk, "server": t.server} for t in tools.registry.tools.values()],
     }
-    config = WebConfig(port=PORT, session_info=info)
-    server = uvicorn.Server(
-        uvicorn.Config(create_app(make_agent, tracer, config), host="127.0.0.1", port=PORT, log_level="warning")
-    )
+    config = WebConfig(port=port, session_info=info)
+    app = create_app(make_agent, tracer, config, wake=scripted_wake(tracer) if wake else None)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     threading.Thread(target=server.run, daemon=True).start()
     while not server.started:
         time.sleep(0.05)
@@ -122,6 +167,8 @@ def take_screenshots(url: str, tmp: Path) -> None:
             theme_shots(browser, url, look)
         falcon_closeups(browser, url)
         record_exchange(browser, url)
+        modes_url, _ = start_server(MODES_PORT, wake=True)
+        mode_shots(browser, modes_url)
         browser.close()
         show_results(tmp)
 
@@ -399,6 +446,81 @@ def record_exchange(browser, url: str) -> None:
         video = page.video
         context.close()  # the video is written on close
         shutil.move(video.path(), THEME_SHOTS / "hud-demo.webm")
+
+
+def mode_shots(browser, url: str) -> None:
+    """Every HUD mode, in order: Standby, Listening (after a scripted wake), Thinking, Answering,
+    done (the burst), a tool, an approval, an error."""
+    gate = EventGate()
+    page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
+    page.add_init_script("try { localStorage.setItem('kestrel-look', 'hud') } catch (e) {}")
+    page.route_web_socket("**/ws", gate.route)
+    page.goto(url)
+    page.wait_for_selector("text=Connected")
+    page.wait_for_timeout(1600)  # past the boot sequence
+
+    def shot(mode: str, label: str) -> None:
+        page.locator(f"text={label} >> visible=true").first.wait_for(timeout=10_000)
+        save_shot(page, THEME_SHOTS / f"hud-mode-{mode}.png")
+
+    def wait_idle():
+        page.wait_for_selector("textarea[placeholder^='Ask Kestrel']", timeout=30_000)
+        page.wait_for_timeout(1800)  # the done settle, then Standby
+
+    page.locator("text=Listening >> visible=true").first.wait_for(timeout=15_000)  # the mic chip
+    page.wait_for_timeout(600)
+    shot("standby", "Standby")
+
+    WAKE_TRIGGER.set()  # "Kestrel"
+    page.wait_for_timeout(2600)  # the fly-in (1.6 s), then the level ring
+    shot("listening", "Listening…")
+    page.get_by_label("Message").fill("x")  # typing ends Listening
+    page.locator("text=Standby >> visible=true").first.wait_for(timeout=5_000)
+    page.get_by_label("Message").fill("")
+
+    gate.pause_after = "step_started"
+    say(page, TOKYO)
+    gate.wait_paused(page)
+    page.wait_for_timeout(600)
+    shot("thinking", "Thinking…")
+    gate.pause_after = "text_delta"
+    gate.release()
+    for _ in range(5):  # let the answer stream in, a piece at a time (6 of its ~8), so the text pulses run
+        gate.wait_paused(page)
+        page.wait_for_timeout(70)
+        gate.pause_after = "text_delta"
+        gate.release()
+    gate.wait_paused(page)
+    page.wait_for_timeout(120)
+    shot("answering", "Answering…")
+    gate.pause_after = "done"
+    gate.release()
+    gate.wait_paused(page)
+    page.wait_for_timeout(250)
+    shot("done", "Done")
+    gate.release()
+    wait_idle()
+
+    gate.pause_after = "tool_call"
+    say(page, TOKYO)
+    gate.wait_paused(page)
+    page.wait_for_timeout(500)
+    shot("tool", "Running tool")
+    gate.release()
+    wait_idle()
+
+    say(page, NOTE)
+    page.wait_for_selector("[data-approval=create_note]")
+    page.wait_for_timeout(600)
+    shot("approval", "Approval needed")
+    page.get_by_role("button", name="Approve", exact=True).click()
+    wait_idle()
+
+    say(page, OUTAGE)
+    page.locator("text=simulated outage >> visible=true").first.wait_for()
+    page.wait_for_timeout(1000)
+    shot("error", "Error")
+    page.close()
 
 
 def show_results(tmp: Path) -> None:

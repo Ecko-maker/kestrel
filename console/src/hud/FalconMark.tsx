@@ -27,6 +27,9 @@ export function FalconPaths() {
         <path d="M46.5 64 L44 84 L50 79.5 L56 84 L53.5 64" fillOpacity={0.22} />
         {/* eye stripes (the kestrel's moustache marks) */}
         <path d="M47.2 24.5 L46.2 29.5 M52.8 24.5 L53.8 29.5" fill="none" strokeWidth={1.2} />
+        {/* eyes: hidden except in Standby, where they glow softly (hud.css) */}
+        <circle className="eye" cx={47.9} cy={22.4} r={1.2} stroke="none" />
+        <circle className="eye" cx={52.1} cy={22.4} r={1.2} stroke="none" />
         {/* keel line */}
         <path d="M50 31 L50 58" fill="none" strokeOpacity={0.55} strokeWidth={1} />
       </g>

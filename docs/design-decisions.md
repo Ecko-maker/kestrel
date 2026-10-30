@@ -267,3 +267,49 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** the HUD makes what the agent is doing visible at a glance (thinking, which tool, waiting on you) from data the console already has, at +5 KB gzipped JS and +2.4 KB CSS, and without making the approval decision harder to read.
 
+## 19. Voice wake-up: Vosk with a two-word grammar, local speech, no model call
+
+**Decision** (owner-approved 2026-10-22, branch `voice/wake-word`; guide `docs/voice-wake.md`): saying "Kestrel" wakes the display, brings the console forward, plays the falcon's fly-in and speaks a fixed greeting. Off by default (`KESTREL_WAKE=on`).
+- **Detection:** Vosk 0.3.45 with its small English model (Apache-2.0, 41 MB), restricted to the grammar `["kestrel", "[unk]"]`, behind a `Detector` interface. "[unk]" keeps other speech from being forced onto the wake word (tested with a recognizer that behaves like Vosk's grammar mode).
+- **Greeting:** SAPI 5 through comtypes, on its own thread. Fixed text; the name comes from `KESTREL_USER_NAME`, none in the repo.
+- **Power** (revised 2026-10-23, owner): plugged in, listen and hold a "system required" power request (only while the microphone is open; released on every switch to battery, when listening stops and at shutdown; tested). On battery, listen while the PC is awake if the charge is at least `KESTREL_WAKE_MIN_BATTERY` (30) and Energy Saver is off, never holding a request, so Windows sleeps as usual; below the minimum pause until +5 (35%) or mains. `KESTREL_WAKE_ON_BATTERY=off` remains as an override (never on battery). One pure function, `power.decide`, holds the rule; `GetSystemPowerStatus` is polled every 5 s; after standby the stream is reopened. The HUD says "keeping PC awake" only when Windows granted it.
+- **HUD modes** (2026-10-23, owner): Standby (mic open, waiting), Listening (after a wake, with the live mic level), Thinking, Answering, plus the existing tool, approval, error. Each has its own pose, ring motion, colour and label; `useHud.ts` (`hudPhase`) stays the single source, and agent work always wins over the wake word's modes. The level is one smoothed RMS number (0-1) per 0.1 s chunk, sent only during Listening; typing or sending ends it. Answering pulses are paced to at most one every 0.45 s (WCAG 2.3.1).
+- **Records:** a wake is one `wake` span with its time and no `traces` row, so it never reaches Traces, Stats, `kestrel export` or `kestrel distill build`.
+- **API:** `GET/POST /api/wake` under the same login, Host check and, new for every `/api/` route, an Origin check (403 for another site's page).
+
+**Alternatives:**
+- **openWakeWord with a custom "kestrel" model.** Built for wake words, with thresholds that mean something, but a custom model is trained in Colab on 17.5 GB of negative features licensed CC BY-NC-SA, so the model's own licence is unclear; the bundled models are CC BY-NC-SA too. Kept as the swap-in if the measured false-wake rate is too high.
+- **The browser's speechSynthesis for the greeting.** Chromium allows it only after a user gesture on the page, so a wake after a reload would be silent; Edge's "Natural" voices are online. SAPI is local and works with no page open.
+- **Piper for the greeting.** Better voices, but a 60 MB+ voice download and the maintained fork is GPL-3.0.
+- **A real mouse movement or a key press to wake the display.** It would change what the user is doing; a zero-pixel move is enough to count as input (pinned by a test).
+
+**Why:** the wake word is the first voice feature, so it is built where mistakes are cheapest: it can only wake and greet. Nothing it hears can reach the model, a tool or an approval, and nothing it hears is kept.
+
+**Measured** (2026-10-22/23, this laptop, Python 3.14): feasibility on synthetic Windows-voice clips 4/4 spotted, 0/10 look-alikes (not an accuracy claim); CPU while listening 1.3% of one core over 10 minutes (per minute 0.2-5.5%); the `powercfg /requests` check needs an elevated prompt (known issue #61). Detection rate and false wakes per hour wait for the owner's recordings (`scripts/wake_eval.py`).
+
+**Revised (owner, 2026-10-26): greetings before "Kestrel".** The wake rule stays "kestrel anywhere in the recognised utterance, at or above the threshold" (it already was: the detector looks for the token, not an exact match), with the same cooldown and `[unk]`. The grammar gains five greetings, all in the small model's vocabulary (`hi`, `hello`, `hey`, `shalom`, `good morning`), only so the reply can echo them ("Hello, {name}. I'm here, what do you need?"); a greeting alone never wakes. "kestrel" inside a longer sentence also wakes: accepted, since any stricter position rule would also reject "hi Kestrel". `wake_eval.py` reports the old and new grammar side by side, so a change in false wakes from the larger grammar is measured, not assumed.
+
+## 20. Talking to Kestrel: whisper.cpp base.en, a hallucination guard, the same input for the model
+
+**Decision** (owner-approved 2026-10-23, branch `voice/talk`; guide `docs/voice-wake.md`, "Talking to Kestrel"): after a wake, one spoken request is recorded in memory, transcribed locally with whisper.cpp base.en (5-bit, MIT, 57 MB, SHA-256 pinned; tiny.en as a one-setting fallback) and sent by the most recently active console exactly like typed text. Answers to spoken requests (only) are spoken, first two sentences, behind a remembered "Speak answers" switch.
+- **End of speech:** loudness above a learned noise floor; 1 s of quiet ends it, 20 s at most, 3 s to start.
+- **Hallucination guard:** drop on under 0.4 s of speech, low confidence (segment confidence as the closest available signal to whisper.cpp's no-speech probability, which pywhispercpp doesn't expose), or a whole-transcript filler; a dropped transcript is treated like an empty one.
+- **Safety:** an approval card is announced with one fixed sentence, never read; voice can't approve. The voice flag stays in the server and the console; the agent receives only the text, so the model's input is identical for typed and spoken requests (tested), and the agent fingerprint is unchanged.
+
+**Alternatives:** Vosk small (already installed, 1.7 s per 5 s request in one go, LibriSpeech test-clean 9.85%); faster-whisper tiny.en (0.28 s, 8.4%); faster-whisper base.en (145 MB, same model family as the choice, not measured: over the 100 MB limit); openai-whisper (needs PyTorch). Measured on this laptop (Ryzen 7 8840HS, 8 threads, synthetic 5 s requests): whisper.cpp base.en 5-bit 0.80 s.
+
+**Why:** base.en roughly halves tiny.en's errors on real speech for half a second more, from a 57 MB file and a 1.4 MB library. The guard exists because a transcript is sent to the agent as if the user had said it: inventing a request is worse than missing one.
+
+**Revised (owner, 2026-10-24):** low confidence no longer drops a transcript: it goes unsent into the console's message box ("Did I hear that right?") for the user to send, edit or discard ("check first"); the hard drops stay. A vocabulary hint (whisper.cpp initial prompt, <= 200 characters) from general Kestrel words and a local name list, never from the evaluation sentences, plus a drop rule for the hint echoed back. On the first set of 21 recorded requests it helped Kestrel words but was worse overall (15.7% -> 19.7% normalised WER, overlapping intervals); it stays on as specified, behind `KESTREL_TALK_HINT`, until the unseen second set decides (known issue #63). **Decided (owner, 2026-10-24), by a rule fixed before set 2 was scored:** pooled over both sets (31 requests, 261 words) normalised WER was 14.18% without the hint and 17.62% with it, so `KESTREL_TALK_HINT` defaults to off; the code and the switch stay. **small.en (owner, 2026-10-24), by a rule fixed before scoring** (switch only if pooled no-hint WER drops 3+ points vs base.en and median latency stays under 2.0 s): pooled 12.26% vs 14.18% (-1.92 points), median 3.12 s vs 0.82 s; both fail, so base.en stays the default and small.en (190 MB, pinned) is an option.
+
+## 21. A 2-second "Sending" countdown for spoken requests, cancellable three ways
+
+**Decision** (owner, 2026-10-24, branch `voice/talk`; guide `docs/voice-wake.md`): a spoken request that passes the guard is no longer sent at once. The server holds it for 2 s while the console (both looks) shows "Sending: <transcript>" and the HUD "Sending…". Esc, a Cancel button, or saying "cancel" stops it and puts the text in the message box. "Check first" below `KESTREL_TALK_MIN_CONFIDENCE` (now 0.50) and the hard drops are unchanged.
+- **The server owns the timer**, not the browser: one place decides, so a slow or closed console can't send early or twice, and a cancel that arrives after the countdown ends does nothing.
+- **Spoken "cancel"** is a second Vosk recognizer with a two-entry grammar (`cancel`, `[unk]`), the same model already loaded for the wake word, made fresh when a countdown starts and fed audio only during it. It acts on Vosk's partial result at any confidence: a false cancel costs one Enter (the text is kept); a missed one sends a request the user can still reject at its approval card.
+- **Safety unchanged:** cancelling can only stop a spoken request in its countdown, never answer an approval card (tested); voice still can't approve anything.
+
+**Why:** Whisper can be wrong and confident (set 1, req-018: a garbled request at confidence 0.931). Confidence alone can't catch that, so the user gets a moment to see what was heard before it reaches the agent. 2 s keeps a correct request fast.
+
+**Alternatives:** always "check first" (every spoken request needs Enter: voice stops being hands-free); a higher confidence floor (confident mistakes still pass); a client-side timer (two consoles or a reload could send twice).
+

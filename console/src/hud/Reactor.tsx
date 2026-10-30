@@ -2,10 +2,11 @@
 // data-phase / data-pose / data-burst, which come from useHud.ts, so the rings and the bird move only
 // when the agent's state changes. overflow: hidden keeps every effect inside the reactor's own box.
 
-import { useId, type CSSProperties } from "react";
+import { useEffect, useId, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { micLevel } from "../useChat";
 import { cx } from "../components/ui";
 import { FalconPaths } from "./FalconMark";
-import { FALCON_POSE, PHASE_LABEL, SEGMENTS, type Phase, type Segment } from "./useHud";
+import { FALCON_POSE, PHASE_LABEL, SEGMENTS, pacePulse, type Paced, type Phase, type Segment } from "./useHud";
 
 const C = 200;
 const SPAN = 360 / SEGMENTS;
@@ -51,11 +52,41 @@ function segClass(state: Segment["state"] | undefined): { stroke: string; opacit
   return { stroke: "currentColor", opacity: 0.12 };
 }
 
+// Listening: a ring that swells with the live mic level (one number, about 10 a second). Only this
+// component re-renders on each level, not the chat.
+function LevelRing() {
+  const level = useSyncExternalStore(micLevel.subscribe, micLevel.get);
+  return (
+    <circle
+      className="level-ring"
+      cx={C}
+      cy={C}
+      r={122}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={4}
+      style={{ transform: `scale(${(1 + level * 0.3).toFixed(3)})`, opacity: 0.35 + level * 0.25 }}
+    />
+  );
+}
+
+// Answering: one soft pulse per stretch of incoming text, at most every PULSE_MIN_MS (useHud).
+function TextPulse({ pulse }: { pulse: number }) {
+  const [shown, setShown] = useState<Paced>({ key: pulse, at: 0 });
+  useEffect(() => {
+    const timer = setTimeout(() => setShown((s) => pacePulse(s, pulse, Date.now())), 0);
+    return () => clearTimeout(timer);
+  }, [pulse]);
+  if (!shown.at) return null;
+  return <circle key={shown.key} className="text-pulse" cx={C} cy={C} r={114} fill="none" stroke="currentColor" strokeWidth={3} />;
+}
+
 export function Reactor({
   phase,
   segments,
   activeTool,
   burst = null,
+  pulse = 0,
   size = "hero",
   className,
 }: {
@@ -63,6 +94,7 @@ export function Reactor({
   segments: Segment[];
   activeTool: string | null;
   burst?: number | null;
+  pulse?: number;
   size?: "hero" | "compact";
   className?: string;
 }) {
@@ -158,7 +190,16 @@ export function Reactor({
         </g>
       )}
 
-      {/* flight = lift, dive, swoop, shake; bob = the idle float; the wings move inside the nested svg.
+      {phase === "standby" && <circle className="standby-ripple" cx={C} cy={C} r={114} fill="none" stroke="currentColor" strokeWidth={2} />}
+      {phase === "attending" && <LevelRing />}
+      {phase === "streaming" && <TextPulse pulse={pulse} />}
+
+      {phase === "waking" && (
+        // a soft ring once the falcon has landed (wake fly-in); hidden under reduced motion
+        <circle className="wake-ring" cx={C} cy={C} r={112} fill="none" stroke="currentColor" strokeWidth={3} aria-hidden="true" />
+      )}
+
+      {/* flight = lift, dive, swoop, shake, arrive; bob = the idle float; the wings move inside the nested svg.
           A new tool call remounts the flight group, so each one gets its own dive. */}
       <g key={pose === "dive" ? `dive-${segments.length}` : "flight"} className="falcon-flight" style={dive}>
         <g className="falcon-bob">

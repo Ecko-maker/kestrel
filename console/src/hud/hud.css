@@ -34,6 +34,10 @@
   --hud-amber: #fbbf24;
   --hud-red: #f87171;
   --hud-offline: #64748b;
+  /* the modes' own colours (rings and labels; contrast.test.mjs checks them as text) */
+  --hud-standby: #5eead4; /* dim teal: waiting for the wake word */
+  --hud-listening: #86efac; /* green: Listening after a wake */
+  --hud-answering: #fde68a; /* warm white-gold: Answering */
   --hud-text: #e6fbff;
   --font-hud: "Orbitron Variable", "Segoe UI", ui-sans-serif, sans-serif;
   color-scheme: dark;
@@ -129,6 +133,12 @@
 .reactor[data-phase="approval"] { --phase: var(--hud-amber); }
 .reactor[data-phase="error"] { --phase: var(--hud-red); }
 .reactor[data-phase="offline"] { --phase: var(--hud-offline); }
+.reactor[data-phase="waking"] { --phase: var(--hud-text); }
+.reactor[data-phase="standby"] { --phase: var(--hud-standby); }
+.reactor[data-phase="standby"] .rings { opacity: 0.55; } /* dim */
+.reactor[data-phase="attending"] { --phase: var(--hud-listening); }
+.reactor[data-phase="sending"] { --phase: var(--hud-listening); } /* the countdown: still listening for "cancel" */
+.reactor[data-phase="streaming"] { --phase: var(--hud-answering); } /* the wake: brighter; the only cue under reduced motion */
 .reactor .spin, .reactor .spin-rev, .reactor .breath, .reactor .rings, .reactor .seg { transform-box: fill-box; transform-origin: center; }
 .reactor .glow { filter: drop-shadow(0 0 5px var(--phase)); }
 .reactor .flash { opacity: 0; }
@@ -145,8 +155,7 @@
 .reactor[data-phase="idle"] .breath { animation: hud-breath 4.5s ease-in-out infinite; }
 .reactor[data-phase="thinking"] .spin { animation: hud-spin 3.2s linear infinite; }
 .reactor[data-phase="thinking"] .spin-rev { animation: hud-spin 5s linear infinite reverse; }
-.reactor[data-phase="streaming"] .spin { animation: hud-spin 1.4s linear infinite; }
-.reactor[data-phase="streaming"] .spin-rev { animation: hud-spin 2.4s linear infinite reverse; }
+.reactor[data-phase="streaming"] .spin { animation: hud-spin 8s linear infinite; } /* steady, under the text pulses */
 .reactor[data-phase="tool"] .spin { animation: hud-spin 9s linear infinite; }
 .reactor .seg[data-state="active"] { animation: hud-breath 0.9s ease-in-out infinite; }
 .reactor[data-phase="approval"] .breath { animation: hud-breath 1.8s ease-in-out infinite; }
@@ -214,6 +223,43 @@
 .reactor[data-pose="rest"] .wing-l { transform: rotate(-18deg); }
 .reactor[data-pose="rest"] .wing-r { transform: rotate(18deg); }
 
+/* arrive (wake word): flies in from outside the rings (clipped by the reactor's box), flapping,
+   lands in the centre with wings open, then a soft ring; WAKE_MS (1.6 s) in useHud.ts */
+@keyframes falcon-arrive {
+  0% { transform: translate(-300px, -230px) scale(0.55) rotate(-30deg); }
+  60% { transform: translate(8px, 6px) scale(1.05) rotate(4deg); }
+  100% { transform: none; }
+}
+@keyframes wing-l-arrive { 0% { transform: rotate(-40deg); } 20% { transform: rotate(24deg); } 40% { transform: rotate(-20deg); } 60% { transform: rotate(26deg); } 100% { transform: rotate(16deg); } }
+@keyframes wing-r-arrive { 0% { transform: rotate(40deg); } 20% { transform: rotate(-24deg); } 40% { transform: rotate(20deg); } 60% { transform: rotate(-26deg); } 100% { transform: rotate(-16deg); } }
+@keyframes wake-ring { 0% { transform: scale(1); opacity: 0; } 15% { opacity: 0.7; } 100% { transform: scale(1.6); opacity: 0; } }
+.reactor[data-pose="arrive"] .falcon-flight { animation: falcon-arrive 1.3s cubic-bezier(0.2, 0.7, 0.25, 1) 1 both; }
+.reactor[data-pose="arrive"] .wing-l { transform: rotate(16deg); animation: wing-l-arrive 1.3s ease-out 1; }
+.reactor[data-pose="arrive"] .wing-r { transform: rotate(-16deg); animation: wing-r-arrive 1.3s ease-out 1; }
+.reactor .wake-ring { transform-box: fill-box; transform-origin: center; opacity: 0; animation: wake-ring 0.7s ease-out 0.85s 1 both; }
+
+/* ---- The modes around the wake word, and Answering ---- */
+.falcon-parts .eye { opacity: 0; fill: var(--hud-text); }
+@keyframes eye-glow { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.reactor[data-phase="standby"] .eye { opacity: 0.9; filter: drop-shadow(0 0 1.5px var(--phase)); animation: eye-glow 3.2s ease-in-out infinite; }
+/* standby: one slow, faint ripple */
+@keyframes standby-ripple { 0% { transform: scale(1); opacity: 0.3; } 100% { transform: scale(1.5); opacity: 0; } }
+.reactor .standby-ripple { transform-box: fill-box; transform-origin: center; animation: standby-ripple 4.5s ease-out infinite; }
+/* attend (Listening): wings half raised, slow beats; the level ring follows the mic */
+@keyframes wing-l-attend { from { transform: rotate(6deg); } to { transform: rotate(18deg); } }
+@keyframes wing-r-attend { from { transform: rotate(-6deg); } to { transform: rotate(-18deg); } }
+.reactor[data-pose="attend"] .falcon-flight { transform: translateY(-6px); }
+.reactor[data-pose="attend"] .wing-l { transform: rotate(12deg); animation: wing-l-attend 1.6s ease-in-out infinite alternate; }
+.reactor[data-pose="attend"] .wing-r { transform: rotate(-12deg); animation: wing-r-attend 1.6s ease-in-out infinite alternate; }
+.reactor .level-ring { transform-box: fill-box; transform-origin: center; transition: transform 120ms linear, opacity 120ms linear; }
+/* glide (Answering): wings fully open, a steady glide; the ring pulses with the incoming text */
+@keyframes falcon-glide { 0%, 100% { transform: translate(-5px, 2px); } 50% { transform: translate(5px, -3px); } }
+.reactor[data-pose="glide"] .falcon-flight { animation: falcon-glide 3.2s ease-in-out infinite; }
+.reactor[data-pose="glide"] .wing-l { transform: rotate(24deg); }
+.reactor[data-pose="glide"] .wing-r { transform: rotate(-24deg); }
+@keyframes text-pulse { from { transform: scale(1); opacity: 0.55; } to { transform: scale(1.3); opacity: 0; } }
+.reactor .text-pulse { transform-box: fill-box; transform-origin: center; animation: text-pulse 0.6s ease-out 1 both; }
+
 /* ---- Answer burst: once per answer (burstReducer in useHud.ts), all over within BURST_MS (900 ms).
    One smooth glow, never a strobe: it can't restart while it plays. ---- */
 .reactor .burst .shock { transform-box: fill-box; transform-origin: center; animation: burst-shock 820ms cubic-bezier(0.15, 0.6, 0.3, 1) 1 both; }
@@ -245,5 +291,6 @@
   .reactor .breath { opacity: 0.85; }
   /* the falcon stays put in its drawn pose; states show by colour and the text label only */
   .reactor .falcon-flight, .reactor .falcon-bob, .reactor .wing { transform: none !important; }
-  .reactor .burst { display: none; }
+  .reactor .burst, .reactor .wake-ring, .reactor .standby-ripple, .reactor .text-pulse { display: none; }
+  .reactor .level-ring { transform: none !important; opacity: 0.45 !important; } /* still shown, no motion */
 }

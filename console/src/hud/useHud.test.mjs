@@ -31,7 +31,7 @@ const done = play(answered, ev("done"));
 test("falcon pose for each state", () => {
   assert.equal(pose([]), "perch", "idle: perched");
   assert.equal(pose(thinking), "flap", "thinking (step started, no llm_call yet): flaps");
-  assert.equal(pose(streaming), "flap", "streaming text: still flapping");
+  assert.equal(pose(streaming), "glide", "streaming text (Answering): wings open, gliding");
   assert.equal(pose(tooling), "dive", "a tool_call without its result: dives");
   assert.equal(pose(toolDone), "flap", "tool finished, next model call: back to flapping");
   assert.equal(pose(done), "return", "answer + done: swoops back");
@@ -122,4 +122,42 @@ test("burst: every burst animation in hud.css ends within BURST_MS, under 1 s, a
   assert.ok(rules.length >= 5, `found ${rules.length} burst rules`);
   const MAX_SPARK_DELAY = 60; // Reactor.tsx SPARKS: (i % 4) * 20
   for (const [rule, ms] of rules) assert.ok(Number(ms) + MAX_SPARK_DELAY <= BURST_MS, rule.split("{")[0]);
+});
+
+// ---- Wake word (docs/voice-wake.md) ----
+
+test("wake: shows over idle and done only, never over work, an approval or an error", async () => {
+  const { hudPhase } = await import("./useHud.ts");
+  const arriving = { micOn: true, arriving: true, attending: true, settling: false };
+  assert.equal(hudPhase("idle", arriving), "waking");
+  assert.equal(hudPhase("done", arriving), "waking");
+  for (const busy of ["thinking", "streaming", "tool", "approval", "error", "offline"]) {
+    assert.equal(hudPhase(busy, arriving), busy, `${busy} is not covered by a wake`);
+  }
+});
+
+test("wake: the falcon arrives, and the label greets", async () => {
+  const { PHASE_LABEL } = await import("./useHud.ts");
+  assert.equal(FALCON_POSE.waking, "arrive");
+  assert.equal(PHASE_LABEL.waking, "Hello");
+});
+
+test("wake: plays once per wake event, not again for the same one", () => {
+  let s = burstStart(null);
+  s = burstReducer(s, { type: "answer", key: "wake-1", reducedMotion: false });
+  assert.equal(s.playing, 1);
+  assert.equal(burstReducer(s, { type: "answer", key: "wake-1", reducedMotion: false }), s);
+  s = burstReducer(s, { type: "end", id: 1 });
+  assert.equal(burstReducer(s, { type: "answer", key: "wake-2", reducedMotion: false }).playing, 2);
+});
+
+test("wake under reduced motion: no flight and no ring, only the colour change", async () => {
+  const { WAKE_MS } = await import("./useHud.ts");
+  assert.ok(WAKE_MS <= 2000);
+  const css = readFileSync(new URL("./hud.css", import.meta.url), "utf8");
+  const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+  assert.match(reduced, /\.reactor \.falcon-flight, \.reactor \.falcon-bob, \.reactor \.wing \{ transform: none !important; \}/);
+  const hidden = reduced.split(/\r?\n/).find((line) => line.includes(".reactor .wake-ring"));
+  assert.ok(hidden && hidden.includes("display: none"), "the wake ring is hidden under reduced motion");
+  assert.match(css, /\.reactor\[data-phase="waking"\] \{ --phase: var\(--hud-text\); \}/, "the colour change");
 });

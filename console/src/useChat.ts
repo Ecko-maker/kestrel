@@ -2,6 +2,8 @@
 // Server events (see src/kestrel/agent.py) are folded into a list of turns by `reduce`.
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { WakeStatus } from "./api";
+import { boxAfterCancel, cancelMessage, isCancelKey, pendingAfter, type CancelBy, type PendingSend } from "./sending.ts"; // .ts: node --test loads useChat.ts directly
 
 export type ApprovalStatus = "pending" | "approved" | "edited" | "rejected";
 
@@ -79,12 +81,13 @@ export interface Turn {
   answer?: Answer;
   error?: string;
   done: boolean;
+  voice?: boolean; // a spoken request (shown with a mic icon); the agent gets the same text either way
 }
 
 type ServerEvent = { type: string; trace_id?: string; [key: string]: unknown };
 
 type Action =
-  | { kind: "send"; text: string }
+  | { kind: "send"; text: string; voice?: boolean }
   | { kind: "event"; event: ServerEvent }
   | { kind: "localApproval"; approvalId: string; status: ApprovalStatus };
 
@@ -108,7 +111,8 @@ function mapApprovals(turn: Turn, fn: (a: Approval) => Approval): Turn {
 
 export function reduce(turns: Turn[], action: Action): Turn[] {
   if (action.kind === "send") {
-    return [...turns, { id: crypto.randomUUID(), user: action.text, startedAt: now(), steps: [], done: false }];
+    const turn: Turn = { id: crypto.randomUUID(), user: action.text, startedAt: now(), steps: [], done: false };
+    return [...turns, action.voice ? { ...turn, voice: true } : turn];
   }
   if (action.kind === "localApproval") {
     return updateLast(turns, (t) =>
@@ -231,10 +235,61 @@ export function reduce(turns: Turn[], action: Action): Turn[] {
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
+// The wake word was heard (server event `wake`). Kept apart from the turns: a wake is never a chat
+// message, never starts a model call and never answers an approval.
+export interface Wake {
+  key: string; // changes once per wake: drives the fly-in and Listening mode (useHud)
+  at: number; // server time
+  receivedAt: number; // this browser's time, compared with when a message was sent
+  greeting: string;
+  listenSeconds: number; // the Listening window (KESTREL_WAKE_LISTEN_SECONDS)
+}
+
+// The live mic level (0-1) during Listening, from `wake_level` events (about 10 a second). A tiny
+// store outside React state, so only the rings that draw it re-render, not the whole chat.
+type Listener = () => void;
+const levelListeners = new Set<Listener>();
+let levelValue = 0;
+export const micLevel = {
+  get: () => levelValue,
+  set(value: number) {
+    levelValue = value;
+    levelListeners.forEach((listener) => listener());
+  },
+  subscribe(listener: Listener) {
+    levelListeners.add(listener);
+    return () => void levelListeners.delete(listener);
+  },
+};
+
+// "Speak answers" (spoken requests only), remembered per browser; storage may be blocked.
+const SPEAK_KEY = "kestrel-speak-answers";
+function readSpeak(): boolean {
+  try {
+    return localStorage.getItem(SPEAK_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 export function useChat(onTurnDone?: () => void) {
   const [turns, dispatch] = useReducer(reduce, []);
   const [state, setState] = useState<ConnectionState>("connecting");
   const [notice, setNotice] = useState<string | null>(null);
+  const [wake, setWakeEvent] = useState<Wake | null>(null);
+  const [wakeStatus, setWakeStatus] = useState<WakeStatus>({ available: false });
+  const [dismissedWake, setDismissedWake] = useState<string | null>(null); // a wake ended by typing
+  const [speakAnswers, setSpeak] = useState(readSpeak);
+  const [voiceNote, setVoiceNote] = useState<{ key: string; text: string } | null>(null);
+  // A spoken request heard with low confidence ("check"), or one whose send countdown was cancelled:
+  // shown unsent in the message box.
+  const [heardCheck, setHeardCheck] = useState<{ key: string; text: string; why: "check" | "cancelled" } | null>(null);
+  // A spoken request in its 2-second "Sending: ..." countdown (sending.ts).
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+  const speakRef = useRef(speakAnswers);
+  const wakeKey = useRef<string | null>(null);
+  const sendRef = useRef<(text: string, voice?: boolean) => void>(() => undefined);
+  const wakes = useRef(0);
   const socket = useRef<WebSocket | null>(null);
   const doneRef = useRef(onTurnDone);
   useEffect(() => {
@@ -254,6 +309,40 @@ export function useChat(onTurnDone?: () => void) {
     ws.addEventListener("message", (msg) => {
       const event = JSON.parse(msg.data) as ServerEvent;
       if (event.type === "ready") return setNotice(null);
+      if (event.type === "wake_status") return setWakeStatus(event as unknown as WakeStatus);
+      if (event.type === "wake_level") return micLevel.set(event.level as number);
+      // A spoken request, already transcribed by the server: sent exactly like typed text.
+      if (event.type === "voice_pending") return setPendingSend((p) => pendingAfter(p, event, Date.now()));
+      if (event.type === "voice_cancelled") {
+        setPendingSend((p) => pendingAfter(p, event, Date.now()));
+        wakes.current += 1;
+        return setHeardCheck({ key: `cancel-${wakes.current}`, ...boxAfterCancel(event) });
+      }
+      if (event.type === "voice_request") {
+        setPendingSend(null);
+        return sendRef.current(event.text as string, true);
+      }
+      if (event.type === "wake_end") return setDismissedWake(wakeKey.current); // the request was recorded
+      if (event.type === "voice_check") {
+        wakes.current += 1;
+        return setHeardCheck({ key: `check-${wakes.current}`, text: event.text as string, why: "check" });
+      }
+      if (event.type === "voice_ignored") {
+        wakes.current += 1;
+        return setVoiceNote({ key: `note-${wakes.current}`, text: "I didn't catch that." });
+      }
+      if (event.type === "wake") {
+        wakes.current += 1;
+        wakeKey.current = `wake-${wakes.current}`;
+        micLevel.set(0);
+        return setWakeEvent({
+          key: `wake-${wakes.current}`,
+          at: event.at as number,
+          receivedAt: Date.now(),
+          greeting: event.greeting as string,
+          listenSeconds: (event.listen_seconds as number) ?? 8,
+        });
+      }
       if (event.type === "error" && !event.trace_id) return setNotice(event.message as string);
       dispatch({ kind: "event", event });
       if (event.type === "done") doneRef.current?.();
@@ -265,16 +354,59 @@ export function useChat(onTurnDone?: () => void) {
     return () => socket.current?.close();
   }, [open]);
 
+
   const connect = useCallback(() => {
     setState("connecting"); // a user-initiated reconnect: show it right away
     open();
   }, [open]);
 
-  const send = useCallback((text: string) => {
+  const send = useCallback((text: string, voice = false) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return;
-    dispatch({ kind: "send", text });
-    socket.current.send(JSON.stringify({ type: "user_message", text }));
+    dispatch({ kind: "send", text, voice });
+    // The voice flag and "Speak answers" are for the server only; the agent receives just the text.
+    const extra = voice ? { voice: true, speak: speakRef.current } : {};
+    socket.current.send(JSON.stringify({ type: "user_message", text, ...extra }));
   }, []);
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+
+  const setSpeakAnswers = useCallback((on: boolean) => {
+    setSpeak(on);
+    speakRef.current = on;
+    try {
+      localStorage.setItem(SPEAK_KEY, on ? "on" : "off");
+    } catch {
+      // not remembered; the switch still works for this page
+    }
+  }, []);
+
+  // Typing ends the wake's Listening mode, here and on the server (which stops sending levels).
+  const dismissWake = useCallback(() => {
+    if (!wake || dismissedWake === wake.key) return;
+    setDismissedWake(wake.key);
+    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "wake_dismiss" }));
+  }, [wake, dismissedWake]);
+
+  // Esc or the Cancel button: the server stops the countdown and returns the text (voice_cancelled).
+  const cancelSend = useCallback(
+    (by: CancelBy) => {
+      if (pendingSend && socket.current?.readyState === WebSocket.OPEN) {
+        socket.current.send(JSON.stringify(cancelMessage(pendingSend, by)));
+      }
+    },
+    [pendingSend],
+  );
+  useEffect(() => {
+    if (!pendingSend) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isCancelKey(e.key)) return;
+      e.preventDefault();
+      cancelSend("esc");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingSend, cancelSend]);
 
   const answerApproval = useCallback(
     (approvalId: string, response: { decision: "approve" | "edit" | "reject"; args?: unknown; reason?: string; for_session?: boolean }) => {
@@ -285,5 +417,25 @@ export function useChat(onTurnDone?: () => void) {
   );
 
   const running = turns.length > 0 && !turns[turns.length - 1].done;
-  return { turns, state, notice, running, send, answerApproval, reconnect: connect };
+  return {
+    turns,
+    state,
+    notice,
+    running,
+    send,
+    answerApproval,
+    reconnect: connect,
+    wake,
+    wakeStatus,
+    setWakeStatus,
+    wakeDismissed: wake !== null && dismissedWake === wake.key,
+    dismissWake,
+    speakAnswers,
+    setSpeakAnswers,
+    voiceNote,
+    heardCheck,
+    clearHeardCheck: useCallback(() => setHeardCheck(null), []),
+    pendingSend,
+    cancelSend,
+  };
 }

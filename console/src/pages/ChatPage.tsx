@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, FlaskConical, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
+import { ArrowUp, FlaskConical, Mic, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert, X } from "lucide-react";
 import { rateTrace, type SessionInfo, type Stats } from "../api";
 import { AgentTrace } from "../components/AgentTrace";
 import { ApprovalCard } from "../components/ApprovalCard";
@@ -9,6 +9,7 @@ import { Button, cx } from "../components/ui";
 import { HudHero, HudSide, HudStrip } from "../hud/HudPanels";
 import { useHud } from "../hud/useHud";
 import { useReducedMotion, type Look } from "../hud/useLook";
+import type { PendingSend } from "../sending";
 import type { Turn, useChat } from "../useChat";
 
 type Chat = ReturnType<typeof useChat>;
@@ -113,11 +114,47 @@ function AssistantTurn({ turn, onRespond, onRated }: { turn: Turn; onRespond: Ch
   );
 }
 
-function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
-  const [text, setText] = useState("");
+// A spoken request in its send countdown: "Sending: <text>", a bar that empties over the countdown,
+// and Cancel (Esc and saying "cancel" work too). Nothing reaches the agent until the bar is empty.
+function SendingBar({ pending, onCancel }: { pending: PendingSend; onCancel: () => void }) {
+  return (
+    <div role="status" aria-live="assertive" className="overflow-hidden rounded-xl bg-accent-50 ring-1 ring-accent-200 dark:bg-accent-950/40 dark:ring-accent-900">
+      <div className="flex items-center gap-2 px-3 py-2 text-sm">
+        <Mic className="size-4 shrink-0 text-accent-700 dark:text-accent-300" aria-hidden="true" />
+        <span className="font-semibold text-accent-800 dark:text-accent-200">Sending:</span>
+        <span className="min-w-0 flex-1 truncate text-stone-800 dark:text-stone-200">{pending.text}</span>
+        <span className="hidden text-[12px] text-stone-500 sm:inline">Esc or say "cancel"</span>
+        <Button size="sm" onClick={onCancel}>
+          <X className="size-3.5" /> Cancel
+        </Button>
+      </div>
+      <div
+        key={pending.id}
+        className="sending-bar h-1 bg-accent-500"
+        style={{ animationDuration: `${pending.seconds}s` }}
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
+// check: a spoken request heard with low confidence ("Did I hear that right?"), or one whose countdown
+// was cancelled ("Not sent"). Its text starts in the box, unsent; sending it (as heard or edited)
+// sends it as a spoken request.
+function Composer({
+  chat,
+  disabled,
+  check,
+}: {
+  chat: Chat;
+  disabled: boolean;
+  check: { text: string; why: "check" | "cancelled" } | null;
+}) {
+  const [text, setText] = useState(check?.text ?? "");
   const ref = useRef<HTMLTextAreaElement>(null);
   const update = (value: string) => {
     setText(value);
+    if (value) chat.dismissWake(); // typing ends the wake's Listening mode
     const el = ref.current; // grow with the text, up to 200px
     if (!el) return;
     el.style.height = "auto";
@@ -126,17 +163,37 @@ function Composer({ chat, disabled }: { chat: Chat; disabled: boolean }) {
   const submit = () => {
     const value = text.trim();
     if (!value || disabled) return;
-    chat.send(value);
+    chat.send(value, !!check);
+    if (check) chat.clearHeardCheck(); // the box goes back to normal typing
     setText("");
     if (ref.current) ref.current.style.height = "auto";
   };
 
   return (
     <div className="rounded-2xl bg-white p-2 ring-1 ring-stone-300 shadow-sm focus-within:ring-2 focus-within:ring-accent-500 dark:bg-stone-900 dark:ring-stone-700">
+      {check && (
+        <div role="status" className="mb-1 flex items-center gap-2 px-2 pt-1 text-[13px]">
+          <Mic className="size-3.5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+          <span className="font-semibold text-amber-800 dark:text-amber-300">
+            {check.why === "cancelled" ? "Not sent." : "Did I hear that right?"}
+          </span>
+          <span className="text-stone-600 dark:text-stone-400">
+            {check.why === "cancelled" ? "Edit it and send, or discard it." : "Edit it if not, then send. Nothing is sent until you do."}
+          </span>
+          <button
+            onClick={chat.clearHeardCheck}
+            className="ml-auto rounded-md p-1 text-stone-500 hover:bg-stone-100 hover:text-stone-800 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+            aria-label="Discard what I heard"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       <div className="flex items-end gap-2">
         <textarea
           ref={ref}
-          rows={1}
+          rows={check ? 2 : 1}
+          autoFocus={!!check}
           value={text}
           onChange={(e) => update(e.target.value)}
           onKeyDown={(e) => {
@@ -173,7 +230,12 @@ export function ChatPage({
   look?: Look;
 }) {
   const hudOn = look === "hud";
-  const hud = useHud(chat.turns, chat.state, useReducedMotion());
+  const hud = useHud(chat.turns, chat.state, useReducedMotion(), {
+    wake: chat.wake,
+    micOn: !!chat.wakeStatus.listening,
+    dismissed: chat.wakeDismissed,
+    sending: !!chat.pendingSend,
+  });
   const empty = chat.turns.length === 0;
   const bottom = useRef<HTMLDivElement>(null);
   const last = chat.turns[chat.turns.length - 1];
@@ -195,7 +257,7 @@ export function ChatPage({
         <div className="flex min-w-0 flex-1 flex-col">
           {hudOn && !empty && (
             <div className="lg:hidden">
-              <HudStrip hud={hud} showReactor />
+              <HudStrip hud={hud} showReactor wake={chat.wakeStatus} />
             </div>
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -238,7 +300,10 @@ export function ChatPage({
               )}
               {chat.turns.map((turn) => (
                 <div key={turn.id} className="space-y-5">
-                  <div className="flex justify-end">
+                  <div className="flex items-start justify-end gap-2">
+                    {turn.voice && (
+                      <Mic className="mt-3 size-4 shrink-0 text-stone-500 dark:text-stone-400" role="img" aria-label="Spoken request" />
+                    )}
                     <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-stone-800 px-4 py-2.5 text-[15px] leading-6 text-stone-50 dark:bg-stone-200 dark:text-stone-900">
                       {turn.user}
                     </div>
@@ -264,7 +329,13 @@ export function ChatPage({
                   <Button size="sm" onClick={chat.reconnect}><RefreshCw className="size-3.5" /> New conversation</Button>
                 </div>
               )}
-              <Composer chat={chat} disabled={chat.running || chat.state !== "open" || !!unavailable} />
+              {chat.pendingSend && <SendingBar pending={chat.pendingSend} onCancel={() => chat.cancelSend("button")} />}
+              <Composer
+                key={chat.heardCheck?.key ?? "typed"}
+                chat={chat}
+                check={chat.heardCheck}
+                disabled={chat.running || chat.state !== "open" || !!unavailable}
+              />
               <p className="text-center text-[11px] text-stone-400">
                 Enter to send · Shift+Enter for a new line · runs locally, approvals required for actions
               </p>
@@ -274,7 +345,7 @@ export function ChatPage({
 
         {hudOn ? (
           <div className="hidden w-80 shrink-0 overflow-y-auto border-l border-stone-800/70 p-4 lg:block">
-            <HudSide hud={hud} session={session} showReactor={!empty} />
+            <HudSide hud={hud} session={session} showReactor={!empty} wake={chat.wakeStatus} />
           </div>
         ) : (
           <div className="hidden w-72 shrink-0 overflow-y-auto border-l border-stone-200/70 p-4 dark:border-stone-800/70 xl:block">

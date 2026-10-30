@@ -1,6 +1,7 @@
-// What the HUD shows, derived only from the chat state the console already has (useChat's turns).
-// No new server events: every value here comes from step_started, text_delta, llm_call, tool_call,
-// tool_result, approval_required/resolved, answer, error and done.
+// What the HUD shows, derived only from the chat state the console already has (useChat's turns)
+// and the wake word's events (wake, wake_status; the live level is drawn straight from useChat's
+// micLevel store). Agent events: step_started, text_delta, llm_call, tool_call, tool_result,
+// approval_required/resolved, answer, error and done.
 // This file is the one place that maps events to HUD states (phase, falcon pose, answer burst);
 // the components only draw what it returns. Tested by useHud.test.mjs (no runtime imports but react).
 
@@ -9,7 +10,24 @@ import type { ConnectionState, Turn } from "../useChat";
 
 // Note: llm_call arrives when the model has *finished* (it carries duration and tokens), so
 // "thinking" is the gap between step_started (or a tool result) and the next llm_call.
-export type Phase = "idle" | "thinking" | "streaming" | "tool" | "approval" | "error" | "done" | "offline";
+// The HUD's modes. Agent work (thinking, streaming = "Answering", tool, approval, error, offline)
+// always wins; when the agent is idle, the wake word's modes show: "waking" (the fly-in), "attending"
+// ("Listening…": the mic level drives the rings), "sending" (a spoken request's 2 s countdown, which
+// Esc, Cancel or "cancel" stops), then "standby" (mic on, waiting for "Kestrel"),
+// or "idle" ("Ready") when the wake word is off. "done" lasts SETTLE_MS after an answer.
+export type Phase =
+  | "idle"
+  | "standby"
+  | "attending"
+  | "thinking"
+  | "streaming"
+  | "tool"
+  | "approval"
+  | "error"
+  | "done"
+  | "offline"
+  | "waking"
+  | "sending";
 
 export type SegmentState = "active" | "ok" | "failed";
 export interface Segment {
@@ -45,6 +63,8 @@ export interface HudState {
   phase: Phase;
   pose: FalconPose;
   burst: number | null; // id of the answer burst playing now, if any
+  greeting: string | null; // the spoken greeting, while the wake fly-in plays
+  pulse: number; // Answering: changes every TEXT_PER_PULSE characters of incoming text (paced by the rings)
   activeTool: string | null;
   segments: Segment[];
   telemetry: Telemetry;
@@ -53,15 +73,20 @@ export interface HudState {
 
 export const SEGMENTS = 8; // the tool ring has 8 slots; a turn's 9th call reuses slot 1
 
+// Every mode has its own label (and pose and ring motion): colour is never the only cue.
 export const PHASE_LABEL: Record<Phase, string> = {
-  idle: "Standing by",
-  thinking: "Thinking",
-  streaming: "Responding",
+  idle: "Ready",
+  standby: "Standby",
+  attending: "Listening…",
+  thinking: "Thinking…",
+  streaming: "Answering…",
   tool: "Running tool",
   approval: "Approval needed",
   error: "Error",
   done: "Done",
   offline: "Offline",
+  waking: "Hello",
+  sending: "Sending…",
 };
 
 export function phaseOf(turns: Turn[], connection: ConnectionState): { phase: Phase; activeTool: string | null } {
@@ -86,17 +111,21 @@ export function phaseOf(turns: Turn[], connection: ConnectionState): { phase: Ph
 
 // The falcon tells the tagline: perched while idle, flapping while it thinks, diving at the lit
 // segment for a tool, hovering while it waits for you, swooping back with the answer.
-export type FalconPose = "perch" | "flap" | "dive" | "hover" | "return" | "shake" | "rest";
+export type FalconPose = "perch" | "flap" | "dive" | "hover" | "return" | "shake" | "rest" | "arrive" | "attend" | "glide";
 
 export const FALCON_POSE: Record<Phase, FalconPose> = {
   idle: "perch",
+  standby: "perch", // perched, eyes softly glowing (hud.css)
+  attending: "attend", // wings half raised, slow beats
   thinking: "flap",
-  streaming: "flap",
+  streaming: "glide", // wings fully open, a steady glide
   tool: "dive",
   approval: "hover",
   done: "return",
   error: "shake",
   offline: "rest",
+  waking: "arrive", // "Comes back when called": flies in from outside the rings, wings open
+  sending: "attend", // still attending: the request can be cancelled
 };
 
 // ---- Answer burst ----
@@ -133,18 +162,62 @@ export function burstReducer(state: BurstState, action: BurstAction): BurstState
   return { seen: action.key, playing: id, count: id };
 }
 
-function useAnswerBurst(turns: Turn[], reducedMotion: boolean): number | null {
-  const key = answerKey(turns);
-  // Answers already on screen when the HUD mounts (e.g. back from the traces page) don't replay.
+// One play per new key, ms long, never two at once; keys already present on mount don't play.
+// Used for the answer burst (suppressed under reduced motion) and the wake fly-in (not suppressed:
+// under reduced motion the falcon stays still, but the colour and greeting still show).
+function useOneShot(key: string | null, suppressed: boolean, ms: number): number | null {
   const [state, dispatch] = useReducer(burstReducer, key, burstStart);
-  useEffect(() => dispatch({ type: "answer", key, reducedMotion }), [key, reducedMotion]);
+  useEffect(() => dispatch({ type: "answer", key, reducedMotion: suppressed }), [key, suppressed]);
   useEffect(() => {
     if (state.playing === null) return;
     const id = state.playing;
-    const timer = setTimeout(() => dispatch({ type: "end", id }), BURST_MS);
+    const timer = setTimeout(() => dispatch({ type: "end", id }), ms);
     return () => clearTimeout(timer);
-  }, [state.playing]);
+  }, [state.playing, ms]);
   return state.playing;
+}
+
+// ---- Wake and the modes around it ----
+// The wake fly-in: from outside the rings to the centre, wings open, a soft ring, then Listening.
+export const WAKE_MS = 1600;
+export const SETTLE_MS = 1400; // "done" (the swoop back and the answer burst), then Standby or Ready
+
+// Listening lasts the wake's window (KESTREL_WAKE_LISTEN_SECONDS) unless you start typing or send a message.
+export function attendingOf(o: { windowOpen: boolean; dismissed: boolean; sentSinceWake: boolean }): boolean {
+  return o.windowOpen && !o.dismissed && !o.sentSinceWake;
+}
+
+// The mode, from the agent's phase (phaseOf) and the wake word's state. Agent work always wins, so an
+// approval card (or an error) is never hidden by a wake.
+export function hudPhase(
+  agent: Phase,
+  o: { micOn: boolean; arriving: boolean; attending: boolean; settling: boolean; sending?: boolean },
+): Phase {
+  if (agent !== "idle" && agent !== "done") return agent;
+  if (o.sending) return "sending";
+  if (o.arriving) return "waking";
+  if (o.attending) return "attending";
+  if (agent === "done" && o.settling) return "done";
+  return o.micOn ? "standby" : "idle";
+}
+
+// ---- Answering pulses ----
+// One ring pulse per TEXT_PER_PULSE characters, but never more often than every PULSE_MIN_MS:
+// at most ~2 a second, well under WCAG 2.3.1's three flashes per second.
+export const TEXT_PER_PULSE = 40;
+export const PULSE_MIN_MS = 450;
+
+export function pulseKey(text: string): number {
+  return Math.floor(text.length / TEXT_PER_PULSE);
+}
+
+export interface Paced {
+  key: number;
+  at: number;
+}
+
+export function pacePulse(shown: Paced, incoming: number, now: number): Paced {
+  return incoming !== shown.key && now - shown.at >= PULSE_MIN_MS ? { key: incoming, at: now } : shown;
 }
 
 export function segmentsOf(turn: Turn | undefined): Segment[] {
@@ -234,8 +307,25 @@ function fmtShort(ms: number | null | undefined): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function useHud(turns: Turn[], connection: ConnectionState, reducedMotion: boolean): HudState {
-  const burst = useAnswerBurst(turns, reducedMotion);
+export interface WakeInput {
+  wake: { key: string; greeting: string; receivedAt: number; listenSeconds: number } | null;
+  micOn: boolean; // the wake word's microphone is open (wake_status.listening)
+  dismissed: boolean; // typing ended this wake's Listening mode
+  sending?: boolean; // a spoken request is in its send countdown
+}
+
+export function useHud(
+  turns: Turn[],
+  connection: ConnectionState,
+  reducedMotion: boolean,
+  input: WakeInput = { wake: null, micOn: false, dismissed: false },
+): HudState {
+  const { wake, micOn, dismissed, sending = false } = input;
+  const burst = useOneShot(answerKey(turns), reducedMotion, BURST_MS);
+  const settling = useOneShot(answerKey(turns), false, SETTLE_MS) !== null;
+  const arriving = useOneShot(wake?.key ?? null, false, WAKE_MS) !== null;
+  const windowOpen = useOneShot(wake?.key ?? null, false, (wake?.listenSeconds ?? 8) * 1000) !== null;
+  const lastStart = turns.at(-1)?.startedAt ?? 0;
   const base = useMemo(() => {
     const { phase, activeTool } = phaseOf(turns, connection);
     return {
@@ -247,5 +337,11 @@ export function useHud(turns: Turn[], connection: ConnectionState, reducedMotion
       log: logOf(turns),
     };
   }, [turns, connection]);
-  return useMemo(() => ({ ...base, burst }), [base, burst]);
+  const lastText = turns.at(-1)?.steps.at(-1)?.text ?? "";
+  return useMemo(() => {
+    const attending = attendingOf({ windowOpen, dismissed, sentSinceWake: !!wake && lastStart >= wake.receivedAt });
+    const phase = hudPhase(base.phase, { micOn, arriving, attending, settling, sending });
+    const greeting = phase === "waking" ? (wake?.greeting ?? null) : null;
+    return { ...base, phase, pose: FALCON_POSE[phase], burst, greeting, pulse: pulseKey(lastText) };
+  }, [base, burst, arriving, windowOpen, dismissed, wake, lastStart, micOn, settling, lastText, sending]);
 }

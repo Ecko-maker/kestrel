@@ -5,13 +5,16 @@
     GET  /api/traces/{id}             one trace with its spans
     GET  /api/stats                   totals, percentiles and per-request points for charts
     POST /api/traces/{id}/rating      {"rating": "good"|"bad", "note": "..."}
-    WS   /ws                          chat: the browser sends messages and approval answers,
-                                      the server streams the agent's events back
+    GET  /api/wake                    the wake word's status (docs/voice-wake.md)
+    POST /api/wake                    {"enabled": true|false}: the console's listening toggle
+    WS   /ws                          chat: the browser sends messages, approval answers and
+                                      voice_cancel (a spoken request's send countdown); the
+                                      server streams the agent's events back
 
 Security: the server only listens on 127.0.0.1. Every request needs the access token
 printed at startup, either once in the URL (?token=..., exchanged for an HttpOnly cookie)
 or as "Authorization: Bearer ...". The Host header must be 127.0.0.1/localhost (blocks DNS
-rebinding), WebSocket origins are checked, and CORS only allows the Vite dev server.
+rebinding), API and WebSocket origins are checked, and CORS only allows the Vite dev server.
 Every response carries a Content-Security-Policy that lets images load only from the console
 itself and KESTREL_IMAGE_ALLOWLIST hosts (tiers v2, defense d): even if the markdown renderer had a
 bug, an image URL carrying private data couldn't be fetched from another host.
@@ -19,7 +22,8 @@ bug, an image URL carrying private data couldn't be fetched from another host.
 
 import asyncio
 import secrets
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlencode
@@ -32,6 +36,8 @@ from pydantic import BaseModel
 from kestrel import trace_report
 from kestrel.agent import Agent, EventCallback
 from kestrel.tracing import Tracer
+from kestrel.wake import WakeService
+from kestrel.wake.talk import APPROVAL_SENTENCE, NO_CONSOLE, spoken_answer
 from kestrel.web.approver import APPROVAL_TIMEOUT, WebApprover
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -80,6 +86,10 @@ class Rating(BaseModel):
     note: str = ""
 
 
+class WakeToggle(BaseModel):
+    enabled: bool
+
+
 UNAUTHORIZED_PAGE = """<!doctype html><meta charset="utf-8"><title>Kestrel</title>
 <body style="font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#334">
 <h1 style="font-size:1.25rem">Kestrel console</h1>
@@ -87,8 +97,69 @@ UNAUTHORIZED_PAGE = """<!doctype html><meta charset="utf-8"><title>Kestrel</titl
 It contains a one-time access token, so only you can use this console.</p></body>"""
 
 
-def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> FastAPI:
-    app = FastAPI(title="Kestrel", docs_url=None, redoc_url=None, openapi_url=None)
+def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake: WakeService | None = None) -> FastAPI:
+    # Every open console's event sender; the wake service broadcasts to all of them.
+    clients: set[Callable[[dict], None]] = set()
+
+    def broadcast(event: dict) -> None:
+        for send in list(clients):
+            send(event)
+
+    # A spoken request goes to one console only: the one used most recently (it then sends it
+    # exactly like typed text). Only its text travels; the audio never left the wake service.
+    active: list[Callable[[dict], None]] = []
+
+    # The send countdown is shown in that console, and the request then goes to the same one.
+    held: list[Callable[[dict], None]] = []
+
+    def deliver_pending(request_id: str, text: str, seconds: float) -> bool:
+        target = active[-1] if active and active[-1] in clients else None
+        if target is None:
+            if wake is not None:
+                wake.say(NO_CONSOLE)
+            return False
+        held[:] = [target]
+        target({"type": "voice_pending", "id": request_id, "text": text, "seconds": seconds})
+        return True
+
+    def deliver_request(text: str) -> None:
+        target = held.pop() if held else (active[-1] if active else None)
+        if target is None or target not in clients:
+            if wake is not None:
+                wake.say(NO_CONSOLE)
+            return
+        target({"type": "voice_request", "text": text})
+
+    def deliver_cancelled(request_id: str, text: str, by: str) -> None:
+        target = held.pop() if held else None
+        if target is not None and target in clients:
+            target({"type": "voice_cancelled", "id": request_id, "text": text, "by": by})
+
+    def deliver_check(text: str) -> None:
+        """Low confidence: the same console gets the text to check; it stays unsent until you send it."""
+        target = active[-1] if active and active[-1] in clients else None
+        if target is None:
+            if wake is not None:
+                wake.say(NO_CONSOLE)
+            return
+        target({"type": "voice_check", "text": text})
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if wake is not None:
+            wake.emit = broadcast
+            wake.on_request = deliver_request
+            wake.on_check = deliver_check
+            wake.on_pending = deliver_pending
+            wake.on_cancelled = deliver_cancelled
+            wake.start()
+        try:
+            yield
+        finally:
+            if wake is not None:
+                wake.stop()  # closes the microphone and clears the keep-awake request
+
+    app = FastAPI(title="Kestrel", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.config = config
 
     def token_ok(candidate: str | None) -> bool:
@@ -113,6 +184,9 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
             return JSONResponse({"detail": "invalid host"}, status_code=400)
         if request.method == "OPTIONS" or request.url.path == "/healthz":
             return await call_next(request)  # CORS preflight and health checks carry no credentials
+        origin = request.headers.get("origin")
+        if request.url.path.startswith("/api/") and origin is not None and origin not in config.allowed_origins:
+            return JSONResponse({"detail": "invalid origin"}, status_code=403)  # another site's page
         if not authorized(request.headers, request.cookies, request.query_params):
             if request.url.path.startswith("/api/"):
                 return JSONResponse({"detail": "missing or invalid token"}, status_code=401)
@@ -177,6 +251,16 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
             raise HTTPException(404, str(e)) from None
         return {"ok": True}
 
+    @app.get("/api/wake")
+    def wake_status() -> dict:
+        return wake.status() if wake is not None else {"type": "wake_status", "available": False}
+
+    @app.post("/api/wake")
+    def wake_toggle(body: WakeToggle) -> dict:
+        if wake is None:
+            raise HTTPException(409, "the wake word is off; set KESTREL_WAKE=on and restart")
+        return wake.set_enabled(body.enabled)
+
     # --- Chat over WebSocket ------------------------------------------------------
 
     @app.websocket("/ws")
@@ -194,9 +278,30 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
         loop = asyncio.get_running_loop()
         outbox: asyncio.Queue = asyncio.Queue()
 
+        # A turn that started as a spoken request (and the console's "Speak answers" switch). The flag
+        # stays here: the agent gets only the text, so the model sees typed and spoken input alike.
+        voice = {"on": False, "speak": True}
+
         def emit(event: dict) -> None:  # called from the agent's worker threads
             loop.call_soon_threadsafe(outbox.put_nowait, event)
+            if voice["on"] and wake is not None:
+                speak_reply(event)
 
+        def speak_reply(event: dict) -> None:
+            """Voice turns only: the answer's first sentences, or for an approval card only a fixed
+            sentence, never its details. Voice can't answer the card: only a click resolves it."""
+            kind = event.get("type")
+            if kind == "done":
+                voice["on"] = False
+            elif voice["speak"] and kind == "approval_required":
+                wake.say(APPROVAL_SENTENCE)  # type: ignore[union-attr]
+            elif voice["speak"] and kind == "answer":
+                wake.say(spoken_answer(str(event.get("text") or "")))  # type: ignore[union-attr]
+
+        clients.add(emit)
+        active.append(emit)
+        if wake is not None:
+            emit(wake.status())  # so the console shows "Listening" from the start if it is
         approver = WebApprover(timeout=config.approval_timeout)
         try:
             agent = make_agent(emit, approver)
@@ -217,6 +322,11 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
             while True:
                 message = await ws.receive_json()
                 kind = message.get("type")
+                if emit in active:
+                    active.remove(emit)
+                active.append(emit)  # this console is now the most recently active one
+                if kind in ("user_message", "wake_dismiss") and wake is not None:
+                    wake.end_attention()  # typing or sending ends the wake's Listening window
                 if kind == "user_message" and agent is not None:
                     text = str(message.get("text", "")).strip()[:MAX_MESSAGE_CHARS]
                     if not text:
@@ -224,12 +334,22 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig) -> F
                     if running and not running.done():
                         emit({"type": "error", "message": "Kestrel is still working on your last message."})
                         continue
+                    voice["on"] = bool(message.get("voice"))
+                    voice["speak"] = message.get("speak", True) is not False
                     running = asyncio.create_task(asyncio.to_thread(agent.run, text))
+                elif kind == "voice_cancel" and wake is not None:
+                    # Esc or the Cancel button during "Sending: ...". It can only stop a spoken request
+                    # in its countdown; it never touches an approval (those need approval_response).
+                    by = "esc" if message.get("by") == "esc" else "button"
+                    wake.cancel(str(message.get("id", "")), by)
                 elif kind == "approval_response":
                     approver.resolve(str(message.get("approval_id")), message)
         except WebSocketDisconnect, RuntimeError:
             pass
         finally:
+            clients.discard(emit)
+            if emit in active:
+                active.remove(emit)
             approver.close()  # anything waiting for an answer is rejected; the agent finishes on its own
             sender.cancel()
 

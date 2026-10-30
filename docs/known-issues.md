@@ -256,6 +256,77 @@ gpt-oss-120b sometimes reads its data, writes the message or note as a draft, an
 Tiers v2 keeps the taint state in the agent's `Session` and never sends it to the console; the only tiers-v2 data the browser gets is the `notice` on an escalated approval card. So the HUD shows "escalated cards" (approvals that came with a notice) and no "tainted / clean" indicator, rather than guess one from tool names. A user can't see in advance that the next search will ask for approval.
 **Done when:** the agent emits the taint state (e.g. a `session` event after each tool result: tainted, by which tool) and the HUD shows it; that is an agent change, so it waits until after the Phase 3 gate.
 
+### 61. Voice wake-up: parts that need the owner's machine and hands
+**Labels:** `voice`, `medium`
+Built and tested with fakes (docs/voice-wake.md); these depend on the real PC, the real room or an elevated prompt:
+- **Accuracy:** detection rate and false wakes per hour are unmeasured until the owner records ~30 "Kestrel" clips and an hour or more of background audio (`scripts/wake_record.py`, `scripts/wake_eval.py`). `KESTREL_WAKE_THRESHOLD=0.5` is provisional. On synthetic clips Vosk reported confidence 1.0 for every word, so the confidence may not separate well; the eval reports every threshold.
+- **Keep-awake in `powercfg /requests`:** needs an elevated prompt. Run `uv run python scripts/wake_measure.py --minutes 1` from an admin PowerShell; it prints whether the request is listed while listening and gone after.
+- **Display, lock screen and window:** whether `SetThreadExecutionState` plus the zero-pixel move turns the display back on after the idle timeout, what happens on the lock screen, and whether the Edge app window's title is exactly "Kestrel" (what `bring_to_front` looks for) are to be checked by hand once the app window is installed.
+- **Energy Saver flag:** the battery rule reads the saver from `GetSystemPowerStatus.SystemStatusFlag`, which Microsoft documents as the battery-saver flag; Energy Saver replaced Battery Saver on Windows 11 24H2+ (this laptop: 25H2, build 26200). With the saver off, the flag and WinRT `PowerManager.EnergySaverStatus` agree (0 / Off, 2026-10-23, 15 minutes on battery). Not yet seen with the saver **on**: run `uv run --no-sync python scripts/wake_power_watch.py --minutes 5` and toggle Energy Saver on and off in Quick Settings while on battery; both columns must change together.
+- **distill:** `kestrel distill build` is on `phase4/trace-dataset`; its `read_traces` was checked to skip wake records, but the direct test belongs where both branches meet.
+**Done when:** the eval table and chosen threshold are in docs/voice-wake.md, the powercfg check is recorded, the display/lock/window behaviour is written down, and a distill test calls `build` on a database with a wake record.
+
+### 62. Kestrel can hear itself (self-interruption)
+**Labels:** `voice`, `medium`
+Windows doesn't cancel the speakers' sound out of the microphone for an ordinary capture stream, so
+while Kestrel reads an answer aloud, the wake word listener hears it. If the spoken text contained
+"Kestrel", the listener would wake on its own voice and stop the speech (barge-in) in the middle of
+an answer. Mitigation: spoken text never contains the name ("Kestrel" becomes "I", `talk.for_speech`;
+fixed sentences avoid it), and the recorder ignores audio while Kestrel is speaking (the greeting is
+never taken for your request). Words that merely sound like "kestrel" can still wake it during speech;
+not measured.
+**Done when:** a spoken answer read at normal volume next to the microphone is measured not to wake
+Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
+recorded in docs/voice-wake.md.
+
+### 63. ~~The vocabulary hint: better on Kestrel words, worse overall~~ (decided 2026-10-24: off by default)
+**Labels:** `voice`, `medium`
+On the owner's first 21 recorded requests (2026-10-24, base.en 5-bit), the whisper.cpp vocabulary hint
+fixed Kestrel words ("files in my workspace", "a note called") but three other requests got worse (a
+repeated phrase, "$100 and $20", a name not yet in the vocab file): normalised WER 15.7% without, 19.7%
+with (95% CIs 10.0-25.7% and 12.0-37.4%). The hint stays on as specified (`KESTREL_TALK_HINT=on`). It
+was not re-worded against those sentences, which would fit the test set.
+**Done when:** the second set (`talk_record.py --set new`, 10 requests not used for the hint) is
+scored with and without the hint (`talk_eval.py --set new`), with the owner's names in the vocab file,
+and the default is set from that result and recorded in docs/voice-wake.md.
+**Decided (owner, 2026-10-24).** Rule fixed before set 2 was scored: pool both sets, keep the hint only if
+pooled normalised WER is lower with it. Re-scored with the owner's vocab file, word-weighted over 31
+requests (261 words): **14.18% without (37 errors), 17.62% with (46 errors)**; +10 errors on set 1, -1 on
+set 2 (the largest single loss: set 1 req-003, a repeated phrase, 1 -> 7). The hint loses:
+`KESTREL_TALK_HINT` now defaults to off; the code and the switch stay for later experiments.
+
+### 64. The spoken "cancel" and the wake threshold are not measured on your voice yet
+**Labels:** `voice`, `medium`
+The spoken "cancel" during the 2 s send countdown (design decision 21) is tested only with fakes: how
+often it hears your "cancel" in time, and how often a podcast word triggers it, are unknown. A miss
+sends the request (it can still be rejected at its approval card); a false hit puts the text back in
+the box. `KESTREL_WAKE_THRESHOLD=0.9` was chosen on the same 30 clips and 1 h of background it was
+measured on, and 10 of the 11 clips missed at 0.9 were recording problems (too quiet, or cut off at
+the start or end), so the detection rate is understated and the choice may move. Vosk's confidence
+also varies slightly between runs on the same audio (one podcast moment: 0.891, 0.905, 1.0), so the
+false-wake count at 0.90 is 1 or 2 per hour on the same recording.
+**Done when:** the clips are re-recorded with the 3 s countdown (`wake_record.py`), `wake_eval.py` and
+`talk_eval.py --background` are re-run, the threshold is chosen from that and recorded in
+docs/voice-wake.md, and "cancel" is tried live (said 10 times in a countdown, plus a podcast during
+countdowns) with the result recorded there.
+
+### 65. ~~The Listening window started before the trace write and two Windows calls~~ (closed 2026-10-28)
+**Labels:** `voice`, `closed`
+`WakeService.on_wake` read the clock, then wrote the wake to the trace store, woke the display and
+brought the console to the front, and only then set the end of Listening from that first reading. The
+time those calls took was lost from Listening, and a slow SQLite write on Windows CI made
+`test_level_events_carry_one_number_and_only_while_listening` (a 0.4 s window) flaky.
+**Fix (2026-10-28):** the end of the window is set from a clock reading taken after the three calls;
+the cooldown still counts from the wake. Test: `test_a_slow_trace_write_or_windows_call_does_not_shorten_listening`
+(failed before, passes after).
+**Measured** (`evals/reports/wake-window-start.md`, `scripts/wake_window_measure.py`, the real
+`on_wake` on a test clock): with each call taking 0.05 / 0.25 / 1.0 s, Listening lost 0.15 / 0.75 /
+3.0 s of the announced 8 s (or 26 s) window before the fix and 0 s after. The offline evals on the
+recordings can't see this defect (they don't run `on_wake`); re-run as a no-regression check, every
+detection, word-error, path and false-wake number is identical before and after (wake @ 0.9: 19/30
+detected, 2.0 false wakes per hour; talk: normalised word error rate 15.7%, end to end 2.0 false
+requests per hour); only timing fields moved.
+
 ---
 
 ## Process
