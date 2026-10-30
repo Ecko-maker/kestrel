@@ -2,3 +2,4 @@
 # never convert their line endings on commit or checkout.
 evals/baselines/*.json -text
 evals/after-runs/*.json -text
+evals/controls/*.json -text

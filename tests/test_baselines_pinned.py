@@ -1,5 +1,6 @@
 """The pinned "before" baselines (evals/baselines/) are what Phase 3 is compared against, and the
-pinned after-runs (evals/after-runs/) are the inputs of its verdict reports. They must never change:
+pinned after-runs (evals/after-runs/) are the inputs of its verdict reports, and the pinned controls
+(evals/controls/) are the inputs of drift checks (known issue #58). They must never change:
 if this fails, restore the file from git instead of updating the hash."""
 
 import hashlib
@@ -15,6 +16,9 @@ PINNED = {
     },
     "after-runs": {
         "main-after-v21-x3.json": "8948b434fdcf77d0f5deab051dfb40b96fe564a066695fd4930fa81f57dfbcbb",
+    },
+    "controls": {
+        "control-old-ci-2026-10-29.json": "0c48e60decdfb3a368ba2736fec5bf810f1656a72d2b694d57018b9dec3d2b8c",
     },
 }
 
