@@ -215,8 +215,10 @@ def test_a_main_run_is_unchanged_but_for_the_split_key(tmp_path: Path, monkeypat
     out = tmp_path / "m.json"
     assert bench_cli.main(_parse("--tasks", "arith-percent", "--judge", "none", "--out", str(out))) == 0
     meta = json.loads(out.read_text(encoding="utf-8"))["meta"]
-    assert meta["split"] == "main" and meta["suite_version"] == "1.1"
-    assert not {"split_version", "task_dir", "workspace_dir"} & set(meta)
+    assert meta["split"] == "main" and meta["suite_version"] == meta["split_version"] == "1.1"
+    assert not {"task_dir", "workspace_dir"} & set(meta)  # distill-only keys
+    # main's own meta since tiers v2: the safety-only keys are there, and empty, for a main run
+    assert all(meta[k] is None for k in ("user", "kinds", "answer_policy", "users"))
     assert fake.db == bench_cli.BENCH_DB and fake.workspace == WORKSPACE_DIR
 
 

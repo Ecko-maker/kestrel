@@ -298,9 +298,12 @@ def _refuse_incomplete(args: argparse.Namespace) -> None:
 
 def _split_dirs(args: argparse.Namespace) -> tuple[Path, Path]:
     """(tasks folder, fixture workspace) for the main and distill splits. main is exactly what it always was."""
-    if getattr(args, "split", "main") == "distill":
+    split = getattr(args, "split", "main")
+    if split == "distill":
         root = args.split_dir or DISTILL_DIR
         return root / "tasks", root / "workspace"
+    if split == "main" and getattr(args, "split_dir", None):
+        sys.exit("--split-dir applies to --split safety or distill only.")
     return TASKS_DIR, WORKSPACE_DIR
 
 

