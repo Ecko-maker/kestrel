@@ -4,13 +4,19 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-30 late evening EDT, from the 10-30 teacher-deferral docs session (log below).
+2026-10-31 evening EDT, from the 10-31 option c selection session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) and `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
 
-**The single next step:** build and test option c on Kaggle (no Groq): the notebook in `distill/COLLECTION.md` and #72's pre-registered teacher selection (gpt-oss:20b vs Qwen3-30B-A3B-Instruct-2507). The teacher decision is **deferred to 2026-11-04**: option a only with Groq's written confirmation by then, otherwise option c. Nothing has been collected or trained.
+**The single next step:** the full option c collection on Kaggle (122 distill tasks, Qwen3-30B-A3B, no Groq), from `phase4/kaggle-teacher` `5cce69c`. The teacher decision is still **deferred to 2026-11-04**: option a only with Groq's written confirmation by then, otherwise option c with Qwen. Nothing has been trained.
+
+## 2026-10-31 (option c selection session; KestrelBench not run, no Groq)
+
+1. **#72's option c selection ran on Kaggle** (2×T4, `collect.ipynb` compare mode, commit `5ec57a7`, 20:17-20:29 UTC; version 1 had stopped at the Ollama install, missing `zstd`, fixed in `5ec57a7`). Both candidates ran exactly the 20 pre-registered tasks: check-pass 15/20 each, leaks 0/0, valid tool calls 28/28 (Qwen) vs 24/27 (gpt-oss:20b), 2.5 vs 6.6 s/task, both fit. **Winner by the rule: Qwen3-30B-A3B-Instruct-2507 Q4**; an independent recomputation matched.
+2. **On `phase4/kaggle-teacher` (`5cce69c`, pushed, no PR):** evidence pinned in `distill/selection/` (SHA-256, tested); result in #72; `teachers.toml` has Qwen active as option c (used only if Groq hasn't confirmed in writing by 2026-11-04; option a kept, commented out); the section 8 amendment draft is finished for Qwen, not applied.
+3. **Data outside git:** the compare output (results files, `distill.db` per candidate) in `..\kestrel-runs\evals\results\teacher-selection-5ec57a709a43\`; not backed up yet.
 
 ## 2026-10-30 (teacher-deferral docs session)
 
