@@ -17,6 +17,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 1. **Teacher decision (#72) deferred by the owner** (no decision number yet). No reply from Groq to the 10-18 email or the 10-30 follow-up. The owner will not train on Groq outputs without Groq's written confirmation.
 2. **Deadline 2026-11-04:** Groq confirms in writing by then → option a (its own approval line); otherwise option c, a Kaggle-hosted teacher chosen by the selection pre-registered in #72 (gpt-oss:20b vs Qwen3-30B-A3B-Instruct-2507 at Q4, 20 fixed check-graded distill tasks, seed 2026, `--judge none`, check-pass rate first, 3 min/task limit). Option c is built and tested on Kaggle meanwhile (no Groq).
 3. **If option c is used,** the Groq days freed by not collecting on Groq may go to the draft-and-ask fix (#59) instead, with its own approval line.
+4. **Groq replied later the same day** (summarized in #72): they understand the use case (personal research and portfolio, a locally run fine-tuned model, not a hosted service) and are reviewing §6.3(e) with an internal team before confirming. **No permission yet**; the 2026-11-04 rule stands. The email stays in the owner's inbox as evidence.
 
 ## 2026-10-30 (phase4 merge session)
 
@@ -158,7 +159,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). In `main` with phase4 (CLAUDE.md, `docs/phase4-plan.md`); `docs/memory-rag-design.md` is still on `phase3/memory-rag`.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
-5. **Teacher decision (#72, Groq §6.3(e))**: **deferred to 2026-11-04** (owner, 2026-10-30; no decision number yet). Option a only with Groq's written confirmation by then; otherwise option c, chosen by #72's pre-registered selection. Publishing the weights is decided with it.
+5. **Teacher decision (#72, Groq §6.3(e))**: **deferred to 2026-11-04** (owner, 2026-10-30; no decision number yet). Groq replied on 10-30 that §6.3(e) is under internal review; no permission yet. Option a only with Groq's written confirmation by then; otherwise option c, chosen by #72's pre-registered selection. Publishing the weights is decided with it.
 6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
 
 ## Docs on unmerged branches
