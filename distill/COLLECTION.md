@@ -1,7 +1,9 @@
 # Collecting distill data: one pass (checklist)
 
-> **Not started. The teacher is decided under known issue #72 (Groq Services Agreement §6.3(e)), due
-> 2026-10-31.** This checklist works for either answer; the decision changes one setting (step 0).
+> **Not started. The teacher decision (known issue #72, Groq Services Agreement §6.3(e)) is deferred to
+> 2026-11-04:** option a only with Groq's written confirmation by then, otherwise option c with the
+> teacher chosen by #72's pre-registered selection. This checklist works for either answer; the decision
+> changes one setting (step 0).
 > Nothing here has been run on real teacher data.
 
 | | Option a | Option c |

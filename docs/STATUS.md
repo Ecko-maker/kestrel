@@ -4,13 +4,19 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-30 evening EDT, from the 10-30 phase4 merge session (log below).
+2026-10-30 late evening EDT, from the 10-30 teacher-deferral docs session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) and `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
 
-**The single next step:** the teacher decision (#72) on 10-31: option a (Groq gpt-oss-120b) or option c (gpt-oss:20b on Kaggle), one setting in `src/kestrel/distill/teachers.toml` (`distill/COLLECTION.md`, step 0). Then the collection pass, with its own approval line (option a) or the owner's OK for Kaggle GPU hours (option c). Nothing has been collected or trained.
+**The single next step:** build and test option c on Kaggle (no Groq): the notebook in `distill/COLLECTION.md` and #72's pre-registered teacher selection (gpt-oss:20b vs Qwen3-30B-A3B-Instruct-2507). The teacher decision is **deferred to 2026-11-04**: option a only with Groq's written confirmation by then, otherwise option c. Nothing has been collected or trained.
+
+## 2026-10-30 (teacher-deferral docs session)
+
+1. **Teacher decision (#72) deferred by the owner** (no decision number yet). No reply from Groq to the 10-18 email or the 10-30 follow-up. The owner will not train on Groq outputs without Groq's written confirmation.
+2. **Deadline 2026-11-04:** Groq confirms in writing by then → option a (its own approval line); otherwise option c, a Kaggle-hosted teacher chosen by the selection pre-registered in #72 (gpt-oss:20b vs Qwen3-30B-A3B-Instruct-2507 at Q4, 20 fixed check-graded distill tasks, seed 2026, `--judge none`, check-pass rate first, 3 min/task limit). Option c is built and tested on Kaggle meanwhile (no Groq).
+3. **If option c is used,** the Groq days freed by not collecting on Groq may go to the draft-and-ask fix (#59) instead, with its own approval line.
 
 ## 2026-10-30 (phase4 merge session)
 
@@ -122,7 +128,7 @@ Dependabot PRs #15 and #17 merged 2026-10-30 (the 10-30 log, item 6); #33 is ope
 - **Calendar:**
   1. ~~After-run resumes~~: done in one resume 10-28 15:22–15:44 EDT; verdict 10-28.
   2. Merges, one per quota day: #14 (done 10-28, no evals) and tiers-v2 (done 10-29, 59.7k), console (done 10-29, no evals), voice (done 10-29, 64.3k), phase4 (done 10-30, 60.6k). The no-eval branches go in between.
-  3. Teacher data: dry-run estimate first (`distill/README.md` says ~253k, 2 days); needs the owner's OK and the teacher decision (#72).
+  3. Teacher data: option a (Groq, ~253k, 2 days) only with Groq's written confirmation by 2026-11-04 and its own approval line; otherwise option c on Kaggle (no Groq), and the freed days may go to the #59 fix (own approval line).
   4. Kaggle QLoRA training (no Groq; under 1 GPU hour).
   5. Student evals: the student on Ollama locally, the judge only on Groq.
 
@@ -152,7 +158,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). In `main` with phase4 (CLAUDE.md, `docs/phase4-plan.md`); `docs/memory-rag-design.md` is still on `phase3/memory-rag`.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
-5. **Teacher decision (#72, was #36 on the branch; Groq §6.3(e))**: on 10-31 (the phase4 rebase is done, 10-30); send the follow-up first (log item 3). Publishing the weights is decided then.
+5. **Teacher decision (#72, Groq §6.3(e))**: **deferred to 2026-11-04** (owner, 2026-10-30; no decision number yet). Option a only with Groq's written confirmation by then; otherwise option c, chosen by #72's pre-registered selection. Publishing the weights is decided with it.
 6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
 
 ## Docs on unmerged branches
