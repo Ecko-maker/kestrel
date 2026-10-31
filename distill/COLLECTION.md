@@ -104,34 +104,34 @@ uv run --no-sync kestrel bench run --split distill --judge none --provider $prov
 
 ## 5. Option c: collect on Kaggle
 
-- [ ] Build and test the notebook first (below), with the owner's OK for the GPU hours.
-- [ ] Run it at `$commit`; download its outputs (`distill-d1.2-pass1.json`, `distill.db`,
-  `provenance.json`) into `..\kestrel-runs\evals\results\` and `..\kestrel-runs\logs\` (the runs folder
-  moved to `$commit` as in step 4, `.env` not needed).
+Built: `distill/collect.ipynb`, with the step-by-step in `distill/KAGGLE.md` and the logic in
+`distill/kaggle_collect.py` (tested offline). Not run on Kaggle yet.
 
-### Option c notebook: what it needs (not built yet)
+- [ ] **Teacher selection first** (#72, pre-registered): the notebook's compare mode, then the table and
+  winner recorded in #72 (`KAGGLE.md` steps 1-5).
+- [ ] **The winner in `teachers.toml`** (step 0 of this file) on a commit, and a new snapshot of it
+  (`KAGGLE.md` step 6).
+- [ ] **Collect mode** at that commit, the owner's OK for the GPU hours first (`KAGGLE.md` step 7). It runs
+  the 122 tasks in 8 shards (`--shard i/8`), each with its own results file
+  (`distill-d1.2-<teacher>-shard-i-of-8.json`), all into one `logs/distill.db`, and resumes from the
+  previous version's output after a session ends.
+- [ ] **Download** into `..\kestrel-runs\evals\results\` and `..\kestrel-runs\logs\` with the runs folder
+  moved to the commit (`KAGGLE.md` step 8). `manifest.json` records the teacher (name, tag, served name,
+  template, digest), the Ollama version, the GPUs and whether the model fit, the commit and the agent
+  fingerprint.
 
-1. **Accelerator:** GPU T4 x2 (or P100). gpt-oss-20b in Ollama's MXFP4 package is ~14 GB; one 16 GB T4
-   is tight with a 16k context, so let Ollama split it over both T4s. Internet on (phone-verified
-   account): for the Ollama install, the model pull and the 7 web tasks (`09_web.yaml`).
-2. **Inputs:** a Kaggle dataset holding `git archive $commit` of this repo (code, `distill/tasks`,
-   `distill/workspace`, `evals/kestrelbench/` for the build's checks), nothing else: no `.env`, no keys.
-3. **Install:** Python 3.14 + `uv` at CI's pins; `uv sync --locked` (no `train` extra); Ollama at a
-   pinned version (the laptop has 0.40.13), started with `ollama serve` in the background, then
-   `ollama pull gpt-oss:20b` (~14 GB, on Kaggle's disk); record the model digest (`ollama show`).
-4. **Environment:** `KESTREL_MCP=off`, `OLLAMA_BASE_URL=http://localhost:11434/v1`,
-   `KESTREL_REQUEST_TIMEOUT=300`, no provider keys set at all (so no hosted model can be called).
-5. **Run:** `kestrel bench run --split distill --judge none --provider ollama --model gpt-oss:20b
-   --stop-after-errors 0 --out distill-d1.2-pass1.json` from the repo root, so traces land in
-   `logs/distill.db`. No `--token-budget` or `--wait-for-quota` (no quota); `--resume` if the session
-   ends early (Kaggle's 12 h limit).
-6. **Stops, like train.ipynb's:** no GPU, no internet, or a version off its pin (Ollama, Python, `uv`,
-   the commit) stops the notebook before the run.
-7. **Outputs:** the results file, a copy of `logs/distill.db` (closed after the run), and
-   `provenance.json`: commit, Ollama version, model name and digest, GPU, start and end times, the
-   agent fingerprint the run recorded.
-8. **Not on Kaggle:** `kestrel distill build` runs on the laptop (step 7), so the dataset is built with
-   the same code and checks as option a.
+What the notebook does, in order:
+1. Stops without GPU T4 x2, Internet, or the snapshot's `COMMIT` file.
+2. Installs uv 0.12.22 and Python 3.14, then `uv sync --locked --no-dev` from the snapshot.
+3. Installs Ollama 0.40.13 and serves it on localhost, with the context at 16384 and models in `/tmp`.
+4. Pulls the teacher and serves it as `kaggle_collect.CANDIDATES` says, then checks the fit from `/api/ps`.
+5. Runs `kestrel bench run --split distill --provider ollama --judge none`, with no provider keys in the
+   environment, `KESTREL_MCP=off` and `KESTREL_REQUEST_TIMEOUT=600`. No `--token-budget` or
+   `--wait-for-quota`: there is no quota.
+6. In collect mode, runs `kaggle_collect.py check-shards` at the end.
+
+`kestrel distill build` still runs on the laptop (step 7), so the dataset is built with the same code and
+checks as option a.
 
 ## 6. Check the results
 
@@ -145,6 +145,8 @@ uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-
 ```
 
 - [ ] `check_results.py` says OK (all 122 distill tasks, suite d1.2, no judge).
+  Option c (sharded): `python distill\kaggle_collect.py check-shards <the 8 files>` says "Shards OK"
+  instead (`check_results.py` checks one complete file); pass all 8 files as `--results` in step 7.
 - [ ] Option a: the audit shows no graded task touched by a rate limit (resolve any it lists).
 - [ ] Option c: `provenance.json` names `$commit`, the pinned Ollama version and the model digest.
 

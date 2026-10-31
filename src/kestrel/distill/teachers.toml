@@ -12,8 +12,17 @@
 provider = "groq"
 model = "openai/gpt-oss-120b"
 
-# Option c: gpt-oss-20b served by Ollama (on a Kaggle GPU). To switch, comment out option a and
-# uncomment these three lines.
+# Option c: a teacher served by Ollama on Kaggle (distill/collect.ipynb), whichever of the two candidates
+# #72's pre-registered selection picks. To switch, comment out option a and uncomment the winner's three
+# lines. The model is the name Kestrel sends and traces record (distill/kaggle_collect.py, CANDIDATES).
+#
+# Candidate 1: gpt-oss:20b, Ollama's own package.
 # [[teacher]]
 # provider = "ollama"
 # model = "gpt-oss:20b"
+#
+# Candidate 2: Qwen3-30B-A3B-Instruct-2507 at Q4 (qwen3:30b-a3b-instruct-2507-q4_K_M), served with
+# Kestrel's template (known issue #73).
+# [[teacher]]
+# provider = "ollama"
+# model = "kestrel-teacher-qwen3-30b-a3b"
