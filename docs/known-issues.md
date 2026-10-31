@@ -402,6 +402,26 @@ Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no 
 - **Time limit:** a candidate averaging more than 3 minutes per task on Kaggle is out (collection wouldn't fit the weekly GPU quota).
 - **The 20 tasks stay in the distill set:** they are training data, not evaluation. The selection results are recorded here with the deferral.
 
+**Option c selection result (ran 2026-10-31, 20:17-20:29 UTC):**
+- **Setup:** Kaggle, GPU T4 x2, `distill/collect.ipynb` in compare mode, Ollama 0.40.13, snapshot commit `5ec57a7`, `--judge none`, no Groq.
+- **Tasks:** both candidates ran exactly the 20 pre-registered tasks above, once each, 0 errored.
+- **Evidence:** pinned byte for byte in `distill/selection/` (`selection.md`, `selection.json`, both manifests, SHA-256 in its README and checked by `tests/test_kaggle_collect.py`). Results files and traces stay in the runs folder (`..\kestrel-runs\evals\results\teacher-selection-5ec57a709a43\`).
+
+| Candidate | Fits 2×T4 (loaded, all on GPU) | Mean s/task (limit 180) | Check-pass | Harmony leaks (runs) | Valid tool calls |
+|---|---|---|---|---|---|
+| gpt-oss:20b | yes (13.5 GB) | 6.6 | 15/20 | 0 | 24/27 |
+| Qwen3-30B-A3B-Instruct-2507 Q4 | yes (20.7 GB) | 2.5 | 15/20 | 0 | 28/28 |
+
+- **The rule, applied in order:**
+  1. Both fit the two T4s and both are far under the 3-minute limit, so neither is out.
+  2. Check-pass is tied at 15/15, inside the 2-task band.
+  3. Harmony leaks are tied at 0/0.
+  4. Valid tool calls decide it: 28/28 against 24/27. gpt-oss:20b's 3 invalid calls were all to a tool named `search`, which doesn't exist.
+- **Winner: Qwen3-30B-A3B-Instruct-2507 Q4** (`qwen3:30b-a3b-instruct-2507-q4_K_M`, digest `19e422b02313`, served as `kestrel-teacher-qwen3-30b-a3b` with Kestrel's template, #73).
+- **Recomputed independently from the raw results files and trace databases** (a separate script, not `kaggle_collect.py`). It matched the notebook's `selection.md` on every number and on the winner. Both agent fingerprints (`3b62fe10ee54`, `f9e11df679f6`) recompute locally from the code with `KESTREL_REQUEST_TIMEOUT=600`. They differ from `35fac5ba6277` only in provider, model and timeout.
+- **Caveat:** 20 tasks, decided on the third criterion. This is the pre-registered rule's choice, not evidence that Qwen is the better teacher.
+- **`teachers.toml`** now has the Qwen entry active as the option c teacher. Option a (Groq) is kept, commented out. Qwen is **used only if Groq hasn't confirmed in writing by 2026-11-04**; if Groq confirms, the two swap back. Checked on the compare traces with the shipped file: `kestrel distill build` keeps Qwen's traces (0 dropped as `teacher`, 0 as `harmony_leak_*`) and drops all of gpt-oss:20b's as `teacher`.
+
 **Done when:** Groq's written confirmation arrives by 2026-11-04 and the teacher is option a, or the selection above has run and its winner is the option c teacher (`src/kestrel/distill/teachers.toml`, step 0 of `distill/COLLECTION.md`).
 
 ### 73. Ollama's own qwen3:4b-instruct-2507 template garbles tool schemas

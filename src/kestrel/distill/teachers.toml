@@ -7,22 +7,21 @@
 
 # Exactly one entry is active: the teacher chosen under known issue #72 (distill/COLLECTION.md, step 0).
 
-# Option a: Groq's hosted gpt-oss-120b.
-[[teacher]]
-provider = "groq"
-model = "openai/gpt-oss-120b"
+# Option a: Groq's hosted gpt-oss-120b. Inactive: used only if Groq confirms §6.3(e) in writing by
+# 2026-11-04 (#72). Then uncomment these three lines and comment out option c's.
+# [[teacher]]
+# provider = "groq"
+# model = "openai/gpt-oss-120b"
 
-# Option c: a teacher served by Ollama on Kaggle (distill/collect.ipynb), whichever of the two candidates
-# #72's pre-registered selection picks. To switch, comment out option a and uncomment the winner's three
-# lines. The model is the name Kestrel sends and traces record (distill/kaggle_collect.py, CANDIDATES).
-#
-# Candidate 1: gpt-oss:20b, Ollama's own package.
+# Option c: Qwen3-30B-A3B-Instruct-2507 at Q4 (qwen3:30b-a3b-instruct-2507-q4_K_M), served by Ollama on
+# Kaggle (distill/collect.ipynb) with Kestrel's template (known issue #73). Selected 10-31 by #72's
+# pre-registered selection (distill/selection/); used only if Groq hasn't confirmed in writing by 2026-11-04.
+# The model is the name Kestrel sends and traces record (distill/kaggle_collect.py, CANDIDATES).
+[[teacher]]
+provider = "ollama"
+model = "kestrel-teacher-qwen3-30b-a3b"
+
+# Not selected (#72, 10-31): gpt-oss:20b, Ollama's own package. Kept for the record; never enable it.
 # [[teacher]]
 # provider = "ollama"
 # model = "gpt-oss:20b"
-#
-# Candidate 2: Qwen3-30B-A3B-Instruct-2507 at Q4 (qwen3:30b-a3b-instruct-2507-q4_K_M), served with
-# Kestrel's template (known issue #73).
-# [[teacher]]
-# provider = "ollama"
-# model = "kestrel-teacher-qwen3-30b-a3b"

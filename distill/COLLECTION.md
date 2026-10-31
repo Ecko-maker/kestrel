@@ -8,9 +8,9 @@
 
 | | Option a | Option c |
 |---|---|---|
-| Teacher | `groq` + `openai/gpt-oss-120b` | `ollama` + `gpt-oss:20b`, served on a Kaggle GPU |
+| Teacher | `groq` + `openai/gpt-oss-120b` | `ollama` + `kestrel-teacher-qwen3-30b-a3b` (Qwen3-30B-A3B-Instruct-2507 Q4, selected 10-31, #72), served on Kaggle's 2×T4 |
 | When | #72 confirms reading (a) | #72's answer is no (design decision 22's fallback) |
-| Cost | ~253k billable Groq tokens (range ~242k-284k), 2 quota days; the dry run says ~313k (see step 3) | no Groq; Kaggle GPU time (estimate 1-3 h, not measured) and a ~14 GB model pull on Kaggle's disk |
+| Cost | ~253k billable Groq tokens (range ~242k-284k), 2 quota days; the dry run says ~313k (see step 3) | no Groq; Kaggle GPU time (estimate 1-3 h; the 20-task selection took 2.5 s/task) and a ~19 GB model pull on Kaggle's disk |
 | Owner's OK | an approval line in docs/STATUS.md's Groq log, merged to `main` first | the owner's OK for the Kaggle GPU hours and the model download |
 | Where it runs | `..\kestrel-runs` (a standalone PowerShell window) | a Kaggle notebook (what it needs: "Option c notebook" below; not built yet) |
 
@@ -22,8 +22,8 @@ All commands are PowerShell, from the development folder unless the step says ot
 
 ## 0. Choose the teacher: the one setting
 
-- [ ] In `src/kestrel/distill/teachers.toml`, keep exactly one `[[teacher]]` entry: option a's (active
-  now) or option c's (written there, commented out). Commit the change.
+- [ ] In `src/kestrel/distill/teachers.toml`, keep exactly one `[[teacher]]` entry: option c's Qwen
+  (active since 10-31, #72) or option a's (written there, commented out). Commit the change.
 - [ ] Read it back; every command below uses `$provider` and `$model`:
 
 ```powershell

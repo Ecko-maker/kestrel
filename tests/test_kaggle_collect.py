@@ -3,6 +3,7 @@ selection metrics and rule, the shard coverage check, the option c teachers in t
 filter on their traces, and that every notebook cell parses. No model, Ollama or Kaggle is touched."""
 
 import ast
+import hashlib
 import importlib.util
 import json
 import sys
@@ -63,8 +64,11 @@ def test_fit_means_nothing_on_the_cpu(ps: dict, fit: bool) -> None:
 # --- teachers.toml and the leak filter ------------------------------------------------------------------------
 
 
-def option_c_entries() -> str:
-    """The commented option c entries of teachers.toml, uncommented."""
+SELECTION = ROOT / "distill" / "selection"
+
+
+def commented_entries() -> str:
+    """The commented-out entries of teachers.toml (option a and the candidate not selected), uncommented."""
     text = (ROOT / "src" / "kestrel" / "distill" / "teachers.toml").read_text(encoding="utf-8")
     lines = [
         line[2:]
@@ -74,15 +78,30 @@ def option_c_entries() -> str:
     return "\n".join(lines) + "\n"
 
 
-def test_the_shipped_file_still_has_only_option_a_active() -> None:
-    assert ds.load_teachers() == frozenset({("groq", "openai/gpt-oss-120b")})
+def test_the_shipped_file_has_only_the_selected_option_c_teacher_active() -> None:
+    winner = json.loads((SELECTION / "selection.json").read_text(encoding="utf-8"))["winner"]
+    assert ds.load_teachers() == frozenset({("ollama", kc.candidate(winner).served_as)})
+    assert ds.load_teachers() == frozenset({("ollama", "kestrel-teacher-qwen3-30b-a3b")})
 
 
-def test_the_option_c_entries_load_and_name_the_served_models(tmp_path: Path) -> None:
+def test_option_a_and_the_other_candidate_stay_loadable_but_inactive(tmp_path: Path) -> None:
     path = tmp_path / "teachers.toml"
-    path.write_text(option_c_entries(), encoding="utf-8")
-    assert ds.load_teachers(path) == frozenset(("ollama", c.served_as) for c in kc.CANDIDATES)
+    path.write_text(commented_entries(), encoding="utf-8")
+    assert ds.load_teachers(path) == frozenset({("groq", "openai/gpt-oss-120b"), ("ollama", "gpt-oss:20b")})
     assert not any(ds.is_closed("ollama", c.served_as) for c in kc.CANDIDATES)
+
+
+def test_the_shipped_teachers_keep_a_clean_qwen_trace_and_drop_a_leaked_one(tmp_path: Path) -> None:
+    db = TraceDB(tmp_path / "copy.db")
+    model = "kestrel-teacher-qwen3-30b-a3b"
+    clean = db.add(convo("What's in a.txt?", "It says hello."), steps=[("ollama", model)])
+    leaked = convo("What's in a.txt?", "It says <|im_end|> hello.")
+    db.add(leaked, steps=[("ollama", model)])
+    db.add(convo("What's in a.txt?", "It says hello."), steps=[("groq", "openai/gpt-oss-120b")])  # option a, inactive
+    tools = [{"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}]
+    built = ds.build(db.traces(), {}, frozenset(), ds.load_teachers(), tools)
+    assert {e.record["metadata"]["trace_id"] for e in built.train + built.val} == {clean}
+    assert {k: v for k, v in built.dropped.items() if v} == {"teacher": 1, "harmony_leak_text": 1}
 
 
 @pytest.mark.parametrize("model", [c.served_as for c in kc.CANDIDATES])
@@ -257,6 +276,38 @@ def test_the_manifest_records_teacher_digest_and_gpus() -> None:
     )  # fmt: skip
     assert m["teacher"]["served_as"] == "gpt-oss:20b" and m["teacher"]["digest"] == "sha256:abc"
     assert m["gpu"]["fits"] is True and m["gpu"]["devices"][0]["name"] == "Tesla T4"
+
+
+# --- the pinned selection (distill/selection/, 2026-10-31) ----------------------------------------------------
+
+# Byte for byte from the Kaggle compare run; never update a hash: restore the file from git instead.
+PINNED_SELECTION = {
+    "selection.md": "4e67a92713f1e590df4defef058ed59eea2e90094a03b974f6fe616aeb6c2e3f",
+    "selection.json": "5f34824d6d35a1587c55f54c9684d5354e5c84531c7918bc8e911f09ed0c67cf",
+    "manifest-gpt-oss-20b.json": "1f3707a150ec928a932c42e001ccc1e4b9269dea5883f50fcf0710415b3191d3",
+    "manifest-kestrel-teacher-qwen3-30b-a3b.json": "01da2c433e6869d27af2790d278cfcbf0df87516bb6a34c56b0bd9949756b135",
+}
+
+
+@pytest.mark.parametrize("name", sorted(PINNED_SELECTION))
+def test_the_pinned_selection_evidence_is_unchanged(name: str) -> None:
+    assert hashlib.sha256((SELECTION / name).read_bytes()).hexdigest() == PINNED_SELECTION[name]
+
+
+def test_the_selection_readme_lists_the_pinned_hashes() -> None:
+    readme = (SELECTION / "README.md").read_text(encoding="utf-8")
+    assert all(sha in readme for sha in PINNED_SELECTION.values())
+
+
+def test_72s_rule_on_the_pinned_numbers_gives_the_pinned_winner() -> None:
+    sel = json.loads((SELECTION / "selection.json").read_text(encoding="utf-8"))
+    a, b = (kc.Metrics(**c) for c in sel["candidates"])
+    assert tuple(sel["slice"]) == kc.SLICE and a.runs == b.runs == 20
+    assert kc.decide(a, b) == (sel["winner"], sel["why"]) == ("Qwen3-30B-A3B-Instruct-2507", sel["why"])
+    for c in kc.CANDIDATES:
+        m = json.loads((SELECTION / f"manifest-{c.served_as.replace(':', '-')}.json").read_text(encoding="utf-8"))
+        assert m["mode"] == "compare" and m["teacher"]["served_as"] == c.served_as and m["gpu"]["fits"] is True
+        assert m["commit"].startswith("5ec57a7") and len(m["gpu"]["devices"]) == 2
 
 
 # --- the notebook ---------------------------------------------------------------------------------------------

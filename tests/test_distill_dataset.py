@@ -9,6 +9,7 @@ import json
 import sqlite3
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -125,7 +126,10 @@ def only_drop(d: ds.Dataset, reason: str, n: int = 1) -> None:
 def run_cli(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     ds.add_parser(parser.add_subparsers(dest="command"))
-    return ds.main(parser.parse_args(["distill", "build", *argv]))
+    # The traces here are made by the synthetic TEACHER, whichever #72 option teachers.toml ships
+    # (that file is pinned by test_teachers_toml_refuses_closed_models and tests/test_kaggle_collect.py).
+    with patch.object(ds, "load_teachers", lambda: TEACHERS):
+        return ds.main(parser.parse_args(["distill", "build", *argv]))
 
 
 # --- Teacher ------------------------------------------------------------------
@@ -172,7 +176,7 @@ def test_a_different_response_model_is_dropped(db: TraceDB) -> None:
 
 
 def test_teachers_toml_refuses_closed_models(tmp_path: Path) -> None:
-    assert ds.load_teachers() == TEACHERS  # the shipped file
+    assert ds.load_teachers() == frozenset({("ollama", "kestrel-teacher-qwen3-30b-a3b")})  # the shipped file (#72)
     for provider, model in [("gemini", "gemini-3.6-flash"), ("groq", "claude-x"), ("openai", "gpt-5"), ("demo", "x")]:
         path = tmp_path / "t.toml"
         path.write_text(f'[[teacher]]\nprovider = "{provider}"\nmodel = "{model}"\n', encoding="utf-8")

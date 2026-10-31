@@ -3,3 +3,6 @@
 evals/baselines/*.json -text
 evals/after-runs/*.json -text
 evals/controls/*.json -text
+# The option c teacher selection evidence (distill/selection/), hashed the same way (tests/test_kaggle_collect.py).
+distill/selection/*.json -text
+distill/selection/selection.md -text
