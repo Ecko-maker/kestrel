@@ -382,10 +382,26 @@ The pipeline's near-duplicate filter compares every user message with every Kest
 `distill/train.py --smoke` runs end to end on CPU (tiny random Qwen3, real tokenizer, no 4-bit), and the formatter is tested on the real tokenizer. The GPU path (bitsandbytes 4-bit loading, `prepare_model_for_kbit_training`, float16 on a T4) has not run yet, and Kaggle's preinstalled torch may not match the pinned transformers/trl. The P100 may not support bitsandbytes' 4-bit kernels (use a T4).
 **Done when:** the first Kaggle run on a real dataset finishes, its `lineage.json` is checked (`distill/TRAINING.md`, step 5), and any version fix is pinned.
 
-### 72. Groq's Services Agreement §6.3(e): provisional reading (a), waiting for Groq
+### 72. Groq's Services Agreement §6.3(e): teacher decision deferred to 2026-11-04, waiting for Groq
 **Labels:** `distillation`, `process`, `medium`
 Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no output restrictions, but §6.3(e) bars using the Cloud Services to "develop or improve products, services, or other offerings that are similar or compete" with them (agreement last modified 2026-06-22). **Provisional reading (a):** a small locally served student for a personal agent is neither similar to nor competing with Groq's inference platform. The owner emailed Groq support on 2026-10-18 for written confirmation and is waiting for the reply. `distill/COLLECTION.md` is blocked until the owner confirms, and its first lines say so. Fallback if the answer is no: gpt-oss-20b served locally by Ollama as the teacher (design decision 22).
-**Done when:** the owner confirms (with Groq's written reply, or by accepting (a) explicitly), or switches to the fallback teacher.
+**Deferred by the owner (2026-10-30), no decision number yet.**
+- **No reply from Groq** to the 2026-10-18 email or to the 2026-10-30 follow-up.
+- **The owner will not train on Groq outputs without Groq's written confirmation.** Accepting reading (a) without it is no longer an option.
+- **Deadline 2026-11-04.** If Groq confirms in writing by then: **option a** (Groq + gpt-oss-120b, ~253k billable, its own approval line). Otherwise: **option c**, a teacher self-hosted on Kaggle, the model chosen by the measurement below.
+- **Meanwhile option c is built and tested on Kaggle** (Kaggle GPU quota, no Groq): the notebook in `distill/COLLECTION.md` ("Option c notebook").
+- **If option c is used**, the Groq days freed by not collecting on Groq may go to the draft-and-ask fix (#59) instead, with its own approval line.
+
+**Option c teacher selection (pre-registered 2026-10-30, before any candidate has run):**
+- **Candidates:** `gpt-oss:20b` and Qwen3-30B-A3B-Instruct-2507, both at Q4. A candidate that doesn't fit Kaggle's free GPUs (2×T4, 16 GB each) is out.
+- **Slice:** 20 check-graded tasks of the distill set d1.2, stratified by category, seed 2026, never KestrelBench. Drawn with `stats.stratified_sample` over the 93 tasks without a rubric (category, then task id as the stable key): `dst-arith-lumber-per-bed`, `dst-arith-seed-packets`, `dst-arith-herb-bed-area`, `dst-time-nairobi-date`, `dst-files-insurance-deadline`, `dst-files-shed-code-policy`, `dst-files-grant-purpose`, `dst-act-email-aiko-volunteer`, `dst-act-note-spring-seeds`, `dst-act-email-waitlist`, `dst-adapt-add-arrival-day`, `dst-adapt-append-padlock`, `dst-forbid-all-csv`, `dst-forbid-old-quote`, `dst-notool-austen`, `dst-multi-three-loaves`, `dst-multi-q3-net`, `dst-multi-rental-quote`, `dst-web-sqlite-site`, `dst-convo-rental-price`. Per category: arithmetic, files, actions and multistep 3 each; adapt and safety 2 each; time, no_tools, web and conversation 1 each.
+- **Runs:** both candidates run the same 20 tasks once, `--judge none`.
+- **Primary metric:** check-pass rate.
+- **Rule:** the higher check-pass rate wins. If they're within 2 tasks of each other: fewer Harmony leaks wins (the `harmony_leak_*` tokens of design decision 22), then more valid tool calls, then less time per task.
+- **Time limit:** a candidate averaging more than 3 minutes per task on Kaggle is out (collection wouldn't fit the weekly GPU quota).
+- **The 20 tasks stay in the distill set:** they are training data, not evaluation. The selection results are recorded here with the deferral.
+
+**Done when:** Groq's written confirmation arrives by 2026-11-04 and the teacher is option a, or the selection above has run and its winner is the option c teacher (`src/kestrel/distill/teachers.toml`, step 0 of `distill/COLLECTION.md`).
 
 ### 73. Ollama's own qwen3:4b-instruct-2507 template garbles tool schemas
 **Labels:** `distillation`, `serving`, `medium`
