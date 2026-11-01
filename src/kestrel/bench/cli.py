@@ -16,6 +16,7 @@ from typing import Any
 from kestrel.answer_policy import AnswerPolicy
 from kestrel.bench import calibrate as cal
 from kestrel.bench import cost as cost_report
+from kestrel.bench import routed_safety
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
@@ -138,6 +139,12 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         default="all",
         help="safety split: run only attacks (policy probes included) or only benign tasks, e.g. the "
         "rubber-stamp user on attacks only (default all)",
+    )
+    run.add_argument(
+        "--safety-group",
+        choices=[routed_safety.S],
+        help="safety split: only group S of the 2026-11-01 amendment (docs/phase4-plan.md 8.4; tasks that need "
+        "no tool the student never saw), with the fetch stub left out: the routed run",
     )
     run.add_argument("--provider", default="groq", help="model under test (default groq)")
     run.add_argument("--model", help="override the provider's default model")
@@ -349,7 +356,11 @@ def _split_dirs(args: argparse.Namespace) -> tuple[Path, Path]:
 
 def _pick_tasks(args: argparse.Namespace) -> list[Task]:
     if args.split == "safety":
-        pool = [st.task for st in _safety(args).tasks if args.kinds in ("all", st.meta.kind)]
+        split = _safety(args)
+        group = routed_safety.groups(split)[args.safety_group] if getattr(args, "safety_group", None) else None
+        pool = [
+            st.task for st in split.tasks if args.kinds in ("all", st.meta.kind) and (group is None or st.id in group)
+        ]
     else:
         pool = load_tasks(_split_dirs(args)[0])
     tasks = select(pool, args.subset, args.category, args.task, skip_tags=("network",) if args.skip_network else ())
@@ -438,6 +449,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         sys.exit("--scripted, --split-dir, --user and --kinds apply to --split safety only.")
     if args.split == "distill" and (args.scripted or args.user != "strict" or args.kinds != "all"):
         sys.exit("--scripted, --user and --kinds apply to --split safety only.")
+    if getattr(args, "safety_group", None) and (args.split != "safety" or args.scripted):
+        sys.exit("--safety-group applies to --split safety with a real provider only.")
     if args.split == "safety":
         args.judge = "none"  # graded by deterministic guards only
         if args.reuse:
@@ -458,6 +471,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
+    args.safety_group = getattr(args, "safety_group", None)  # callers that build args by hand
     _refuse_incomplete(args)
     tasks = _pick_tasks(args)
     if not tasks:
@@ -479,7 +493,9 @@ def _run(args: argparse.Namespace) -> int:
     judge_name = f"{args.judge}/{judge_model}" if judge_model else None
 
     safety = args.split == "safety"
-    registry = build_registry(SafetyMeta(), []) if safety else None  # safety: the common tools, without MCP stubs
+    fetch_stub = not args.safety_group  # group S runs without it (bench/routed_safety.py)
+    # safety: the common tools, without MCP stubs
+    registry = build_registry(SafetyMeta(), [], fetch_stub) if safety else None
     # the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default), for the resume check
     resolved = args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
     agent = agent_fingerprint(args.provider, resolved, registry)
@@ -492,6 +508,11 @@ def _run(args: argparse.Namespace) -> int:
             sys.exit(f"{args.resume.name} is a {old_meta.get('split', 'main')} split run, not {args.split}.")
         if old_meta.get("split") == "safety" and old_meta.get("user") != args.user:  # strict / rubber-stamp / both
             sys.exit(f"{args.resume.name} was run with user {old_meta.get('user')!r}, not {args.user!r}.")
+        if old_meta.get("split") == "safety" and old_meta.get("safety_group") != args.safety_group:
+            sys.exit(
+                f"{args.resume.name} was run with --safety-group {old_meta.get('safety_group')}, "
+                f"not {args.safety_group}."
+            )
         if old_meta.get("split") == "safety" and old_meta.get("kinds", "all") != args.kinds:
             sys.exit(f"{args.resume.name} was run with --kinds {old_meta.get('kinds', 'all')}, not {args.kinds}.")
         if old_meta.get("split") == "safety" and old_meta.get("answer_policy", AnswerPolicy().as_dict()) != (
@@ -618,6 +639,8 @@ def _run(args: argparse.Namespace) -> int:
             "task_dir": _repo_relative(tasks_dir),
             "workspace_dir": _repo_relative(workspace),
         }
+    if args.safety_group:  # only then, so every other safety run keeps its exact meta
+        meta |= {"safety_group": args.safety_group, "fetch_stub": False}
 
     fresh: list[TaskResult] = []
     out = args.out
@@ -648,7 +671,7 @@ def _run(args: argparse.Namespace) -> int:
             on_begin = llm.begin if isinstance(llm, ScriptedSafetyModel) else None
             extra = {
                 "base_workspace": split.workspace,
-                "setup": make_setup(split, user, on_begin),
+                "setup": make_setup(split, user, on_begin, fetch_stub),
                 "grader": make_grader(split, user, policy),
             }
         spent = sum(billable_tokens(r) for r in fresh)

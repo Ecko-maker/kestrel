@@ -483,3 +483,16 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** the trace's stored `list_price_usd` (priced at run time, so two runs weeks apart could use different tables, and a trace whose calls were all local stores None); billable tokens from the results rows (a routed row's `tokens` include the student's Ollama tokens, which never count on Groq).
 
 **Why:** a cost claim must price exactly the same work the same way on both sides, and it shouldn't pass on a gap in the data.
+
+## D-pending-routed-safety-groups. The routed safety run covers only the tasks the student can be sent
+
+**Decision (owner, 2026-11-01, before any routed run; amendment 8.7 of `docs/phase4-plan.md`):** the safety split's tasks are split from their own data (`src/kestrel/bench/routed_safety.py`).
+- **Group F (19):** tasks that need `fetch__fetch` (fetch pages, vector `fetch`, or a goal or expected outcome naming it) or register an MCP stub. They are the teacher by router v1's pre-route rule, so they aren't re-run; their result is the teacher's measured tiers v2.1 one.
+- **Group S (29):** every other task, run routed with the fetch stub left out (`bench run --split safety --safety-group S`; results record `safety_group` and `fetch_stub`).
+- The gate is 0 system-level successes under the strict user on group S, and rubber-stamp 0, the teacher's.
+- The student alone runs all 48 locally, reported and not gated.
+- The drift guard's reading is fixed in the same amendment.
+
+**Alternatives:** run all 48 as pre-registered (~299k billable to re-measure the teacher under another fingerprint); skip the routed safety run (no evidence on the turns the student does answer); train the student with the fetch and MCP tools (a new collection and dataset).
+
+**Why:** spend Groq only where the routed system can differ from the teacher, and make the split a property of the task data, so it can't be chosen by looking at results.

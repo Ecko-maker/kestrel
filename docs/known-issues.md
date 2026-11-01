@@ -260,7 +260,8 @@ Rule C (`docs/tiers-v2-design.md` section 5) compared the tiers v2.1 main-suite 
 **Control result (2026-10-29, 21:58 EDT; `evals/controls/control-old-ci-2026-10-29.json`, 39,706 billable):**
 - Old agent across weeks, 10-07 ×3 (88%) vs 10-29 ×2 (84%): **−3 points (95% CI −20 to +11)**. Flips: `files-contact-email` better; `adapt-casual-email`, `convo-chained-math` worse.
 - Same day, old ×2 vs new (CI runs PR #27 93%, main merge 87%, PR #31 94%): **+10 / +3 / +9 points**; the flips are the same two tasks. `multi-budget-total` is excluded (it errored in the new runs, #54).
-- **Conclusion: gross drift not shown.** The main suite's −3 points remain unresolved at this size. The issue stays open; re-test at Phase 4's main-suite run. The "within 5 points: yes" lines are not a non-inferiority result at n=15–16.
+- **Conclusion: gross drift not shown.** The main suite's −3 points remain unresolved at this size. The issue stays open; re-test at Phase 4's main-suite run.
+- **Reading for Phase 4's same-week control (owner decision 2026-11-01, before it runs; `docs/phase4-plan.md` 8.7):** gross drift is present when the paired 95% interval of (this week's old-agent control − the 10-07 runs) lies entirely below 0; otherwise not shown. The "within 5 points: yes" lines are not a non-inferiority result at n=15–16.
 
 ### 59. The model drafts an approval-gated action and asks instead of calling the tool
 **Labels:** `evals`, `agent`, `medium`
@@ -475,8 +476,8 @@ Owner decision 2026-10-26 (`docs/phase4-plan.md`, "Phase 4 before long-term memo
 Every safety task's registry (`bench/stubs.py` `build_registry`) adds the `fetch__fetch` stub, and some add MCP stubs. The student is trained on Kestrel's built-in tools only (#76), so router v1's pre-route rule (`tool_set`: the tools sent differ from the lineage fingerprint) sends the whole turn to the teacher. Checked offline on 2026-11-01 (a fingerprint of the built-in registry against each task's registry, no model calls): **48 of 48 tasks differ** (first: `atk-action-note-web`, `fetch__fetch: sent at serve time, never seen in training`).
 - Section 8.4's routed safety run is then the teacher alone under the routed agent's fingerprint. It costs about the teacher side (**~299k** billable, measured 10-21 to 10-23), not section 8.3's ~80k at e = 30%.
 - It still checks that the router opens no attack path on those turns. It says nothing about the student's own safety: section 4's student-alone runs (local) do.
-- Section 8 is frozen; the options (run as registered, skip with the argument stated, or a dated amendment for a variant without the stub) are in `distill/EVAL.md` step 4.
-**Done when:** the owner picks an option before any routed run, and the Phase 4 write-up states which turns of the safety run the student answered.
+- **Decided 2026-11-01 (owner), before any routed run:** amendment 8.7 of `docs/phase4-plan.md`. Group F (19 tasks that need `fetch__fetch` or an MCP stub) is the teacher by the pre-route rule and keeps the teacher's measured v2.1 result. Group S (29) runs routed with the fetch stub left out (`bench run --split safety --safety-group S`). The student alone runs all 48 locally, as a reported extra. Groups come from the task data (`src/kestrel/bench/routed_safety.py`, `tests/test_routed_safety.py`).
+**Done when:** group S's routed runs are measured, and the Phase 4 write-up states that group F's routed result is the teacher's by construction.
 
 ---
 
