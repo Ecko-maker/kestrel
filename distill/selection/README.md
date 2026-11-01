@@ -1,5 +1,8 @@
 # Option c teacher selection (known issue #72), pinned
 
+**Evidence only (design decision 29):** #72 ended in option a (Groq + gpt-oss-120b), so this selection's
+winner is not the teacher.
+
 The evidence for #72's pre-registered option c selection, copied byte for byte from the Kaggle compare
 run's output (`kestrel-compare-5ec57a709a43.zip`, unpacked in `..\kestrel-runs\evals\results\teacher-selection-5ec57a709a43\compare\`).
 These files must never change: `tests/test_kaggle_collect.py` checks their SHA-256 values. If it fails, restore the file

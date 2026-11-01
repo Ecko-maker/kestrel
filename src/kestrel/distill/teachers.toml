@@ -5,21 +5,21 @@
 # training other models on their outputs, and the demo provider is scripted text, not a model.
 # The loader refuses such entries, so editing this file can't let them in either.
 
-# Exactly one entry is active: the teacher chosen under known issue #72 (distill/COLLECTION.md, step 0).
+# Exactly one entry is active: the teacher chosen under known issue #72 (design decision 29). Never two at
+# once: one dataset, one teacher (design decision 22).
 
-# Option a: Groq's hosted gpt-oss-120b. Inactive: used only if Groq confirms §6.3(e) in writing by
-# 2026-11-04 (#72). Then uncomment these three lines and comment out option c's.
-# [[teacher]]
-# provider = "groq"
-# model = "openai/gpt-oss-120b"
-
-# Option c: Qwen3-30B-A3B-Instruct-2507 at Q4 (qwen3:30b-a3b-instruct-2507-q4_K_M), served by Ollama on
-# Kaggle (distill/collect.ipynb) with Kestrel's template (known issue #73). Selected 10-31 by #72's
-# pre-registered selection (distill/selection/); used only if Groq hasn't confirmed in writing by 2026-11-04.
-# The model is the name Kestrel sends and traces record (distill/kaggle_collect.py, CANDIDATES).
+# Option a: Groq's hosted gpt-oss-120b. Selected 11-01 (design decision 29): Groq Support confirmed the use
+# in writing on 2026-10-31, as #72's rule required.
 [[teacher]]
-provider = "ollama"
-model = "kestrel-teacher-qwen3-30b-a3b"
+provider = "groq"
+model = "openai/gpt-oss-120b"
+
+# Option c, not used (#72, design decision 29): Qwen3-30B-A3B-Instruct-2507 at Q4, served by Ollama on Kaggle
+# (distill/collect.ipynb) with Kestrel's template (#73). Won #72's pre-registered selection on 10-31
+# (distill/selection/); its collection d1.2-pass1 (distill/collection/) is kept as evidence, not training data.
+# [[teacher]]
+# provider = "ollama"
+# model = "kestrel-teacher-qwen3-30b-a3b"
 
 # Not selected (#72, 10-31): gpt-oss:20b, Ollama's own package. Kept for the record; never enable it.
 # [[teacher]]

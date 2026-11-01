@@ -1,5 +1,8 @@
 # Option c collection d1.2-pass1, pinned
 
+**Evidence only, not training data (design decision 29):** the teacher is option a (Groq + gpt-oss-120b),
+and one dataset has one teacher, so this collection is never trained on.
+
 The provenance of the first distill collection: the Kaggle collect run's manifest and the `kestrel distill build`
 manifest (the build report), copied byte for byte. These files must never change: `tests/test_kaggle_collect.py`
 checks their SHA-256 values. If it fails, restore the file from git instead of updating the hash.

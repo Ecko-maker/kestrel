@@ -1,5 +1,9 @@
 # DRAFT, not applied: section 8 amendment for option c (teacher Qwen3-30B-A3B-Instruct-2507)
 
+> **Not applied, and it won't be (2026-11-01, design decision 29).** #72 ended in option a (Groq confirmed in
+> writing on 10-31), so section 8 stays as frozen. This file is kept for the record until the branch merges;
+> the rule below says it may then be deleted.
+
 **Status: draft only, not part of `docs/phase4-plan.md` and not in force.** Started 2026-10-30, finished
 2026-10-31 for the selected teacher.
 - **What allows it:** section 8.5 allows one amendment "if #72 picks option c ... before any routed run, with

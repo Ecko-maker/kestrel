@@ -1,16 +1,15 @@
 # Collecting distill data: one pass (checklist)
 
-> **The teacher decision (known issue #72, Groq Services Agreement §6.3(e)) is deferred to
-> 2026-11-04:** option a only with Groq's written confirmation by then, otherwise option c with the
-> teacher chosen by #72's pre-registered selection. This checklist works for either answer; the decision
-> changes one setting (step 0).
-> **Option c pass 1 collected and built (2026-11-01, Qwen3-30B-A3B, no Groq):** "Results: d1.2-pass1" at the
-> end. It is used for training only if option c is chosen on 2026-11-04.
+> **Teacher decided (2026-11-01, design decision 29, #72 closed): option a, `groq` + `openai/gpt-oss-120b`.**
+> Groq confirmed the use in writing on 10-31. Step 0 is done (`teachers.toml` lists only Groq's entry);
+> collection is step 4.
+> **Option c pass 1 (2026-11-01, Qwen3-30B-A3B, no Groq) is evidence only, never training data:** "Results:
+> d1.2-pass1" at the end. One dataset, one teacher (design decision 22).
 
 | | Option a | Option c |
 |---|---|---|
 | Teacher | `groq` + `openai/gpt-oss-120b` | `ollama` + `kestrel-teacher-qwen3-30b-a3b` (Qwen3-30B-A3B-Instruct-2507 Q4, selected 10-31, #72), served on Kaggle's 2×T4 |
-| When | #72 confirms reading (a) | #72's answer is no (design decision 22's fallback) |
+| When | #72 confirms reading (a): **chosen 11-01** | #72's answer is no (design decision 22's fallback): not used |
 | Cost | ~253k billable Groq tokens (range ~242k-284k), 2 quota days; the dry run says ~313k (see step 3) | no Groq; Kaggle GPU time (estimate 1-3 h; the 20-task selection took 2.5 s/task) and a ~19 GB model pull on Kaggle's disk |
 | Owner's OK | an approval line in docs/STATUS.md's Groq log, merged to `main` first | the owner's OK for the Kaggle GPU hours and the model download |
 | Where it runs | `..\kestrel-runs` (a standalone PowerShell window) | a Kaggle notebook (what it needs: "Option c notebook" below; not built yet) |
@@ -23,8 +22,8 @@ All commands are PowerShell, from the development folder unless the step says ot
 
 ## 0. Choose the teacher: the one setting
 
-- [ ] In `src/kestrel/distill/teachers.toml`, keep exactly one `[[teacher]]` entry: option c's Qwen
-  (active since 10-31, #72) or option a's (written there, commented out). Commit the change.
+- [x] In `src/kestrel/distill/teachers.toml`, keep exactly one `[[teacher]]` entry: option a's Groq entry
+  (active since 11-01, design decision 29); option c's two candidates are commented out.
 - [ ] Read it back; every command below uses `$provider` and `$model`:
 
 ```powershell
@@ -175,7 +174,11 @@ In this order, from the printed counts and `data\distill\d1.2-pass1\manifest.jso
 
 `data\` is git-ignored: keep the manifest's numbers in the Phase 4 notes, not the data.
 
-## Results: d1.2-pass1 (option c, 2026-11-01)
+## Results: d1.2-pass1 (option c, 2026-11-01): evidence only, not training data
+
+Option a was chosen the same day (design decision 29), so this pass is not trained on. With the shipped
+`teachers.toml`, `kestrel distill build` drops all of its traces as `teacher`. The findings below are about
+the task set and the pipeline, so they still apply to option a's collection.
 
 The run: Kaggle collect mode at `5cce69c`, teacher Qwen3-30B-A3B-Instruct-2507 Q4 (#72), 00:55-01:07 UTC, no Groq.
 The manifests are pinned in `distill/collection/`.

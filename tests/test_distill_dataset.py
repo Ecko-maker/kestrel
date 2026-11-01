@@ -176,7 +176,7 @@ def test_a_different_response_model_is_dropped(db: TraceDB) -> None:
 
 
 def test_teachers_toml_refuses_closed_models(tmp_path: Path) -> None:
-    assert ds.load_teachers() == frozenset({("ollama", "kestrel-teacher-qwen3-30b-a3b")})  # the shipped file (#72)
+    assert ds.load_teachers() == frozenset({TEACHER})  # the shipped file (#72, design decision 29)
     for provider, model in [("gemini", "gemini-3.6-flash"), ("groq", "claude-x"), ("openai", "gpt-5"), ("demo", "x")]:
         path = tmp_path / "t.toml"
         path.write_text(f'[[teacher]]\nprovider = "{provider}"\nmodel = "{model}"\n', encoding="utf-8")

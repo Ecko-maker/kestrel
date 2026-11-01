@@ -68,7 +68,7 @@ SELECTION = ROOT / "distill" / "selection"
 
 
 def commented_entries() -> str:
-    """The commented-out entries of teachers.toml (option a and the candidate not selected), uncommented."""
+    """The commented-out entries of teachers.toml (both option c candidates), uncommented."""
     text = (ROOT / "src" / "kestrel" / "distill" / "teachers.toml").read_text(encoding="utf-8")
     lines = [
         line[2:]
@@ -78,26 +78,25 @@ def commented_entries() -> str:
     return "\n".join(lines) + "\n"
 
 
-def test_the_shipped_file_has_only_the_selected_option_c_teacher_active() -> None:
-    winner = json.loads((SELECTION / "selection.json").read_text(encoding="utf-8"))["winner"]
-    assert ds.load_teachers() == frozenset({("ollama", kc.candidate(winner).served_as)})
-    assert ds.load_teachers() == frozenset({("ollama", "kestrel-teacher-qwen3-30b-a3b")})
+def test_the_shipped_file_has_only_option_a_active() -> None:
+    assert ds.load_teachers() == frozenset({("groq", "openai/gpt-oss-120b")})  # #72, design decision 29
 
 
-def test_option_a_and_the_other_candidate_stay_loadable_but_inactive(tmp_path: Path) -> None:
+def test_both_option_c_candidates_stay_loadable_but_inactive(tmp_path: Path) -> None:
     path = tmp_path / "teachers.toml"
     path.write_text(commented_entries(), encoding="utf-8")
-    assert ds.load_teachers(path) == frozenset({("groq", "openai/gpt-oss-120b"), ("ollama", "gpt-oss:20b")})
+    winner = json.loads((SELECTION / "selection.json").read_text(encoding="utf-8"))["winner"]
+    assert ds.load_teachers(path) == frozenset({("ollama", kc.candidate(winner).served_as), ("ollama", "gpt-oss:20b")})
     assert not any(ds.is_closed("ollama", c.served_as) for c in kc.CANDIDATES)
 
 
-def test_the_shipped_teachers_keep_a_clean_qwen_trace_and_drop_a_leaked_one(tmp_path: Path) -> None:
+def test_the_shipped_teachers_keep_a_clean_groq_trace_and_drop_option_c_and_leaks(tmp_path: Path) -> None:
+    """Never two teachers in one dataset (design decision 22): pass 1's Qwen traces are dropped as `teacher`."""
     db = TraceDB(tmp_path / "copy.db")
-    model = "kestrel-teacher-qwen3-30b-a3b"
-    clean = db.add(convo("What's in a.txt?", "It says hello."), steps=[("ollama", model)])
-    leaked = convo("What's in a.txt?", "It says <|im_end|> hello.")
-    db.add(leaked, steps=[("ollama", model)])
-    db.add(convo("What's in a.txt?", "It says hello."), steps=[("groq", "openai/gpt-oss-120b")])  # option a, inactive
+    model = ("groq", "openai/gpt-oss-120b")
+    clean = db.add(convo("What's in a.txt?", "It says hello."), steps=[model])
+    db.add(convo("What's in a.txt?", "It says <|channel|> hello."), steps=[model])
+    db.add(convo("What's in a.txt?", "It says hello."), steps=[("ollama", "kestrel-teacher-qwen3-30b-a3b")])
     tools = [{"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}]
     built = ds.build(db.traces(), {}, frozenset(), ds.load_teachers(), tools)
     assert {e.record["metadata"]["trace_id"] for e in built.train + built.val} == {clean}

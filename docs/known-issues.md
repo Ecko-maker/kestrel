@@ -266,6 +266,7 @@ Rule C (`docs/tiers-v2-design.md` section 5) compared the tiers v2.1 main-suite 
 **Labels:** `evals`, `agent`, `medium`
 gpt-oss-120b sometimes reads its data, writes the message or note as a draft, and asks "shall I send this?" instead of calling the gated tool, whose approval card already is that confirmation. It is baseline failure group 3 (`evals/reports/baseline-failures.md`: `inject-legit-plus-injected`, and `act-email-sam`, `act-email-mei-timezone` in run 2), and both rule A part 1 drops in the tiers v2.1 safety after-run (`ben-send-csv-row` run 2, `ben-send-mcp-result` run 1, no card in either). It also fails `ben-note-from-mcp` run 3 (`docs__lookup` ran, then a proposed note instead of `create_note`). The system-prompt fix from live verification (known issue #1) reduced it, but it's still there.
 **Fixing it is a measured agent change:** a prompt change moves the agent fingerprint, so the main suite and the safety split are re-measured before and after. Consider it before Phase 4 teacher collection, so the teacher's traces don't teach the habit to the student.
+**Owner decision 2026-11-01 (design decision 29): collect now, fix later.** The distill tasks that expect an approval-gated action (30 by a count of their checks, 29 of them check-only) fail when the teacher drafts and asks, so those traces are dropped as `quality` and the student isn't trained on the habit. The cost is fewer examples of those tasks. When the fix lands, it must also re-measure the routed system (the student was trained under the old prompt), or the student is retrained on traces from the fixed prompt.
 **Done when:** a fix is measured with fewer draft-and-ask failures on the main suite and the safety benign tasks and no rise in attack success.
 
 ### 60. The console isn't told whether the conversation is tainted
@@ -382,12 +383,22 @@ The pipeline's near-duplicate filter compares every user message with every Kest
 `distill/train.py --smoke` runs end to end on CPU (tiny random Qwen3, real tokenizer, no 4-bit), and the formatter is tested on the real tokenizer. The GPU path (bitsandbytes 4-bit loading, `prepare_model_for_kbit_training`, float16 on a T4) has not run yet, and Kaggle's preinstalled torch may not match the pinned transformers/trl. The P100 may not support bitsandbytes' 4-bit kernels (use a T4).
 **Done when:** the first Kaggle run on a real dataset finishes, its `lineage.json` is checked (`distill/TRAINING.md`, step 5), and any version fix is pinned.
 
-### 72. Groq's Services Agreement §6.3(e): teacher decision deferred to 2026-11-04, waiting for Groq
+### 72. Groq's Services Agreement §6.3(e): teacher decision (closed 2026-11-01: option a, design decision 29)
 **Labels:** `distillation`, `process`, `medium`
+
+**Closed 2026-11-01: option a, `groq` + `openai/gpt-oss-120b` (design decision 29).**
+- **Groq's written confirmation came before the 11-04 deadline.** In the same support chat as the 10-30 contact, on 2026-10-31 (06:50 PDT), Groq Support confirmed that using gpt-oss-120b outputs to fine-tune a smaller open model for this personal AI agent project is permitted, provided the use follows Groq's AI Usage Policy and the applicable terms. Summarized, not quoted; the owner keeps the transcript privately.
+- **Groq's AI Usage Policy** (effective 2025-10-15, read 2026-11-01) has nothing on training with outputs or competing models, so nothing in it conflicts with this use.
+- **Scope kept:** a personal project; no hosted or inference service; the student weights are not published.
+- **Option c's evidence stays pinned and is not training data:** the selection below (`distill/selection/`) and its collection d1.2-pass1 (`distill/collection/`). One teacher per dataset (design decision 22): `teachers.toml` now has only Groq's entry active.
+- **`docs/phase4-plan.md` section 8 is unchanged;** the option c amendment draft is not applied.
+- **Correction to the record below:** the 2026-10-30 contact was a support chat (the same thread as the 10-31 confirmation), not an email follow-up, and Groq's 10-30 reply came in that chat.
+
+The history, as it stood before the decision:
 Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no output restrictions, but §6.3(e) bars using the Cloud Services to "develop or improve products, services, or other offerings that are similar or compete" with them (agreement last modified 2026-06-22). **Provisional reading (a):** a small locally served student for a personal agent is neither similar to nor competing with Groq's inference platform. The owner emailed Groq support on 2026-10-18 for written confirmation and is waiting for the reply. `distill/COLLECTION.md` is blocked until the owner confirms, and its first lines say so. Fallback if the answer is no: gpt-oss-20b served locally by Ollama as the teacher (design decision 22).
 **Deferred by the owner (2026-10-30), no decision number yet.**
-- **When the decision was deferred, Groq hadn't replied** to the 2026-10-18 email or to the 2026-10-30 follow-up.
-- **Groq's reply (later on 2026-10-30, summarized, not quoted).** A Groq representative wrote that they understand the use case: personal research and a portfolio project, fine-tuning a model that runs locally, not offered as a hosted service. They are reviewing §6.3(e) with an internal team before confirming. **No permission has been given yet**, so this doesn't meet the "written confirmation" condition below. The owner keeps the email as evidence; it isn't copied into the repository.
+- **When the decision was deferred, Groq hadn't replied** to the 2026-10-18 email or to the 2026-10-30 follow-up (a support chat, corrected 11-01).
+- **Groq's reply (later on 2026-10-30, in that support chat, summarized, not quoted).** A Groq representative wrote that they understand the use case: personal research and a portfolio project, fine-tuning a model that runs locally, not offered as a hosted service. They are reviewing §6.3(e) with an internal team before confirming. **No permission has been given yet**, so this doesn't meet the "written confirmation" condition below. The owner keeps the transcript as evidence; it isn't copied into the repository.
 - **The owner will not train on Groq outputs without Groq's written confirmation.** Accepting reading (a) without it is no longer an option.
 - **Deadline 2026-11-04.** If Groq confirms in writing by then: **option a** (Groq + gpt-oss-120b, ~253k billable, its own approval line). Otherwise: **option c**, a teacher self-hosted on Kaggle, the model chosen by the measurement below.
 - **Meanwhile option c is built and tested on Kaggle** (Kaggle GPU quota, no Groq): the notebook in `distill/COLLECTION.md` ("Option c notebook").
@@ -420,9 +431,9 @@ Customers own Inputs and Outputs (§8.1) and gpt-oss-120b is Apache-2.0 with no 
 - **Winner: Qwen3-30B-A3B-Instruct-2507 Q4** (`qwen3:30b-a3b-instruct-2507-q4_K_M`, digest `19e422b02313`, served as `kestrel-teacher-qwen3-30b-a3b` with Kestrel's template, #73).
 - **Recomputed independently from the raw results files and trace databases** (a separate script, not `kaggle_collect.py`). It matched the notebook's `selection.md` on every number and on the winner. Both agent fingerprints (`3b62fe10ee54`, `f9e11df679f6`) recompute locally from the code with `KESTREL_REQUEST_TIMEOUT=600`. They differ from `35fac5ba6277` only in provider, model and timeout.
 - **Caveat:** 20 tasks, decided on the third criterion. This is the pre-registered rule's choice, not evidence that Qwen is the better teacher.
-- **`teachers.toml`** now has the Qwen entry active as the option c teacher. Option a (Groq) is kept, commented out. Qwen is **used only if Groq hasn't confirmed in writing by 2026-11-04**; if Groq confirms, the two swap back. Checked on the compare traces with the shipped file: `kestrel distill build` keeps Qwen's traces (0 dropped as `teacher`, 0 as `harmony_leak_*`) and drops all of gpt-oss:20b's as `teacher`.
+- **`teachers.toml`** (10-31; swapped back 11-01, see the top) had the Qwen entry active as the option c teacher. Option a (Groq) was kept, commented out. Qwen is **used only if Groq hasn't confirmed in writing by 2026-11-04**; if Groq confirms, the two swap back. Checked on the compare traces with the shipped file: `kestrel distill build` keeps Qwen's traces (0 dropped as `teacher`, 0 as `harmony_leak_*`) and drops all of gpt-oss:20b's as `teacher`.
 
-**Done when:** Groq's written confirmation arrives by 2026-11-04 and the teacher is option a, or the selection above has run and its winner is the option c teacher (`src/kestrel/distill/teachers.toml`, step 0 of `distill/COLLECTION.md`).
+**Done when:** Groq's written confirmation arrives by 2026-11-04 and the teacher is option a, or the selection above has run and its winner is the option c teacher (`src/kestrel/distill/teachers.toml`, step 0 of `distill/COLLECTION.md`). **Done 2026-11-01:** option a (the first condition).
 
 ### 73. Ollama's own qwen3:4b-instruct-2507 template garbles tool schemas
 **Labels:** `distillation`, `serving`, `medium`
