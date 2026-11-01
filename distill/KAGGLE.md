@@ -138,8 +138,14 @@ once, nothing skipped or errored).
    $shards = Get-ChildItem evals\results\distill-d1.2-*-shard-*-of-8.json | ForEach-Object FullName
    uv run --no-sync python distill\kaggle_collect.py check-shards $shards      # "Shards OK"
    $copy = "$env:TEMP\distill-d1.2-pass1.db"; Copy-Item logs\distill.db $copy
+   $env:KESTREL_REQUEST_TIMEOUT = "600"   # the value Kaggle used (REQUEST_TIMEOUT_S); it is part of the fingerprint
    uv run --no-sync kestrel distill build --db $copy --results $shards --out data\distill\d1.2-pass1
    ```
+
+   **Set `KESTREL_REQUEST_TIMEOUT` to 600 before building.** The notebook runs with a 600 s request timeout,
+   and the agent fingerprint records it. Without the setting, the laptop's default (60 s) gives a different
+   fingerprint and the build stops. The error names the input that differs ("request_timeout_s 600.0 in the
+   file vs 60.0 now") and the setting to use.
 
 There's no rate-limit audit for option c (no Groq). Read the manifest checks in `COLLECTION.md` step 7: the
 provenance must match `collect/manifest.json` (teacher, digest, commit).

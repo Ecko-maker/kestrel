@@ -239,13 +239,35 @@ def check_agent_fingerprints(paths: list[Path]) -> None:
         meta = data.get("meta") or {}
         agent = meta.get("agent")
         recorded = agent.get("sha") if isinstance(agent, dict) else None
-        current = agent_fingerprint(str(meta.get("provider", "")), str(meta.get("model", "")))["sha"]
+        parts = agent_fingerprint(str(meta.get("provider", "")), str(meta.get("model", "")))
+        current = parts["sha"]
         if recorded != current:
             raise FingerprintMismatch(
                 f"{path.name}: agent fingerprint {recorded or 'missing'} in the file, {current} for the current code. "
-                "The run was collected with different agent code (system prompt, tools or limits). Build the dataset "
-                "at the collection commit: in the runs folder, as distill/COLLECTION.md step 8 does."
+                + mismatch_hint(agent, parts)
             )
+
+
+def mismatch_hint(recorded: Any, current: dict[str, Any]) -> str:
+    """What to do about a fingerprint mismatch: the inputs that differ when the file records them (newer
+    files do), else the general advice."""
+    differ = (
+        sorted(k for k in current if k != "sha" and k in recorded and recorded[k] != current[k])
+        if isinstance(recorded, dict)
+        else []
+    )
+    if not differ:
+        return (
+            "The run was collected with different agent code (system prompt, tools or limits). Build the dataset "
+            "at the collection commit: in the runs folder, as distill/COLLECTION.md step 8 does."
+        )
+    shown = "; ".join(f"{k} {recorded[k]} in the file vs {current[k]} now" for k in differ)
+    hints = []
+    if "request_timeout_s" in differ:
+        hints.append(f"set KESTREL_REQUEST_TIMEOUT={recorded['request_timeout_s']:g} (the run's value) and build again")
+    if set(differ) - {"request_timeout_s"}:
+        hints.append("build at the collection commit, in the runs folder (distill/COLLECTION.md step 8)")
+    return f"Differs: {shown}. To fix: {'; '.join(hints)}."
 
 
 def results_sources(paths: list[Path]) -> dict[str, dict[str, str]]:

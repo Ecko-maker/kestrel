@@ -1,0 +1,43 @@
+{
+  "mode": "collect",
+  "teacher": {
+    "name": "Qwen3-30B-A3B-Instruct-2507",
+    "tag": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+    "served_as": "kestrel-teacher-qwen3-30b-a3b",
+    "template": "kestrel",
+    "digest": "19e422b0231392335cfc49cfd172de7034bb1aeabb08aa307cce745c60b272fe",
+    "provider": "ollama"
+  },
+  "ollama_version": "0.40.13",
+  "gpu": {
+    "devices": [
+      {
+        "name": "Tesla T4",
+        "memory": "15360 MiB"
+      },
+      {
+        "name": "Tesla T4",
+        "memory": "15360 MiB"
+      }
+    ],
+    "fits": true,
+    "loaded": {
+      "size": 20733094788,
+      "size_vram": 20733094788
+    }
+  },
+  "commit": "5cce69cdee155f7499de8b89b68c2732e6a3058e",
+  "agent_fingerprint": "f9e11df679f6",
+  "files": [
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-1-of-8.json",
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-2-of-8.json",
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-3-of-8.json",
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-4-of-8.json",
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-5-of-8.json",
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-6-of-8.json",
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-7-of-8.json",
+    "results/distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-8-of-8.json"
+  ],
+  "started": "2026-11-01T00:55:35+00:00",
+  "finished": "2026-11-01T01:07:12+00:00"
+}

@@ -6,3 +6,5 @@ evals/controls/*.json -text
 # The option c teacher selection evidence (distill/selection/), hashed the same way (tests/test_kaggle_collect.py).
 distill/selection/*.json -text
 distill/selection/selection.md -text
+# The d1.2-pass1 collection and build manifests (distill/collection/), hashed the same way.
+distill/collection/*.json -text

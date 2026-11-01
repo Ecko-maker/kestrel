@@ -310,6 +310,43 @@ def test_72s_rule_on_the_pinned_numbers_gives_the_pinned_winner() -> None:
         assert m["commit"].startswith("5ec57a7") and len(m["gpu"]["devices"]) == 2
 
 
+# --- the pinned collection d1.2-pass1 (distill/collection/, 2026-11-01) --------------------------------------
+
+COLLECTION = ROOT / "distill" / "collection"
+PINNED_COLLECTION = {
+    "collect-manifest-5cce69cdee15.json": "cf2eb646a7c5043ec6422bb11c4a1ad812da87dc702b9e34a14cbf3edf2668bc",
+    "build-manifest-d1.2-pass1.json": "694e2189d277520c2ba4d85ca3be21499c4269a29f92910e930081a56f74b0a8",
+}
+
+
+@pytest.mark.parametrize("name", sorted(PINNED_COLLECTION))
+def test_the_pinned_collection_manifests_are_unchanged(name: str) -> None:
+    assert hashlib.sha256((COLLECTION / name).read_bytes()).hexdigest() == PINNED_COLLECTION[name]
+
+
+def test_the_collection_readme_lists_the_pinned_hashes() -> None:
+    readme = (COLLECTION / "README.md").read_text(encoding="utf-8")
+    assert all(sha in readme for sha in PINNED_COLLECTION.values())
+
+
+def test_the_pinned_collection_and_build_agree() -> None:
+    run = json.loads((COLLECTION / "collect-manifest-5cce69cdee15.json").read_text(encoding="utf-8"))
+    build = json.loads((COLLECTION / "build-manifest-d1.2-pass1.json").read_text(encoding="utf-8"))
+    selected = json.loads((SELECTION / "manifest-kestrel-teacher-qwen3-30b-a3b.json").read_text(encoding="utf-8"))
+    assert run["mode"] == "collect" and run["gpu"]["fits"] is True
+    assert run["teacher"]["digest"] == selected["teacher"]["digest"]  # the model #72 selected, not a re-pull
+    assert build["teachers"] == [{"provider": "ollama", "model": run["teacher"]["served_as"]}]
+    assert build["git"] == {"commit": run["commit"], "dirty": False}
+    assert sorted(build["results"]) == sorted(Path(f).name for f in run["files"]) and len(run["files"]) == 8
+    assert all(r["source"] == "distill" for r in build["results"].values())
+    s = build["stats"]
+    assert (s["traces_seen"], s["kept"], s["train"], s["val"]) == (129, 82, 74, 8)
+    assert s["kept"] + sum(s["dropped"].values()) == s["traces_seen"]
+    for k in ("teacher", "contamination_run", "contamination_prompt", "near_duplicate"):  # provenance and overlap
+        assert s["dropped"][k] == 0
+    assert all(v == 0 for k, v in s["dropped"].items() if k.startswith("harmony_leak_"))
+
+
 # --- the notebook ---------------------------------------------------------------------------------------------
 
 
