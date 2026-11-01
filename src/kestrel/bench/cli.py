@@ -15,6 +15,7 @@ from typing import Any
 
 from kestrel.answer_policy import AnswerPolicy
 from kestrel.bench import calibrate as cal
+from kestrel.bench import cost as cost_report
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
@@ -64,6 +65,7 @@ from kestrel.bench.tasks import (
 from kestrel.bench.validate import check_network_rules, concerns, markers_of, validate
 from kestrel.distill import DISTILL_DB, DISTILL_DIR, DISTILL_VERSION
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
+from kestrel.pricing import load_prices
 from kestrel.tracing import Tracer
 
 RESULTS_DIR = Path(__file__).resolve().parents[3] / "evals" / "results"
@@ -231,6 +233,20 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     prereg.add_argument("--cost-shown", choices=["yes", "no"], help="section 8.2: the cost upper bound is < 0")
     prereg.add_argument("--safety", choices=["held", "failed"], help="section 8.4: the routed safety gate")
     prereg.add_argument("--drift", choices=["none", "drift"], help="section 8.3: the same-week drift guard")
+
+    cost_cmd = actions.add_parser(
+        "cost",
+        help="list-price cost, Groq billable tokens and the teacher's share of turns, from a results file's traces",
+    )
+    cost_cmd.add_argument("results", type=Path, help="results JSON (e.g. the routed run)")
+    cost_cmd.add_argument("--db", type=Path, required=True, help="the trace database the run wrote (read-only)")
+    cost_cmd.add_argument(
+        "--teacher", type=Path, help="section 8.2: the teacher reference's results, for the paired cost bound"
+    )
+    cost_cmd.add_argument("--teacher-db", type=Path, help="the teacher reference's trace database (default: --db)")
+    cost_cmd.add_argument("--prices", type=Path, help="prices.toml (default: KESTREL_PRICES or Kestrel's own)")
+    cost_cmd.add_argument("--out", type=Path, help="also write the Markdown report here")
+    cost_cmd.add_argument("--json", type=Path, help="also write the numbers as JSON here")
 
     val = actions.add_parser(
         "validate", help="check task files before running them (schema, canaries, fixtures, checks)"
@@ -1159,6 +1175,33 @@ def preregistered_verdict(args: argparse.Namespace, teacher: dict[str, Any], rou
     return "\n".join(lines)
 
 
+def cmd_cost(args: argparse.Namespace) -> int:
+    prices = load_prices(args.prices)
+    try:
+        routed = cost_report.build(_load(args.results), args.db, prices, str(args.results))
+        teacher = cmp = None
+        if args.teacher:
+            teacher = cost_report.build(_load(args.teacher), args.teacher_db or args.db, prices, str(args.teacher))
+            cmp = cost_report.compare_cost(teacher, routed)
+    except FileNotFoundError as e:
+        sys.exit(str(e))
+    text = cost_report.markdown(routed, cmp, teacher)
+    print(text, end="")
+    if args.out:
+        args.out.write_text(text, encoding="utf-8")
+    if args.json:
+        data: dict[str, Any] = {"routed": cost_report.summary(routed)}
+        if teacher is not None and cmp is not None:
+            data["teacher"] = cost_report.summary(teacher)
+            data["comparison"] = {
+                "diff_micro_usd_per_task": None if cmp.diff is None else vars(cmp.diff),
+                "cost_shown": cmp.cost_shown,
+                "problems": cmp.problems,
+            }
+        args.json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     path = args.results or _newest_results()
     data = _load(path)
@@ -1174,6 +1217,7 @@ def main(args: argparse.Namespace) -> int:
         "rejudge": cmd_rejudge,
         "compare": cmd_compare,
         "report": cmd_report,
+        "cost": cmd_cost,
         "unlock": cmd_unlock,
         "validate": cmd_validate,
         "show": cmd_show,

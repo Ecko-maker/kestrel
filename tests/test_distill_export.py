@@ -190,3 +190,31 @@ def test_base_and_student_get_the_same_modelfile() -> None:
     )
     source = (ROOT / "distill" / "export.py").read_text(encoding="utf-8")
     assert source.count("modelfile(template, gguf.name)") == 1  # one call, used for --base and the student
+
+
+def test_gguf_mode_writes_the_same_modelfile_next_to_an_existing_gguf(tmp_path: Path) -> None:
+    """--gguf (serve a GGUF built earlier) skips merge and conversion and writes the student's Modelfile."""
+    gguf = tmp_path / "model-q4_K_M.gguf"
+    gguf.write_bytes(b"GGUF")
+    assert export.main(["--gguf", str(gguf)]) == 0
+    assert (tmp_path / "Modelfile").read_text(encoding="utf-8") == export.modelfile(tf.OLLAMA_TEMPLATE, gguf.name)
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--base"], "leave out --adapter and --base"),
+        (["--out", "elsewhere"], "leave out --out"),
+        (["--verify"], "needs --lineage"),
+        (["--verify", "--lineage", "lineage.json"], "no tokenizer folder"),
+    ],
+)
+def test_gguf_mode_refuses_what_it_cant_honour(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], extra: list[str], message: str
+) -> None:
+    gguf = tmp_path / "model-q4_K_M.gguf"
+    gguf.write_bytes(b"GGUF")
+    with pytest.raises(SystemExit):
+        export.main(["--gguf", str(gguf), *extra])
+    assert message in capsys.readouterr().err
+    assert not (tmp_path / "Modelfile").exists()

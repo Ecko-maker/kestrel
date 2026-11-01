@@ -469,3 +469,17 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - **Fixing #59 before collection:** cleaner traces, but a measured agent change first (main suite and safety split before and after, more Groq days), delaying collection past the plan.
 
 **Why:** the decision was pre-registered with its condition before either answer was known, and the condition was met, so following it avoids choosing a teacher after seeing results. Keeping option c's evidence pinned but out of training keeps the record honest without diluting the dataset.
+
+## D-pending-phase4-cost-report. Phase 4 cost from the traces, priced with one table for both sides
+
+**Decision:** section 8.2's cost rule is computed by `kestrel bench cost` (`src/kestrel/bench/cost.py`) from each results file's trace database, not from the cost stored on the traces.
+- Every llm_call span is priced again with the current `prices.toml` list prices, the same table for the routed run and the teacher reference, so a price change between their dates can't favour either side.
+- Ollama calls cost $0 (local hardware, electricity not counted). A non-local call without a list price is "unpriced".
+- The judge isn't counted. Cached input is priced as ordinary input on both sides (prices.toml has no cached price).
+- Per task, the cost is the mean over its runs; D = routed - teacher; shown when the 95% paired bootstrap upper bound of mean(D) is < 0 (10,000 resamples, seed 2026, in micro-dollars so rounding can't hide it).
+- Any missing trace, unpriced call, task on one side only, or routed teacher that isn't the reference's model makes it **can't decide**: no `--cost-shown` flag is given until fixed.
+- The same report gives Groq billable tokens per 100 tasks (Groq spans only, cached input left out), latency p50/p95, and the teacher's share of turns and of task runs with 95% intervals (bootstrap over tasks of the ratio, since a task's repeats aren't independent).
+
+**Alternatives:** the trace's stored `list_price_usd` (priced at run time, so two runs weeks apart could use different tables, and a trace whose calls were all local stores None); billable tokens from the results rows (a routed row's `tokens` include the student's Ollama tokens, which never count on Groq).
+
+**Why:** a cost claim must price exactly the same work the same way on both sides, and it shouldn't pass on a gap in the data.

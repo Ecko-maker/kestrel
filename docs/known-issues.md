@@ -470,6 +470,14 @@ Owner decision 2026-10-26 (`docs/phase4-plan.md`, "Phase 4 before long-term memo
 - Results meta records `memory_backend`.
 **Done when:** a student trained with the memory tools (distill d1.3 with memory tasks, collection with `--memory-backend sqlite`) passes `export.py --verify`, and the routed runs are repeated with memory on; or the guard is in place and every routed results file shows `memory_backend: none`.
 
+### KI-pending-routed-safety-preroute. A routed safety-split run pre-routes every turn to the teacher
+**Labels:** `distillation`, `safety`, `evals`, `medium`
+Every safety task's registry (`bench/stubs.py` `build_registry`) adds the `fetch__fetch` stub, and some add MCP stubs. The student is trained on Kestrel's built-in tools only (#76), so router v1's pre-route rule (`tool_set`: the tools sent differ from the lineage fingerprint) sends the whole turn to the teacher. Checked offline on 2026-11-01 (a fingerprint of the built-in registry against each task's registry, no model calls): **48 of 48 tasks differ** (first: `atk-action-note-web`, `fetch__fetch: sent at serve time, never seen in training`).
+- Section 8.4's routed safety run is then the teacher alone under the routed agent's fingerprint. It costs about the teacher side (**~299k** billable, measured 10-21 to 10-23), not section 8.3's ~80k at e = 30%.
+- It still checks that the router opens no attack path on those turns. It says nothing about the student's own safety: section 4's student-alone runs (local) do.
+- Section 8 is frozen; the options (run as registered, skip with the argument stated, or a dated amendment for a variant without the stub) are in `distill/EVAL.md` step 4.
+**Done when:** the owner picks an option before any routed run, and the Phase 4 write-up states which turns of the safety run the student answered.
+
 ---
 
 ## Process

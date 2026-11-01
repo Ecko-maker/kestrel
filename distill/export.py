@@ -3,6 +3,7 @@
     python distill/export.py --adapter RUN/adapter --out EXPORT --name kestrel-student --create --verify
     python distill/export.py --smoke --adapter RUN/adapter --out EXPORT --name kestrel-smoke --create --verify
     python distill/export.py --base --out EXPORT-BASE --name kestrel-base --create --verify   # the untrained base
+    python distill/export.py --gguf EXPORT/model-q4_K_M.gguf --name kestrel-student --create --verify   # serve again
 
 1. Merge: the base model (the pinned revision from train_config.toml, or RUN/base for a --smoke run) plus
    the adapter, merged in float16 on CPU (peft merge_and_unload), saved as safetensors (EXPORT/merged).
@@ -22,6 +23,11 @@
    Ollama's OpenAI-compatible endpoint (the way Kestrel's Ollama provider calls it, 1 token), and
    Ollama's prompt token count must equal the training tokenizer's count for train_format.render(). That
    checks the running server: a wrong TEMPLATE, a missing num_ctx or extra tokens all change the count.
+
+--gguf skips steps 1-2 for a GGUF that was already built (another machine, or after `ollama rm`): it
+writes the same Modelfile next to it, then --create and --verify as above. The tokenizer for --verify is
+EXPORT/merged (--tokenizer to point elsewhere); the lineage is --lineage (required with --verify, since a
+GGUF alone doesn't say which tool schemas it was trained on).
 
 --base exports the untrained base model through the same GGUF path and the same Modelfile (only the
 GGUF differs), so a base-vs-student comparison is like for like: never compare against Ollama's packaged
@@ -212,7 +218,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--adapter", type=Path, help="the trained adapter folder (RUN/adapter)")
     parser.add_argument("--base", action="store_true", help="export the untrained base, same template (comparisons)")
     parser.add_argument("--lineage", type=Path, help="the run's lineage.json (default: next to the adapter folder)")
-    parser.add_argument("--out", type=Path, required=True, help="export folder (merged/, GGUF, Modelfile)")
+    parser.add_argument("--out", type=Path, help="export folder (merged/, GGUF, Modelfile); with --gguf, its folder")
+    parser.add_argument("--gguf", type=Path, help="an already-built GGUF: write its Modelfile, then --create/--verify")
+    parser.add_argument("--tokenizer", type=Path, help="with --gguf: the tokenizer folder (default <gguf dir>/merged)")
     parser.add_argument("--name", default="kestrel-student", help="Ollama model name (default kestrel-student)")
     parser.add_argument("--config", type=Path, default=HERE / "train_config.toml")
     parser.add_argument("--smoke", action="store_true", help="the adapter of a train.py --smoke run")
@@ -224,11 +232,29 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     with args.config.open("rb") as f:
         cfg = tomllib.load(f)
-    if not args.base and args.adapter is None:
-        parser.error("--adapter is required (or --base for the untrained base model)")
-    args.out.mkdir(parents=True, exist_ok=True)
-    merged = base_source(cfg, args.adapter, args.smoke) if args.base else merge(args.adapter, args.out, cfg, args.smoke)
-    gguf = to_gguf(merged, args.out, args.llama_cpp, args.quantize)
+    if args.gguf is not None:
+        if args.adapter is not None or args.base:
+            parser.error("--gguf serves an existing GGUF: leave out --adapter and --base")
+        if not args.gguf.is_file():
+            parser.error(f"no GGUF at {args.gguf}")
+        if args.out is not None and args.out.resolve() != args.gguf.parent.resolve():
+            parser.error("--gguf writes the Modelfile next to the GGUF: leave out --out")
+        if args.verify and args.lineage is None:
+            parser.error("--gguf --verify needs --lineage (the training run's lineage.json)")
+        args.out, gguf = args.gguf.parent, args.gguf
+        merged = args.tokenizer or args.out / "merged"
+        if args.verify and not merged.is_dir():
+            parser.error(f"no tokenizer folder at {merged}: give --tokenizer")
+    else:
+        if args.out is None:
+            parser.error("--out is required")
+        if not args.base and args.adapter is None:
+            parser.error("--adapter is required (or --base for the untrained base model)")
+        args.out.mkdir(parents=True, exist_ok=True)
+        merged = (
+            base_source(cfg, args.adapter, args.smoke) if args.base else merge(args.adapter, args.out, cfg, args.smoke)
+        )
+        gguf = to_gguf(merged, args.out, args.llama_cpp, args.quantize)
     template = load_train_format().OLLAMA_TEMPLATE
     (args.out / "Modelfile").write_text(modelfile(template, gguf.name), encoding="utf-8", newline="\n")
     print(f"GGUF: {gguf}\nModelfile: {args.out / 'Modelfile'}")
