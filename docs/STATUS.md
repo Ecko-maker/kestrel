@@ -4,13 +4,19 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-10-31 evening EDT, from the 10-31 option c selection session (log below).
+2026-11-01 morning EST, from the 11-01 teacher-decision session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) and `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
 
-**The single next step:** the full option c collection on Kaggle (122 distill tasks, Qwen3-30B-A3B, no Groq), from `phase4/kaggle-teacher` `5cce69c`. The teacher decision is still **deferred to 2026-11-04**: option a only with Groq's written confirmation by then, otherwise option c with Qwen. Nothing has been trained.
+**The single next step:** the option a teacher collection on Groq, day 1 of 2 (122 distill tasks, `groq` + `openai/gpt-oss-120b`, `--judge none`), in `..\kestrel-runs` at `phase4/kaggle-teacher` `5b2a242`, under the 11-01/11-02 approval line below. Nothing has been trained.
+
+## 2026-11-01 (teacher-decision session; KestrelBench not run, no Groq)
+
+1. **#72 decided and closed: option a, `groq` + `openai/gpt-oss-120b` (design decision 29, on `phase4/kaggle-teacher` `5b2a242`).** Groq Support confirmed the use in writing in a support chat on 2026-10-31, before the 11-04 deadline (summarized in #72; the transcript stays with the owner). Groq's AI Usage Policy has nothing that conflicts. Scope: personal project, no hosted service, student weights not published. Correction: the 10-30 contact was a support chat, not an email follow-up. `teachers.toml` lists only Groq's entry; agent fingerprint `35fac5ba6277` unchanged; checks green (1004 passed).
+2. **Option c pass 1 is evidence only, never training data** (one teacher per dataset, design decision 22). Kaggle collect run 11-01 00:55-01:07 UTC at `5cce69c` (Qwen3-30B-A3B): 122/122 tasks, 93 passed, 0 errored; built 82 examples (74 train / 8 val). Manifests pinned in `distill/collection/` (`826e690`), findings in `distill/COLLECTION.md`. Section 8 unchanged; the option c amendment is not applied.
+3. **#59 (draft-and-ask): collect now, fix later.** Traces that draft and ask fail their checks and are dropped; the later prompt fix must re-measure the routed system too, or retrain. Backup of the Kaggle outputs: `C:\kestrel-backup\2026-10-31\` (32 files, SHA-256 manifest).
 
 ## 2026-10-31 (option c selection session; KestrelBench not run, no Groq)
 
@@ -135,7 +141,7 @@ Dependabot PRs #15 and #17 merged 2026-10-30 (the 10-30 log, item 6); #33 is ope
 - **Calendar:**
   1. ~~After-run resumes~~: done in one resume 10-28 15:22–15:44 EDT; verdict 10-28.
   2. Merges, one per quota day: #14 (done 10-28, no evals) and tiers-v2 (done 10-29, 59.7k), console (done 10-29, no evals), voice (done 10-29, 64.3k), phase4 (done 10-30, 60.6k). The no-eval branches go in between.
-  3. Teacher data: option a (Groq, ~253k, 2 days) only with Groq's written confirmation by 2026-11-04 and its own approval line; otherwise option c on Kaggle (no Groq), and the freed days may go to the #59 fix (own approval line).
+  3. Teacher data: **option a (decided 11-01, design decision 29)**, Groq, ~253k (dry run up to ~313k), 11-01 and 11-02, approval line below.
   4. Kaggle QLoRA training (no Groq; under 1 GPU hour).
   5. Student evals: the student on Ollama locally, the judge only on Groq.
 
@@ -158,6 +164,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 2026-10-29 | voice → main PR (`voice/talk`, one CI run on the PR + one on the merge to main) | ~56k (estimate) | approved by the owner, up to 70k billable. Rebased onto `main` `7664103` (after PR #29), agent fingerprint `35fac5ba6277` = main's; extra pushes to the open PR need a new approval line. **PR run:** PR #31 (run `40970175103`, 10-29 19:03–19:06 EDT), **31,289 billable**, 94% (15/16), 0 errors. PR #31 was opened before this line merged (PR #30), so that run started without its approval line on `main`; it stayed within the 70k. The merge-to-main run has up to 38,711 left. **Merge run:** `40985473324` (10-29 ~21:22 EDT), **32,961 billable**, 94% (15/16), 0 errors. Total **64,250** over the 2 runs, within the 70k; no extra pushes. |
 | 2026-10-29 | 10-29 evening: same-day drift control (known issue #58), old agent ×2 and new agent ×0 on the CI subset, approved up to **55,000** billable | old ×2: ~44–56k (22.2k per run on 10-07; 28k per run as the planning estimate) | approved by the owner. One command in `..\kestrel-runs` at `c7c0d4f` (agent `cc5c16377662`): `--subset ci --repeat 2 --token-budget 55000`, no `--wait-for-quota`, results `control-old-ci-2026-10-29.json`. Budget: 200,000 − 91,030 used in the last 24 h (CI runs on PR #27, the tiers-v2 merge and PR #31) − 15,000 margin = 93,970; minus 38,711 kept for the voice merge run = 55,259. A new-agent run (~28k) doesn't fit as well: today's three CI runs of agent `35fac5ba6277` are the new side. Starts only after this line is on `main` and while no other Groq consumer runs. **Ran:** finished 10-29 21:58 EDT (line merged as PR #32 at 20:50 EDT), runs folder at `c7c0d4f`, agent `cc5c16377662`; **39,706 billable**, within the 55k; 84%, 0 errored. Pinned in `evals/controls/`; result under known issue #58. |
 | 2026-10-30 | phase4 → main PR (`phase4/trace-dataset`, one CI run on the PR + one on the merge to main) | ~56k (estimate) | approved by the owner, up to 70k billable. Rebased onto `main` `d47bf09`, tip `f0a877b`, agent fingerprint `35fac5ba6277` = main's. Opens only after this line is on `main`, while no other Groq consumer runs, and when 200,000 − last-24 h use − 15,000 ≥ 70,000. Extra pushes to the open PR need a new approval line. **Ran:** PR #37 run `41131505114` (10-30 17:30 EDT, quota check 81,044 ≥ 70,000), **30,911 billable**, 88% (14/16), 0 errors; merge-to-main run `41133429864` cancelled by the Dependabot merges before it started (0 tokens), re-run with the owner's OK 18:20 EDT, **29,685 billable**, 94% (15/16), 0 errors. Total **60,596**, within the 70k; no extra pushes. |
+| 11-01 and 11-02 | Phase 4 teacher collection, 122 distill tasks on groq gpt-oss-120b (`--split distill --judge none`, runs folder at `phase4/kaggle-teacher` `5b2a242`, agent `35fac5ba6277`) | ~253k (estimate; dry run ~313k) | approved by the owner, up to **320k billable over the two days**. One command per day, with `--token-budget` set so Groq's window keeps a 15k margin; never a loop. Day 1 budget: 200,000 − 0 used in the last 24 h (8 CI runs, all "KestrelBench not run"; no local Groq traces) − 15,000 = 185,000. Starts only after this line is on `main` and while no other Groq consumer runs. |
 
 ## Owner decisions open
 
@@ -165,7 +172,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 2. **Memory before or after teacher data:** decided 2026-10-26 (option B: Phase 4 first). In `main` with phase4 (CLAUDE.md, `docs/phase4-plan.md`); `docs/memory-rag-design.md` is still on `phase3/memory-rag`.
 3. **Park the v1.2 suite items until after Phase 4** (D1 says "after the Phase 3 gate"): `sandbox-parent-dir` leak check, `act-email-priya-actions` ambiguity, hard split.
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
-5. **Teacher decision (#72, Groq §6.3(e))**: **deferred to 2026-11-04** (owner, 2026-10-30; no decision number yet). Groq replied on 10-30 that §6.3(e) is under internal review; no permission yet. Option a only with Groq's written confirmation by then; otherwise option c, chosen by #72's pre-registered selection. Publishing the weights is decided with it.
+5. ~~**Teacher decision (#72, Groq §6.3(e))**~~: decided 2026-11-01, **option a** (Groq's written confirmation, 10-31), design decision 29 on `phase4/kaggle-teacher`. The student weights are not published.
 6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
 
 ## Docs on unmerged branches
@@ -197,7 +204,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-student-no-memory | phase4 (rebased 10-30) | **final 78** (was 51) |
 | KI-pending-training-on-bench, -secret-scrub-v0 | trace-dataset-v0 | **25, 26** |
 
-Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**.
+Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**.
 
 ## Data outside git
 
@@ -209,5 +216,6 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | Phase 2 intermediate results (superseded by `evals/baselines/`) | `evals/results/` | no |
 | Kaggle smoke bundle (rebuildable) | `dist/kaggle-smoke/` | no |
 | Kaggle notebook and dataset versions | Kaggle | – |
+| Option c evidence: teacher selection, pass 1 collection, its dataset (evidence only), scratch DB | `..\kestrel-runs\evals\results\teacher-selection-5ec57a709a43\`, `...\collect-5cce69cdee15\`, `..\kestrel-runs\data\distill\d1.2-pass1\`, `%TEMP%\distill-d1.2-pass1.db` | yes, 2026-10-31 backup |
 
-Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here.
+Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here.
