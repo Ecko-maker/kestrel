@@ -64,11 +64,29 @@ def check_out(out: Path) -> None:
 DATA_FILES = ("train.jsonl", "val.jsonl", "manifest.json")
 
 
-def check_data(data: Path) -> None:
-    """A training run needs all three files of a `kestrel distill build` folder: check before loading a model."""
+def check_data(data: Path, cfg: dict[str, Any]) -> None:
+    """Before loading a model: all three files of a `kestrel distill build` folder, and a manifest from the
+    teacher and the filter pipeline in the config's [data] (option a, today's distill build)."""
     missing = [name for name in DATA_FILES if not (data / name).is_file()]
     if missing:
         raise SystemExit(f"--data {data} is missing {', '.join(missing)} (a `kestrel distill build` folder has all 3)")
+    manifest = json.loads((data / "manifest.json").read_text(encoding="utf-8"))
+    teachers, want = manifest.get("teachers"), cfg["data"]["teachers"]
+    if teachers != want:
+        raise SystemExit(f"--data {data}: the manifest's teachers are {teachers}, not {want} (design decision 29)")
+    filters = (manifest.get("settings") or {}).get("filters")
+    if filters != cfg["data"]["filters"]:
+        raise SystemExit(
+            f"--data {data}: built with filters {filters}, not today's `kestrel distill build` pipeline; rebuild it"
+        )
+
+
+def code_commit() -> str | None:
+    """The commit of the training code: the COMMIT file scripts/build_train_snapshot.py puts next to this file."""
+    path = HERE / "COMMIT"
+    if not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8").strip() or None
 
 
 def sha256(path: Path) -> str:
@@ -383,6 +401,7 @@ def run(data: Path, out: Path, config_path: Path, smoke: bool) -> dict[str, Any]
         # not from the traces). export.py --verify compares them with what Kestrel sends at serve time.
         "tool_schemas": tool_sets[0] if tool_sets else None,
         "distinct_tool_sets": len(tool_sets),
+        "code_commit": code_commit(),  # None only for a --smoke run from the repo
         "base_model": {"id": base["id"], "revision": base["revision"], "random_tiny": smoke},
         "config": cfg,
         "libraries": versions(),
@@ -414,11 +433,13 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--gpu-smoke", action="store_true", help="GPU: real base model overfits a fixed batch")
     args = parser.parse_args(argv)
     check_out(args.out)
-    if not args.gpu_smoke:
-        check_data(args.data)
+    with args.config.open("rb") as f:
+        cfg = tomllib.load(f)
     if args.gpu_smoke:
-        with args.config.open("rb") as f:
-            return 0 if gpu_smoke(args.data, args.out, tomllib.load(f))["passed"] else 1
+        return 0 if gpu_smoke(args.data, args.out, cfg)["passed"] else 1
+    check_data(args.data, cfg)
+    if not args.smoke and code_commit() is None:
+        raise SystemExit("no COMMIT file next to train.py: upload a snapshot from scripts/build_train_snapshot.py")
     lineage = run(args.data, args.out, args.config, args.smoke)
     r = lineage["results"]
     print(f"train loss {r['train_loss']:.4f}, best val loss {r['best_eval_loss']}, steps {r['steps']}")

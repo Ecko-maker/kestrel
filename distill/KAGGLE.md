@@ -1,4 +1,7 @@
-# Option c on Kaggle: teacher selection and collection
+# Kestrel on Kaggle: option c collection, and the student's training run
+
+The training run (option a's dataset) is the last section, "Training run". Everything before it is
+option c's teacher selection and collection, done 10-31 to 11-01 and kept as evidence only.
 
 Step by step for the owner. `distill/collect.ipynb` runs a teacher on Kaggle's free GPUs, so **no Groq quota
 is used**. It has two modes:
@@ -174,3 +177,25 @@ In compare mode there is one manifest per candidate folder.
 - **Template parity:** Kestrel's template is checked byte for byte against Ollama's renderer for the 4B
   student (`scripts/template_parity.py`), not for the 30B. Both are Qwen3-2507 instruct models with the same
   chat format, but the 30B isn't separately verified.
+
+## Training run (option a's dataset, `train.ipynb`)
+
+Not run yet. Needs: option a's collection finished and built (`COLLECTION.md` steps 6-7), the owner's OK
+for about 1 GPU-hour, and the ~8 GB base-model download (on Kaggle's side). Details: `TRAINING.md`.
+
+1. Laptop, at a clean commit: `uv run --no-sync python scripts/build_train_snapshot.py` and note the zip's
+   commit (`dist\kaggle-train\kestrel-train-code-<commit>.zip`).
+2. Kaggle > **Datasets** > `kestrel-distill-code` (Private) > **New Version** with that zip (or create it).
+3. Copy `train.jsonl`, `val.jsonl`, `manifest.json` from `..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b`
+   (never `d1.2-pass1`) into a private dataset `kestrel-distill-data`; note `Get-FileHash` of the manifest.
+4. **Code** > **New Notebook** > **File** > **Import Notebook** > `distill/train.ipynb`.
+5. **Input** > Add both datasets; **Settings** > Accelerator **GPU T4 x2**, Internet **On**.
+6. Run the cells to the GPU smoke test: the first cell prints both paths and the code commit (step 1's);
+   the install cell prints every library `ok`; the smoke test ends `GPU smoke test PASSED`.
+7. Set `RUN_TRAINING = True` in the training cell. `train.py` stops at once if the manifest's teacher
+   isn't groq + openai/gpt-oss-120b or its filters aren't today's pipeline.
+8. **Save Version** > **Save & Run All (Commit)**, so the run survives a closed tab (about 30-45 min).
+9. Open the version > **Output** > download `kestrel-adapter.zip`.
+10. Check `lineage.json` before export: `code_commit` = step 1's, `dataset.manifest_sha256` = step 3's
+    hash, `dataset.teachers` = groq + openai/gpt-oss-120b, `base_model.revision` = `cdbee75f…`; then
+    `EXPORT.md` and `EVAL.md` step 1.

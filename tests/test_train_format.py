@@ -201,7 +201,7 @@ def test_notebook_finds_the_datasets_in_both_kaggle_layouts(tmp_path: Path, layo
     paths_cell = next(c for c in notebook_cells() if "def folders_with" in c)
     code = tmp_path / layout.format(slug="kestrel-distill-code")
     data = tmp_path / layout.format(slug="kestrel-distill-data")
-    for folder, names in ((code, ["train.py", "train_format.py", "train_config.toml", "train.jsonl"]),
+    for folder, names in ((code, ["train.py", "train_format.py", "train_config.toml", "train.jsonl", "COMMIT"]),
                           (data, ["train.jsonl", "val.jsonl", "manifest.json"])):  # fmt: skip
         folder.mkdir(parents=True)
         for name in names:

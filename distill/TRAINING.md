@@ -5,20 +5,37 @@ The student is **Qwen/Qwen3-4B-Instruct-2507** (Apache-2.0), pinned to revision 
 weights never change. Libraries: transformers + peft + trl + bitsandbytes (the versions in `uv.lock`;
 the notebook installs exactly those). Design decision 26.
 
-**Before you start:** you need a dataset from one collection pass (`COLLECTION.md`), i.e. a folder
-with `train.jsonl`, `val.jsonl` and `manifest.json` from `kestrel distill build`. And a Kaggle account
-with a verified phone number (needed for GPUs and internet).
+**Before you start:** you need the dataset from option a's collection pass (`COLLECTION.md`, design
+decision 29): the folder `kestrel distill build` writes, `data\distill\d1.2-groq-gpt-oss-120b` in the runs
+folder, with `train.jsonl`, `val.jsonl` and `manifest.json`. Never `data\distill\d1.2-pass1` (option c's
+Qwen pass, evidence only): `train.py` refuses any manifest whose `teachers` isn't exactly groq +
+openai/gpt-oss-120b, or whose filter list isn't today's `distill build` pipeline (`train_config.toml`
+`[data]`). And a Kaggle account with a verified phone number (needed for GPUs and internet).
 
-## 1. Prepare the two upload folders (on your laptop, PowerShell)
+**Settings** (all in `train_config.toml`, copied whole into `lineage.json`):
+
+| Setting | Value |
+|---|---|
+| Base model | `Qwen/Qwen3-4B-Instruct-2507` @ `cdbee75f…`, 4-bit NF4, double quantization, float16 compute |
+| LoRA | rank 16, alpha 32, dropout 0.05, all attention and MLP projections |
+| Epochs | 5 at most; val loss after every epoch, early stopping with patience 1, the best epoch kept |
+| Batch | 1 × 8 gradient accumulation (effective 8), learning rate 1e-4, cosine, 5 warmup steps |
+| Longest example | 8,192 tokens; longer stops the run (never truncated) |
+
+## 1. Prepare the two uploads (on your laptop, PowerShell)
+
+The code is a snapshot of one clean commit, read from git, not from the working tree
+(`scripts/build_train_snapshot.py`): `train.py`, `train_format.py`, `train_config.toml`, the synthetic
+smoke `train.jsonl` (the GPU smoke test's data), `COMMIT` and `SHA256SUMS`, flat. `lineage.json` records
+the commit, and a real run stops without it.
 
 ```powershell
-$up = "$env:TEMP\kaggle-upload"
-New-Item -ItemType Directory -Force "$up\data", "$up\code" | Out-Null
-Copy-Item ..\kestrel-runs\data\distill\d1.2-pass1\train.jsonl, ..\kestrel-runs\data\distill\d1.2-pass1\val.jsonl, `
-          ..\kestrel-runs\data\distill\d1.2-pass1\manifest.json "$up\data\"
-Copy-Item distill\train.py, distill\train_config.toml, src\kestrel\distill\train_format.py "$up\code\"
-Copy-Item distill\smoke\train.jsonl "$up\code\"     # the GPU smoke test's synthetic examples, flat
-Get-FileHash "$up\data\manifest.json"     # note it: lineage.json will repeat it
+git status                                                          # clean
+uv run --no-sync python scripts/build_train_snapshot.py             # -> dist\kaggle-train\kestrel-train-code-<commit>.zip
+$up = "$env:TEMP\kaggle-upload\data"; New-Item -ItemType Directory -Force $up | Out-Null
+$ds = "..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b"
+Copy-Item "$ds\train.jsonl", "$ds\val.jsonl", "$ds\manifest.json" $up
+Get-FileHash "$up\manifest.json"     # note it: lineage.json will repeat it
 ```
 
 The dataset holds teacher answers about the fixture workspace only (no secrets: `kestrel distill
@@ -28,13 +45,13 @@ build` drops any example with a canary, key or `.env` content). Upload it as **p
 
 kaggle.com > **Datasets** > **New Dataset**:
 
-1. Drag in the files of `$up\data`, title **kestrel-distill-data**, visibility **Private**, Create.
-2. Again with `$up\code`, title **kestrel-distill-code**, Private, Create.
+1. Upload the snapshot zip, title **kestrel-distill-code**, visibility **Private**, Create (Kaggle unzips
+   it; the files land flat). For a later commit: the dataset > **New Version** with the new zip.
+2. Drag in the three files of `$up`, title **kestrel-distill-data**, Private, Create.
 
-Each folder's files go in flat, with no subfolders. Keep the two datasets apart: the code dataset's
-`train.jsonl` is the synthetic smoke set, and the notebook never uses it as training data. Whatever
-the slugs and the mount layout, the notebook's first cell finds both datasets under `/kaggle/input`
-and prints the paths it chose.
+Keep the two datasets apart: the code dataset's `train.jsonl` is the synthetic smoke set, and the
+notebook never uses it as training data. Whatever the slugs and the mount layout, the notebook's first
+cell finds both datasets under `/kaggle/input` and prints the paths and the code commit it chose.
 
 ## 3. Open the notebook
 
@@ -120,8 +137,8 @@ Get-Content kestrel-adapter\lineage.json | ConvertFrom-Json | Select-Object -Exp
 ```
 
 `manifest_sha256` must equal the hash from step 1; `traces_db_sha256`, `teachers` and `grading` come
-from the manifest. `base_model.revision` must be the pinned revision, and `results.best_eval_loss` is
-the val loss of the epoch that was kept.
+from the manifest. `base_model.revision` must be the pinned revision, `code_commit` (top level) the
+snapshot's commit, and `results.best_eval_loss` the val loss of the epoch that was kept.
 
 Next: `EXPORT.md` (merge, GGUF, Ollama, and the check that Ollama serves the trained prompt format).
 

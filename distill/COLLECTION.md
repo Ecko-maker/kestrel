@@ -1,5 +1,9 @@
 # Collecting distill data: one pass (checklist)
 
+> **File names (2026-11-01):** option a's run writes `evals\results\distill-d1.2-groq-gpt-oss-120b.json` (the name
+> day 1 started with) and builds into `data\distill\d1.2-groq-gpt-oss-120b`. `d1.2-pass1` is option c's Qwen pass
+> (evidence only): never build or copy into that folder for training.
+
 > **Teacher decided (2026-11-01, design decision 29, #72 closed): option a, `groq` + `openai/gpt-oss-120b`.**
 > Groq confirmed the use in writing on 10-31. Step 0 is done (`teachers.toml` lists only Groq's entry);
 > collection is step 4.
@@ -88,7 +92,7 @@ Test-Path ..\kestrel-runs\.env                  # must be True; copy .env in by 
 ```powershell
 git rev-parse HEAD                              # the same $commit
 uv run --no-sync kestrel bench run --split distill --judge none --provider $provider --model $model `
-    --token-budget 180000 --wait-for-quota --out evals\results\distill-d1.2-pass1.json
+    --token-budget 180000 --wait-for-quota --out evals\results\distill-d1.2-groq-gpt-oss-120b.json
 ```
 
 - [ ] Day 2 (and later, if needed): wait until the budget has freed, check step 2 again, then resume.
@@ -96,7 +100,7 @@ uv run --no-sync kestrel bench run --split distill --judge none --provider $prov
 
 ```powershell
 uv run --no-sync kestrel bench run --split distill --judge none --provider $provider --model $model `
-    --token-budget 180000 --wait-for-quota --resume evals\results\distill-d1.2-pass1.json
+    --token-budget 180000 --wait-for-quota --resume evals\results\distill-d1.2-groq-gpt-oss-120b.json
 ```
 
 `--judge none`: the teacher would grade itself (#69); check-only tasks are graded in full. Traces go to
@@ -138,10 +142,10 @@ checks as option a.
 Still in `..\kestrel-runs`, after the run has finished (no process from step 2):
 
 ```powershell
-uv run --no-sync python scripts\check_results.py evals\results\distill-d1.2-pass1.json
-$copy = "$env:TEMP\distill-d1.2-pass1.db"
+uv run --no-sync python scripts\check_results.py evals\results\distill-d1.2-groq-gpt-oss-120b.json
+$copy = "$env:TEMP\distill-d1.2-groq-gpt-oss-120b.db"
 Copy-Item logs\distill.db $copy                 # work on a copy, never the live database
-uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-pass1.json --db $copy
+uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-groq-gpt-oss-120b.json --db $copy
 ```
 
 - [ ] `check_results.py` says OK (all 122 distill tasks, suite d1.2, no judge).
@@ -155,10 +159,10 @@ uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-
 Build it **in the runs folder, at the collection commit**:
 
 ```powershell
-uv run --no-sync kestrel distill build --db $copy --results evals\results\distill-d1.2-pass1.json --out data\distill\d1.2-pass1
+uv run --no-sync kestrel distill build --db $copy --results evals\results\distill-d1.2-groq-gpt-oss-120b.json --out data\distill\d1.2-groq-gpt-oss-120b
 ```
 
-In this order, from the printed counts and `data\distill\d1.2-pass1\manifest.json`:
+In this order, from the printed counts and `data\distill\d1.2-groq-gpt-oss-120b\manifest.json`:
 
 - [ ] **Manifest provenance:** `results` lists the file as `"source": "distill"`; the build didn't stop
   on an agent-fingerprint mismatch (it refuses a results file recorded with other agent code);
