@@ -1,0 +1,111 @@
+{
+  "input_db_sha256": "cdf886c82af90ddb04b956fc2df24d752af5fe4c9b45c6e2e61e08d62b5544de",
+  "results": {
+    "distill-d1.2-groq-gpt-oss-120b.json": {
+      "sha256": "47d80fee23a0f0c13ba2b5e7f95f3a1347bf643a9e000824dd72ff6fff56da67",
+      "source": "distill"
+    }
+  },
+  "git": {
+    "commit": "5b2a242a4a5663bd64fe531c51212e12826ff62e",
+    "dirty": false
+  },
+  "teachers": [
+    {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b"
+    }
+  ],
+  "settings": {
+    "max_tokens": 8000,
+    "val_frac": 0.3,
+    "split_salt": "2026",
+    "bench_prompts": 155,
+    "bench_sources": [
+      {
+        "source": "disk",
+        "path": "evals/kestrelbench"
+      },
+      {
+        "source": "git:evals/kestrelbench/safety",
+        "commit": "6f58ee528ce53bc011653c9b783973e0da077eba",
+        "tag": "safety-before",
+        "available": true,
+        "files": 9
+      }
+    ],
+    "near_duplicate": {
+      "fail_jaccard": 0.23,
+      "fail_run_words": 5
+    },
+    "grading": "checks-only",
+    "calibrated_judges": [],
+    "filters": [
+      "no_messages",
+      "teacher",
+      "harmony_leak_tool_name",
+      "harmony_leak_arguments",
+      "harmony_leak_text",
+      "contamination_run",
+      "contamination_prompt",
+      "near_duplicate",
+      "quality",
+      "task_changed",
+      "rubric_task",
+      "secret_canary",
+      "secret_pattern",
+      "secret_env_line",
+      "secret_env_value",
+      "too_long",
+      "duplicate"
+    ]
+  },
+  "stats": {
+    "traces_seen": 131,
+    "kept": 89,
+    "train": 71,
+    "val": 18,
+    "dropped": {
+      "no_messages": 0,
+      "teacher": 0,
+      "harmony_leak_tool_name": 0,
+      "harmony_leak_arguments": 0,
+      "harmony_leak_text": 0,
+      "contamination_run": 0,
+      "contamination_prompt": 0,
+      "near_duplicate": 0,
+      "quality": 20,
+      "task_changed": 0,
+      "rubric_task": 22,
+      "secret_canary": 0,
+      "secret_pattern": 0,
+      "secret_env_line": 0,
+      "secret_env_value": 0,
+      "too_long": 0,
+      "duplicate": 0
+    },
+    "sessions": {
+      "total": 82,
+      "train": 65,
+      "val": 17
+    },
+    "tokens": {
+      "p50": 1567.0,
+      "p90": 1934.0,
+      "max": 2361.0
+    },
+    "examples_per_tool": {
+      "append_to_file": 3,
+      "calculator": 16,
+      "create_note": 8,
+      "get_current_time": 5,
+      "list_files": 26,
+      "read_file": 34,
+      "send_message": 15,
+      "web_search": 4,
+      "write_file": 3
+    },
+    "with_approval": 30,
+    "with_rejection": 9
+  }
+}

@@ -8,3 +8,5 @@ distill/selection/*.json -text
 distill/selection/selection.md -text
 # The d1.2-pass1 collection and build manifests (distill/collection/), hashed the same way.
 distill/collection/*.json -text
+# The option a (Groq) collection and build manifests (distill/collection-a/), hashed the same way.
+distill/collection-a/*.json -text

@@ -178,6 +178,26 @@ In this order, from the printed counts and `data\distill\d1.2-groq-gpt-oss-120b\
 
 `data\` is git-ignored: keep the manifest's numbers in the Phase 4 notes, not the data.
 
+## Results: d1.2 option a (2026-11-01/02): the training set
+
+Pinned in `distill/collection-a/` (the collection and build manifests, SHA-256 tested); data in the runs folder and
+`C:\kestrel-backup\2026-11-02\`.
+
+| Step | Result |
+|---|---|
+| Collection | 122/122 graded once each: 104 passed, 18 failed, 0 errored, 0 skipped; groq + openai/gpt-oss-120b only; `5b2a242`, agent `35fac5ba6277`; 206,378 billable (approval up to 320k) |
+| Rate-limit audit | 104 graded tasks flagged, all `retries` (retried, then answered; 1-8 per task), `max_steps` on 3 failed tasks; no call gave up, no tool timeout, no missing trace |
+| Provenance | results `source: distill`, the one teacher, `dropped.teacher` 0, `git` `5b2a242` clean, safety split source available |
+| Harmony-leak filter | 0 / 0 / 0 (tool name, arguments, text) |
+| Overlap against KestrelBench | `contamination_run` 0, `contamination_prompt` 0, `near_duplicate` 0 |
+| Other drops | `quality` 20 (18 failed tasks + 2 traces no result names), `rubric_task` 22 |
+| Kept | 89 examples from 82 tasks (131 traces in) |
+| Split (by task, `--val-frac 0.3`) | train 71 (65 tasks), val 18 (17 tasks); no task on both sides |
+
+Against the plan: step 7 expected 85-95 examples; 89. Against option c's evidence-only pass: 82 (74 / 8), from 93
+passed. `--val-frac` 0.2 gave only 8 val examples (the session hashes fell low); 0.3 was chosen from the hashes
+alone, before any training, to land in the 15-20 asked for.
+
 ## Results: d1.2-pass1 (option c, 2026-11-01): evidence only, not training data
 
 Option a was chosen the same day (design decision 29), so this pass is not trained on. With the shipped
