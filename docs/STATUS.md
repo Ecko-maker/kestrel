@@ -4,13 +4,19 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-02, from the 11-02 training-set session (log below).
+2026-11-02, from the 11-02 export-readiness session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) and `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
 
-**The single next step:** QLoRA training on Kaggle (no Groq; owner's OK for about 1 GPU-hour and the ~8 GB base-model download on Kaggle's side), on the option a training set `..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b` (89 examples: 71 train, 18 val), with a training snapshot of `phase4/student-eval` (`distill/KAGGLE.md`, "Training run"). Teacher data is collected; nothing has been trained.
+**The single next step:** QLoRA training is running on Kaggle (started 11-02). When `kestrel-adapter.zip` is downloaded: the lineage check and the export (`distill/EXPORT.md`, "When `kestrel-adapter.zip` arrives", on `phase4/export-readiness`; the first export downloads the ~8 GB base, owner's OK), then the free local runs F1-F3 (`distill/EVAL.md`, "Free runs first").
+
+## 2026-11-02 (export-readiness session; KestrelBench not run, no Groq)
+
+1. **11-02: QLoRA training started on Kaggle (code a4b3372, data e39dd661), private datasets.**
+2. **Export readiness** (`phase4/export-readiness` `e1306dc`, off `phase4/student-eval`, pushed, no PR, CI green): nothing had to be installed (llama.cpp `b11712`, the parity renderer, the `train` + `export` extras, Ollama 0.40.13). 15.3 GB RAM (the merge needs ~9 GB free), 683 GB free disk; the ~8 GB base model is not downloaded yet. The smoke adapter ran the whole chain on Ollama 0.40.13: tool schemas identical, 20/20 prompt token counts for the student, `--gguf` and the base, template parity 20/20 (golden and renderer); test models deleted. New `scripts/check_lineage.py` (KAGGLE.md step 10 as a check, 9 tests); the commands for the adapter's arrival are in `distill/EXPORT.md`.
+3. **Free student runs written** in `distill/EVAL.md` ("Free runs first", local Ollama, no judge, no Groq): F1 main smoke `--judge none --sample 10` (10 runs), F2 safety strict x3 (144), F3 safety rubber-stamp attacks (30); dry runs match. Waiting for the owner: PR #50 (Phase 4 → `main`, green, its merge-to-main run is within the 70k line), README #46 (green, KestrelBench not run), Dependabot #38, #41 (green), #40 (green; no `run-evals` label run, the owner's call).
 
 ## 2026-11-02 (training-set session; KestrelBench not run, no Groq)
 
@@ -111,7 +117,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 1 Foundation | done | tag `v0.1.0`; `main` |
 | 2 Evals | done, except judge calibration (#21: 35 labels, dev 20 / held-out 15, PR #47) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
 | 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29, decision 17); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); `phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) |
-| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); nothing trained | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
+| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); QLoRA training started on Kaggle 11-02 | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
 | 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video and posts not started | `voice/talk` (`docs/voice-wake.md`); CI green |
 
 ## Branches
@@ -134,7 +140,8 @@ Merge order: ~~PR #14 → `phase3/tiers-v2`~~ (done, `02c1d2e`) → ~~`console/h
 | `docs/approval-2026-10-30-phase4` | – | merged (PR #36, `6292bf7`) | proposed: delete |
 | `docs/status-2026-10-30-phase4-merged` | – | this update | merge to `main` (KestrelBench not run) |
 | `phase4/kaggle-teacher` | 4 | option c evidence and the teacher decision (decision 29); `5b2a242` = the collection commit | merge with `phase4/student-eval` |
-| `phase4/student-eval` | 4 | off `phase4/kaggle-teacher`: student-eval tooling, amendment 8.7, training readiness, the option a pins; tip `0b97f30`, no PR | PR after training (its agent-affecting changes run CI evals) |
+| `phase4/student-eval` | 4 | off `phase4/kaggle-teacher`: student-eval tooling, amendment 8.7, training readiness, the option a pins; `main` merged in, tip `a4b3372` = the training code commit; **PR #50 open, green** | owner's merge (no pushes while #50 is open) |
+| `phase4/export-readiness` | 4 | off `phase4/student-eval`: lineage check, export commands, free runs F1-F3; `e1306dc`, CI green, no PR | PR after #50 merges |
 | `main` | – | = `origin/main` `fa06b03` (before this PR; PR #47) | – |
 
 **Deleted 2026-10-28** (owner OK; local and `origin`): `master`, `dev`, `phase2/kestrelbench` (merged into `main`); `docs/status-2026-10-27`, `-27-voice`, `-28`, `-28-verdict`, `-28-gate` (merged); `docs/status-2026-10-26`, `docs/approvals-2026-10-26`, `labels/judge-calibration` (squash-merged as PRs #18, #20, #19; GitHub keeps their tips under the PRs); `phase3/memory-safety` (tip kept by tag `safety-before`, `6f58ee5`); `phase4/trace-dataset-v0` (tip kept by the new tag `archive/phase4-trace-dataset-v0-289274e`). Kept for now: `phase3/results-analysis` (in tiers-v2 via #14; delete without a tag once tiers-v2 is in `main`), `docs/merge-plan`, the Dependabot branches (open PRs).
@@ -151,7 +158,7 @@ Dependabot PRs #15 and #17 merged 2026-10-30 (the 10-30 log, item 6); #33 is ope
   1. ~~After-run resumes~~: done in one resume 10-28 15:22–15:44 EDT; verdict 10-28.
   2. Merges, one per quota day: #14 (done 10-28, no evals) and tiers-v2 (done 10-29, 59.7k), console (done 10-29, no evals), voice (done 10-29, 64.3k), phase4 (done 10-30, 60.6k). The no-eval branches go in between.
   3. ~~Teacher data~~: **done** 11-01 and 11-02, option a, 206,378 billable (approval line below).
-  4. Kaggle QLoRA training (no Groq; under 1 GPU hour).
+  4. Kaggle QLoRA training (no Groq; under 1 GPU hour): **started 11-02**.
   5. Student evals: the student on Ollama locally, the judge only on Groq.
 
 ### Owner approvals (Groq quota)
