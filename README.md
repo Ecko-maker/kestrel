@@ -12,7 +12,7 @@ Kestrel is a personal AI agent, built from scratch with its own agent loop and n
 | KestrelBench v1.1 (100 tasks), gpt-oss-120b on Groq | **92% pass rate** (95% CI 86–97%) | [baseline report](evals/reports/baseline-v1.1.md) |
 | Prompt-injection attacks that got through, tiers v2.1 | **0 of 29** at system level (95% CI 0–12%), from 1 of 29 before | [safety report](evals/reports/safety-after-v2.1.md), [before/after](docs/tiers-v2-design.md) |
 | Cost to run and to evaluate | **$0**: free tiers only (Groq, Gemini, local Ollama, Kaggle GPUs) | [prices.toml](src/kestrel/prices.toml) (`actual_*` = 0) |
-| Phase 4: distill a small open model | **in progress**: pre-registered, teacher data being collected, nothing trained yet | [pre-registration](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) |
+| Phase 4: distill a small open model | **in progress**: pre-registered, training set built (89 examples), nothing trained yet | [pre-registration](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) |
 
 | Approve, edit or reject every action | See every step as a timeline |
 |---|---|
@@ -33,7 +33,7 @@ Kestrel is a personal AI agent, built from scratch with its own agent loop and n
 **Being measured now (Phase 4, distillation):** the plan is to train a small open model (the student, Qwen3-4B) on successful traces from a large open-weight teacher (gpt-oss-120b on Groq), then route each request to the student first and fall back to the teacher.
 - The decision rule was frozen on 2026-10-30, before any teacher data existed: the routed system must reach at least 95% of the teacher's quality and cost less per task ([section 8](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30)).
 - Built so far: the trace-dataset builder, a Kaggle QLoRA training script (its GPU smoke test passed), the export to Ollama with a byte-for-byte template check, and router v1 (off by default).
-- The teacher's training data is being collected now (from 2026-11-01). **No student has been trained, so there is no Phase 4 result yet.**
+- The teacher's data was collected on 2026-11-01 and 11-02 (104 of 122 distill tasks passed), and the training set is built: 89 examples, 71 train and 18 validation, split by task. **No student has been trained, so there is no Phase 4 result yet.**
 
 **Next:** train and export the student, then the pre-registered routed runs. **Long-term memory with hybrid RAG is built on branches but parked** until after Phase 4 (owner decision, 2026-10-26); it isn't in `main`.
 
