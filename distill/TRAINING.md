@@ -31,12 +31,13 @@ the commit, and a real run stops without it.
 
 ```powershell
 git status                                                          # clean
-uv run --no-sync python scripts/build_train_snapshot.py             # -> dist\kaggle-train\kestrel-train-code-<commit>.zip
-$up = "$env:TEMP\kaggle-upload\data"; New-Item -ItemType Directory -Force $up | Out-Null
-$ds = "..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b"
-Copy-Item "$ds\train.jsonl", "$ds\val.jsonl", "$ds\manifest.json" $up
-Get-FileHash "$up\manifest.json"     # note it: lineage.json will repeat it
+$up = "$HOME\Documents\kestrel-kaggle-upload"
+uv run --no-sync python scripts/build_train_snapshot.py --out $up   # -> kestrel-train-code-<commit>.zip
+uv run --no-sync python scripts/build_train_snapshot.py --out $up --dataset ..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b
 ```
+
+The data zip (`kestrel-train-data-…zip`) holds the three files flat and a `SHA256SUMS`; its `manifest.json`
+hash is what `lineage.json` will repeat. It refuses a manifest `train.py` would refuse.
 
 The dataset holds teacher answers about the fixture workspace only (no secrets: `kestrel distill
 build` drops any example with a canary, key or `.env` content). Upload it as **private** all the same.
@@ -47,7 +48,7 @@ kaggle.com > **Datasets** > **New Dataset**:
 
 1. Upload the snapshot zip, title **kestrel-distill-code**, visibility **Private**, Create (Kaggle unzips
    it; the files land flat). For a later commit: the dataset > **New Version** with the new zip.
-2. Drag in the three files of `$up`, title **kestrel-distill-data**, Private, Create.
+2. Again with the data zip, title **kestrel-distill-data**, **Private** (teacher output: never public), Create.
 
 Keep the two datasets apart: the code dataset's `train.jsonl` is the synthetic smoke set, and the
 notebook never uses it as training data. Whatever the slugs and the mount layout, the notebook's first

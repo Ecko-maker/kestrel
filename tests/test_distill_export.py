@@ -174,6 +174,23 @@ def test_the_train_snapshot_is_the_commit_flat_and_reproducible(tmp_path: Path) 
         assert z.read(name) == shown
 
 
+def test_the_dataset_upload_packs_only_what_train_py_accepts(tmp_path: Path) -> None:
+    import shutil
+    import zipfile
+
+    snap = load("kestrel_train_snapshot_script_data", ROOT / "scripts" / "build_train_snapshot.py")
+    z = zipfile.ZipFile(snap.build_dataset(ROOT / "distill" / "smoke", tmp_path / "out"))
+    assert sorted(z.namelist()) == ["SHA256SUMS", "manifest.json", "train.jsonl", "val.jsonl"]  # flat
+    assert z.read("train.jsonl") == (ROOT / "distill" / "smoke" / "train.jsonl").read_bytes()
+    qwen = tmp_path / "qwen"
+    shutil.copytree(ROOT / "distill" / "smoke", qwen)
+    manifest = json.loads((qwen / "manifest.json").read_text(encoding="utf-8"))
+    manifest["teachers"] = [{"provider": "ollama", "model": "kestrel-teacher-qwen3-30b-a3b"}]
+    (qwen / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(SystemExit, match="teachers"):
+        snap.build_dataset(qwen, tmp_path / "out")
+
+
 def test_the_modelfile_licence_names_the_option_a_teacher() -> None:
     teacher = CONFIG["data"]["teachers"][0]["model"].split("/")[-1]  # gpt-oss-120b
     licence = next(line for line in export.modelfile(tf.OLLAMA_TEMPLATE, "m.gguf").splitlines() if "LICENSE" in line)

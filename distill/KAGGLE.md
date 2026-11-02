@@ -180,22 +180,33 @@ In compare mode there is one manifest per candidate folder.
 
 ## Training run (option a's dataset, `train.ipynb`)
 
-Not run yet. Needs: option a's collection finished and built (`COLLECTION.md` steps 6-7), the owner's OK
-for about 1 GPU-hour, and the ~8 GB base-model download (on Kaggle's side). Details: `TRAINING.md`.
+Needs: the owner's OK for about 1 GPU-hour and the ~8 GB base-model download (on Kaggle's side). Details and
+gotchas: `TRAINING.md`. The two uploads, built on the laptop (no model calls), in
+`C:\Users\noahi\Documents\kestrel-kaggle-upload\`:
 
-1. Laptop, at a clean commit: `uv run --no-sync python scripts/build_train_snapshot.py` and note the zip's
-   commit (`dist\kaggle-train\kestrel-train-code-<commit>.zip`).
-2. Kaggle > **Datasets** > `kestrel-distill-code` (Private) > **New Version** with that zip (or create it).
-3. Copy `train.jsonl`, `val.jsonl`, `manifest.json` from `..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b`
-   (never `d1.2-pass1`) into a private dataset `kestrel-distill-data`; note `Get-FileHash` of the manifest.
-4. **Code** > **New Notebook** > **File** > **Import Notebook** > `distill/train.ipynb`.
-5. **Input** > Add both datasets; **Settings** > Accelerator **GPU T4 x2**, Internet **On**.
-6. Run the cells to the GPU smoke test: the first cell prints both paths and the code commit (step 1's);
-   the install cell prints every library `ok`; the smoke test ends `GPU smoke test PASSED`.
-7. Set `RUN_TRAINING = True` in the training cell. `train.py` stops at once if the manifest's teacher
-   isn't groq + openai/gpt-oss-120b or its filters aren't today's pipeline.
-8. **Save Version** > **Save & Run All (Commit)**, so the run survives a closed tab (about 30-45 min).
-9. Open the version > **Output** > download `kestrel-adapter.zip`.
-10. Check `lineage.json` before export: `code_commit` = step 1's, `dataset.manifest_sha256` = step 3's
-    hash, `dataset.teachers` = groq + openai/gpt-oss-120b, `base_model.revision` = `cdbee75f…`; then
-    `EXPORT.md` and `EVAL.md` step 1.
+```powershell
+$up = "$HOME\Documents\kestrel-kaggle-upload"
+uv run --no-sync python scripts/build_train_snapshot.py --out $up        # code: kestrel-train-code-<commit>.zip
+uv run --no-sync python scripts/build_train_snapshot.py --out $up `
+    --dataset ..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b         # data: kestrel-train-data-d1.2-groq-gpt-oss-120b-<hash>.zip
+```
+
+The code zip needs a clean commit (it reads the files from git, with `COMMIT`). The data zip refuses a manifest
+`train.py` would refuse (another teacher or pipeline), so option c's `d1.2-pass1` can't be packed. **The data is
+teacher output: the Kaggle dataset must be Private, never public.**
+
+1. Kaggle > **Datasets** > **New Dataset** > the code zip > title `kestrel-distill-code`, **Private** > Create
+   (an existing one: **New Version**).
+2. Again with the data zip > title `kestrel-distill-data`, **Private** > Create.
+3. **Code** > **New Notebook** > **File** > **Import Notebook** > `distill/train.ipynb`.
+4. Right panel > **Input** > **Add Input** > **Your Datasets** > add both.
+5. **Settings** > Accelerator **GPU T4 x2**; **Internet On** (needs the verified phone number).
+6. In the training cell set `RUN_TRAINING = True` (first cell: no setting to change; it finds both datasets).
+7. **Save Version** > **Save & Run All (Commit)** > Save. It runs the GPU smoke test first and stops if it fails;
+   about 30-45 min in all.
+8. Open the version's log: the first cell prints the code commit; the install cell `ok` for every library;
+   `GPU smoke test PASSED`; then the training's val loss per epoch.
+9. The version > **Output** > download **`kestrel-adapter.zip`** (`adapter/` + `lineage.json`).
+10. Check `lineage.json`: `code_commit` = the code zip's commit, `dataset.manifest_sha256` = the data zip's
+    `manifest.json` hash (in its `SHA256SUMS`), `dataset.teachers` = groq + openai/gpt-oss-120b,
+    `base_model.revision` = `cdbee75f…`. Then `EXPORT.md` and `EVAL.md` step 1.
