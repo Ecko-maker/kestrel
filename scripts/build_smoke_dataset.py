@@ -10,8 +10,13 @@ train.jsonl, val.jsonl and manifest.json exactly as it will the real collection,
 So the smoke set the CPU smoke run and the Kaggle GPU smoke test train on is in the format a d1.2 build
 writes today. It never reads logs/ or any collected data (the option c pass-1 data is evidence only).
 
---check compares the two JSONL files byte for byte (line endings aside) and the manifest without its `git` and
-`input_db_sha256` fields (the commit changes with every commit; the database bytes with SQLite's version).
+--check compares every record and the manifest, leaving out only what depends on the machine, not the code:
+- `metadata.time` of each record: `export_record` renders the trace's start time in local time, so a build in
+  CI (UTC) and one on the laptop differ there; the start times themselves are pinned in traces.json;
+- the manifest's `git` and `input_db_sha256` (the commit; the database bytes, which follow SQLite's version), and
+  `settings.bench_sources` / `settings.bench_prompts` (which pinned KestrelBench commits this clone has: CI's
+  shallow checkout lacks the safety split's).
+Everything else must be equal: every message, tool list and weight, the split, every filter count.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ SMOKE = ROOT / "distill" / "smoke"
 TEACHER = ("groq", "openai/gpt-oss-120b")
 VAL_FRAC = 0.3  # 9 sessions: about 3 in val, so both files have examples
 VOLATILE = ("git", "input_db_sha256")
+VOLATILE_SETTINGS = ("bench_sources", "bench_prompts")
 
 
 def write_db(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -72,13 +78,18 @@ def build(out: Path) -> int:
         return ds.main(args)
 
 
-def _text(path: Path) -> bytes:
-    """The file's bytes with line endings normalised (a Windows checkout may hold CRLF)."""
-    return path.read_bytes().replace(b"\r\n", b"\n")
+def records(path: Path) -> list[dict[str, Any]]:
+    """The JSONL records without `metadata.time` (local time: it depends on the machine's time zone)."""
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    for r in rows:
+        r["metadata"].pop("time", None)
+    return rows
 
 
 def stable_manifest(path: Path) -> dict[str, Any]:
-    return {k: v for k, v in json.loads(path.read_text(encoding="utf-8")).items() if k not in VOLATILE}
+    m = {k: v for k, v in json.loads(path.read_text(encoding="utf-8")).items() if k not in VOLATILE}
+    m["settings"] = {k: v for k, v in m["settings"].items() if k not in VOLATILE_SETTINGS}
+    return m
 
 
 def check() -> list[str]:
@@ -87,7 +98,7 @@ def check() -> list[str]:
         out = Path(tmp) / "smoke"
         if build(out) != 0:
             return ["distill build failed"]
-        diffs = [n for n in ("train.jsonl", "val.jsonl") if _text(out / n) != _text(SMOKE / n)]
+        diffs = [n for n in ("train.jsonl", "val.jsonl") if records(out / n) != records(SMOKE / n)]
         if stable_manifest(out / "manifest.json") != stable_manifest(SMOKE / "manifest.json"):
             diffs.append("manifest.json")
         return diffs
