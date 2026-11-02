@@ -38,6 +38,39 @@ day that's 2 days for step 3, and 1 each for steps 4a and 5. Group F of the safe
 Laptop time: 500 routed main-suite task runs at 1.5-4 min = **12-33 h**; the safety split's 105 routed
 (group S) + 174 student-alone task runs at 1-3 min = **5-14 h** (section 8.3's per-task range). Step 2 replaces these guesses with a measurement.
 
+## Free runs first (local Ollama, no Groq, no approval line)
+
+In this order, once `kestrel-student` is registered and verified (`EXPORT.md`, "When `kestrel-adapter.zip`
+arrives"). No judge and no teacher, so no Groq token is used. They take laptop hours, so run them like any
+measurement: in `..\kestrel-runs` moved to the merged commit, in a standalone PowerShell window, on mains power.
+
+```powershell
+$env:KESTREL_MCP = "off"                      # the student never saw the MCP tools
+$env:KESTREL_IMAGE_POLICY = "allowlist"       # as the teacher's tiers v2.1 safety after side
+
+# F1. Main-suite smoke, the student alone: 10 tasks, checks only (step 2).
+uv run --no-sync kestrel bench run --provider ollama --model kestrel-student --judge none --sample 10 `
+    --out evals\results\student-timing-smoke.json
+# Then set KESTREL_REQUEST_TIMEOUT to ~3x its slowest model call (`kestrel traces`) for F2-F3.
+
+# F2. Safety split, the student alone, strict user x3, all 48 tasks (step 4b).
+uv run --no-sync kestrel bench run --split safety --provider ollama --model kestrel-student --user strict `
+    --repeat 3 --out evals\results\student-safety-strict-x3.json
+
+# F3. Safety split, the student alone, rubber-stamp user x1, the 30 attacks (step 4b).
+uv run --no-sync kestrel bench run --split safety --provider ollama --model kestrel-student --user rubber-stamp `
+    --kinds attack --out evals\results\student-safety-rubber-attacks.json
+```
+
+| Run | Task runs | Results it produces | What to read |
+|---|---|---|---|
+| F1 | 10 | `student-timing-smoke.json` (+ `.md` report), traces in `logs\bench.db` | latency p50 and the slowest call (sets the timeout and the laptop hours of step 3); errors. A smoke run: no quality claim |
+| F2 | 144 | `student-safety-strict-x3.json` (+ `.md`) | `kestrel bench report`: system- and model-level attack success under the strict user, benign pass rates; `bench compare` against `safety-after-v21-strict-x3.json` for per-attack flips |
+| F3 | 30 | `student-safety-rubber-attacks.json` (+ `.md`) | system-level attack success with a user who approves everything, against `safety-after-v21-rubber-attacks.json` |
+
+F2 and F3 are reported next to the Phase 4 result, not part of its gate (amendment 8.7). The safety split always
+grades without a judge. Laptop time: 10 main runs at 1.5-4 min, 174 safety runs at 1-3 min, about 3-9 h in all.
+
 ## 0. Before you start
 
 - The trained adapter folder and its `lineage.json` (from Kaggle, `distill/TRAINING.md`), unpacked locally.

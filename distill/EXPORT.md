@@ -17,7 +17,7 @@ which isn't available on Windows ("MLX runtime is not available"), and its `--qu
 
 | Tool | Version | Licence | What for | Size |
 |---|---|---|---|---|
-| Ollama | 0.40.6 (installed) | MIT | serving | - |
+| Ollama | 0.40.13 (installed; the parity renderer is built against 0.40.6, and `--verify` checks the running server) | MIT | serving | - |
 | llama.cpp | build `b11712` (2026-10-17), pinned in `export.py` | MIT | `convert_hf_to_gguf.py` + its `gguf-py` 0.19.0, `llama-quantize` | 19.6 MB binaries + 40 MB source |
 | Python extras | `uv sync --inexact --no-install-project --extra train --extra export` | Apache-2.0 / MIT | torch, transformers, peft, sentencepiece | ~1 GB (CPU torch) |
 | Go (parity check only) | 1.27.2 | BSD | builds Ollama's own prompt renderer | 79 MB + ~460 MB module cache |
@@ -31,6 +31,14 @@ Expand-Archive "$t\bin.zip" "$t\bin"; Expand-Archive "$t\src.zip" $t; Remove-Ite
 ```
 
 (Elsewhere, set `KESTREL_LLAMA_CPP` to the folder.) The Go setup is under "Template parity" below.
+
+**Checked on this laptop 2026-11-02:** llama.cpp `b11712` (converter and `llama-quantize`), the parity renderer,
+the `train` + `export` extras (torch 2.14.1, transformers 5.20.1, peft 0.21.2, sentencepiece 0.2.2) and Ollama
+0.40.13 serving are all installed; nothing had to be added. 15.3 GB RAM (merging needs ~9 GB free: close other
+apps first), 683 GB free on C:. The ~8 GB base model isn't downloaded yet (only its tokenizer): the first real
+export fetches it (owner's OK for the download). The smoke chain below ran end to end on 0.40.13: tool schemas
+identical, 20/20 prompt token counts for the student, `--gguf` and `--base`; template parity 20/20 against the
+golden file and Ollama's renderer; the smoke models were deleted afterwards.
 
 ## 2. Export
 
@@ -79,6 +87,37 @@ provider (`kestrel bench run --provider ollama`; no Groq quota for the agent, bu
 **Laptop RAM at Q4_K_M:** ~2.5 GB of weights + ~2.4 GB of KV cache at 16k context (36 layers x 8 KV heads
 x 128 dims x 2 x 2 bytes = 147 KB per token) + Ollama's overhead: **about 5.5-6 GB**, so fine on 16 GB.
 CPU-only generation speed: expect a few tokens per second; measure it.
+
+## When `kestrel-adapter.zip` arrives (PowerShell, development folder)
+
+```powershell
+$zip = "$HOME\Downloads\kestrel-adapter.zip"
+$a = "$env:TEMP\kestrel-adapter"; Remove-Item -Recurse -Force $a -ErrorAction SilentlyContinue
+Expand-Archive $zip $a                                   # -> $a\adapter\ and $a\lineage.json
+Get-FileHash $zip                                        # note it in the Phase 4 log
+
+# 1. The lineage (KAGGLE.md step 10): every line must say OK.
+#    The code commit is the COMMIT inside the uploaded code zip (kestrel-train-code-a4b33721d452.zip).
+uv run --no-sync python scripts/check_lineage.py "$a\lineage.json" --code-commit a4b33721d452c6aa83f0fc068bec1bb6db677296
+
+# 2. Room to merge: ~9 GB free RAM, ~20 GB free disk under $env:TEMP.
+"{0:N1} GB RAM free" -f ((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB)
+"{0:N1} GB disk free" -f ((Get-PSDrive C).Free / 1GB)
+
+# 3. The format, offline, then the export (first run: downloads the ~8 GB base, owner's OK).
+uv run --no-sync python scripts/template_parity.py --golden          # 20/20
+uv run --no-sync python distill/export.py --adapter "$a\adapter" --out "$env:TEMP\kestrel-export" `
+    --name kestrel-student --create --verify
+#    Must end with: "Tool schemas: identical to the training text." and
+#    "20/20 prompts: Ollama's prompt token count equals training's."
+ollama list | Select-String kestrel-student
+
+# 4. Keep model-q4_K_M.gguf, Modelfile and merged\ (its tokenizer is --verify's for `--gguf`); the f16 GGUF can go.
+Remove-Item "$env:TEMP\kestrel-export\model-f16.gguf"
+```
+
+Any `FAIL` in step 1, or a `MISMATCH` line in step 3: stop, don't use the model. Then `EVAL.md`, from step 1.4
+(router settings) and the free runs.
 
 ## The base model, for comparisons
 
