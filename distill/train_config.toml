@@ -12,6 +12,16 @@ revision = "cdbee75f17c01a7cc42f958dc650907174af0554"
 [data]
 # Longer examples stop the run (never truncated); rebuild the dataset with a lower --max-tokens.
 max_length = 8192
+# The dataset's manifest must list exactly this teacher (design decision 29, option a; teachers.toml) and
+# exactly these filters (the pipeline of `kestrel distill build` today, src/kestrel/distill/dataset.py
+# FILTERS). Anything else, e.g. the option c pass-1 build (evidence only) or a build from before the
+# Harmony-leak filters, stops train.py before a model is loaded. Tests keep both equal to the code.
+teachers = [{ provider = "groq", model = "openai/gpt-oss-120b" }]
+filters = [
+    "no_messages", "teacher", "harmony_leak_tool_name", "harmony_leak_arguments", "harmony_leak_text",
+    "contamination_run", "contamination_prompt", "near_duplicate", "quality", "task_changed", "rubric_task",
+    "secret_canary", "secret_pattern", "secret_env_line", "secret_env_value", "too_long", "duplicate",
+]
 
 [quantization]
 # 4-bit NF4 weights with double quantization; T4 and P100 have no bfloat16, so compute in float16.

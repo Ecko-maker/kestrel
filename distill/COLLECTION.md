@@ -1,16 +1,20 @@
 # Collecting distill data: one pass (checklist)
 
-> **Not started. The teacher decision (known issue #72, Groq Services Agreement §6.3(e)) is deferred to
-> 2026-11-04:** option a only with Groq's written confirmation by then, otherwise option c with the
-> teacher chosen by #72's pre-registered selection. This checklist works for either answer; the decision
-> changes one setting (step 0).
-> Nothing here has been run on real teacher data.
+> **File names (2026-11-01):** option a's run writes `evals\results\distill-d1.2-groq-gpt-oss-120b.json` (the name
+> day 1 started with) and builds into `data\distill\d1.2-groq-gpt-oss-120b`. `d1.2-pass1` is option c's Qwen pass
+> (evidence only): never build or copy into that folder for training.
+
+> **Teacher decided (2026-11-01, design decision 29, #72 closed): option a, `groq` + `openai/gpt-oss-120b`.**
+> Groq confirmed the use in writing on 10-31. Step 0 is done (`teachers.toml` lists only Groq's entry);
+> collection is step 4.
+> **Option c pass 1 (2026-11-01, Qwen3-30B-A3B, no Groq) is evidence only, never training data:** "Results:
+> d1.2-pass1" at the end. One dataset, one teacher (design decision 22).
 
 | | Option a | Option c |
 |---|---|---|
-| Teacher | `groq` + `openai/gpt-oss-120b` | `ollama` + `gpt-oss:20b`, served on a Kaggle GPU |
-| When | #72 confirms reading (a) | #72's answer is no (design decision 22's fallback) |
-| Cost | ~253k billable Groq tokens (range ~242k-284k), 2 quota days; the dry run says ~313k (see step 3) | no Groq; Kaggle GPU time (estimate 1-3 h, not measured) and a ~14 GB model pull on Kaggle's disk |
+| Teacher | `groq` + `openai/gpt-oss-120b` | `ollama` + `kestrel-teacher-qwen3-30b-a3b` (Qwen3-30B-A3B-Instruct-2507 Q4, selected 10-31, #72), served on Kaggle's 2×T4 |
+| When | #72 confirms reading (a): **chosen 11-01** | #72's answer is no (design decision 22's fallback): not used |
+| Cost | ~253k billable Groq tokens (range ~242k-284k), 2 quota days; the dry run says ~313k (see step 3) | no Groq; Kaggle GPU time (estimate 1-3 h; the 20-task selection took 2.5 s/task) and a ~19 GB model pull on Kaggle's disk |
 | Owner's OK | an approval line in docs/STATUS.md's Groq log, merged to `main` first | the owner's OK for the Kaggle GPU hours and the model download |
 | Where it runs | `..\kestrel-runs` (a standalone PowerShell window) | a Kaggle notebook (what it needs: "Option c notebook" below; not built yet) |
 
@@ -22,8 +26,8 @@ All commands are PowerShell, from the development folder unless the step says ot
 
 ## 0. Choose the teacher: the one setting
 
-- [ ] In `src/kestrel/distill/teachers.toml`, keep exactly one `[[teacher]]` entry: option a's (active
-  now) or option c's (written there, commented out). Commit the change.
+- [x] In `src/kestrel/distill/teachers.toml`, keep exactly one `[[teacher]]` entry: option a's Groq entry
+  (active since 11-01, design decision 29); option c's two candidates are commented out.
 - [ ] Read it back; every command below uses `$provider` and `$model`:
 
 ```powershell
@@ -88,7 +92,7 @@ Test-Path ..\kestrel-runs\.env                  # must be True; copy .env in by 
 ```powershell
 git rev-parse HEAD                              # the same $commit
 uv run --no-sync kestrel bench run --split distill --judge none --provider $provider --model $model `
-    --token-budget 180000 --wait-for-quota --out evals\results\distill-d1.2-pass1.json
+    --token-budget 180000 --wait-for-quota --out evals\results\distill-d1.2-groq-gpt-oss-120b.json
 ```
 
 - [ ] Day 2 (and later, if needed): wait until the budget has freed, check step 2 again, then resume.
@@ -96,7 +100,7 @@ uv run --no-sync kestrel bench run --split distill --judge none --provider $prov
 
 ```powershell
 uv run --no-sync kestrel bench run --split distill --judge none --provider $provider --model $model `
-    --token-budget 180000 --wait-for-quota --resume evals\results\distill-d1.2-pass1.json
+    --token-budget 180000 --wait-for-quota --resume evals\results\distill-d1.2-groq-gpt-oss-120b.json
 ```
 
 `--judge none`: the teacher would grade itself (#69); check-only tasks are graded in full. Traces go to
@@ -104,47 +108,49 @@ uv run --no-sync kestrel bench run --split distill --judge none --provider $prov
 
 ## 5. Option c: collect on Kaggle
 
-- [ ] Build and test the notebook first (below), with the owner's OK for the GPU hours.
-- [ ] Run it at `$commit`; download its outputs (`distill-d1.2-pass1.json`, `distill.db`,
-  `provenance.json`) into `..\kestrel-runs\evals\results\` and `..\kestrel-runs\logs\` (the runs folder
-  moved to `$commit` as in step 4, `.env` not needed).
+Built: `distill/collect.ipynb`, with the step-by-step in `distill/KAGGLE.md` and the logic in
+`distill/kaggle_collect.py` (tested offline). Not run on Kaggle yet.
 
-### Option c notebook: what it needs (not built yet)
+- [ ] **Teacher selection first** (#72, pre-registered): the notebook's compare mode, then the table and
+  winner recorded in #72 (`KAGGLE.md` steps 1-5).
+- [ ] **The winner in `teachers.toml`** (step 0 of this file) on a commit, and a new snapshot of it
+  (`KAGGLE.md` step 6).
+- [ ] **Collect mode** at that commit, the owner's OK for the GPU hours first (`KAGGLE.md` step 7). It runs
+  the 122 tasks in 8 shards (`--shard i/8`), each with its own results file
+  (`distill-d1.2-<teacher>-shard-i-of-8.json`), all into one `logs/distill.db`, and resumes from the
+  previous version's output after a session ends.
+- [ ] **Download** into `..\kestrel-runs\evals\results\` and `..\kestrel-runs\logs\` with the runs folder
+  moved to the commit (`KAGGLE.md` step 8). `manifest.json` records the teacher (name, tag, served name,
+  template, digest), the Ollama version, the GPUs and whether the model fit, the commit and the agent
+  fingerprint.
 
-1. **Accelerator:** GPU T4 x2 (or P100). gpt-oss-20b in Ollama's MXFP4 package is ~14 GB; one 16 GB T4
-   is tight with a 16k context, so let Ollama split it over both T4s. Internet on (phone-verified
-   account): for the Ollama install, the model pull and the 7 web tasks (`09_web.yaml`).
-2. **Inputs:** a Kaggle dataset holding `git archive $commit` of this repo (code, `distill/tasks`,
-   `distill/workspace`, `evals/kestrelbench/` for the build's checks), nothing else: no `.env`, no keys.
-3. **Install:** Python 3.14 + `uv` at CI's pins; `uv sync --locked` (no `train` extra); Ollama at a
-   pinned version (the laptop has 0.40.13), started with `ollama serve` in the background, then
-   `ollama pull gpt-oss:20b` (~14 GB, on Kaggle's disk); record the model digest (`ollama show`).
-4. **Environment:** `KESTREL_MCP=off`, `OLLAMA_BASE_URL=http://localhost:11434/v1`,
-   `KESTREL_REQUEST_TIMEOUT=300`, no provider keys set at all (so no hosted model can be called).
-5. **Run:** `kestrel bench run --split distill --judge none --provider ollama --model gpt-oss:20b
-   --stop-after-errors 0 --out distill-d1.2-pass1.json` from the repo root, so traces land in
-   `logs/distill.db`. No `--token-budget` or `--wait-for-quota` (no quota); `--resume` if the session
-   ends early (Kaggle's 12 h limit).
-6. **Stops, like train.ipynb's:** no GPU, no internet, or a version off its pin (Ollama, Python, `uv`,
-   the commit) stops the notebook before the run.
-7. **Outputs:** the results file, a copy of `logs/distill.db` (closed after the run), and
-   `provenance.json`: commit, Ollama version, model name and digest, GPU, start and end times, the
-   agent fingerprint the run recorded.
-8. **Not on Kaggle:** `kestrel distill build` runs on the laptop (step 7), so the dataset is built with
-   the same code and checks as option a.
+What the notebook does, in order:
+1. Stops without GPU T4 x2, Internet, or the snapshot's `COMMIT` file.
+2. Installs uv 0.12.22 and Python 3.14, then `uv sync --locked --no-dev` from the snapshot.
+3. Installs Ollama 0.40.13 and serves it on localhost, with the context at 16384 and models in `/tmp`.
+4. Pulls the teacher and serves it as `kaggle_collect.CANDIDATES` says, then checks the fit from `/api/ps`.
+5. Runs `kestrel bench run --split distill --provider ollama --judge none`, with no provider keys in the
+   environment, `KESTREL_MCP=off` and `KESTREL_REQUEST_TIMEOUT=600`. No `--token-budget` or
+   `--wait-for-quota`: there is no quota.
+6. In collect mode, runs `kaggle_collect.py check-shards` at the end.
+
+`kestrel distill build` still runs on the laptop (step 7), so the dataset is built with the same code and
+checks as option a.
 
 ## 6. Check the results
 
 Still in `..\kestrel-runs`, after the run has finished (no process from step 2):
 
 ```powershell
-uv run --no-sync python scripts\check_results.py evals\results\distill-d1.2-pass1.json
-$copy = "$env:TEMP\distill-d1.2-pass1.db"
+uv run --no-sync python scripts\check_results.py evals\results\distill-d1.2-groq-gpt-oss-120b.json
+$copy = "$env:TEMP\distill-d1.2-groq-gpt-oss-120b.db"
 Copy-Item logs\distill.db $copy                 # work on a copy, never the live database
-uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-pass1.json --db $copy
+uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-groq-gpt-oss-120b.json --db $copy
 ```
 
 - [ ] `check_results.py` says OK (all 122 distill tasks, suite d1.2, no judge).
+  Option c (sharded): `python distill\kaggle_collect.py check-shards <the 8 files>` says "Shards OK"
+  instead (`check_results.py` checks one complete file); pass all 8 files as `--results` in step 7.
 - [ ] Option a: the audit shows no graded task touched by a rate limit (resolve any it lists).
 - [ ] Option c: `provenance.json` names `$commit`, the pinned Ollama version and the model digest.
 
@@ -153,10 +159,10 @@ uv run --no-sync python scripts\audit_rate_limits.py evals\results\distill-d1.2-
 Build it **in the runs folder, at the collection commit**:
 
 ```powershell
-uv run --no-sync kestrel distill build --db $copy --results evals\results\distill-d1.2-pass1.json --out data\distill\d1.2-pass1
+uv run --no-sync kestrel distill build --db $copy --results evals\results\distill-d1.2-groq-gpt-oss-120b.json --out data\distill\d1.2-groq-gpt-oss-120b
 ```
 
-In this order, from the printed counts and `data\distill\d1.2-pass1\manifest.json`:
+In this order, from the printed counts and `data\distill\d1.2-groq-gpt-oss-120b\manifest.json`:
 
 - [ ] **Manifest provenance:** `results` lists the file as `"source": "distill"`; the build didn't stop
   on an agent-fingerprint mismatch (it refuses a results file recorded with other agent code);
@@ -171,3 +177,63 @@ In this order, from the printed counts and `data\distill\d1.2-pass1\manifest.jso
   tasks; `rubric_task` drops the 29 rubric tasks.
 
 `data\` is git-ignored: keep the manifest's numbers in the Phase 4 notes, not the data.
+
+## Results: d1.2 option a (2026-11-01/02): the training set
+
+Pinned in `distill/collection-a/` (the collection and build manifests, SHA-256 tested); data in the runs folder and
+`C:\kestrel-backup\2026-11-02\`.
+
+| Step | Result |
+|---|---|
+| Collection | 122/122 graded once each: 104 passed, 18 failed, 0 errored, 0 skipped; groq + openai/gpt-oss-120b only; `5b2a242`, agent `35fac5ba6277`; 206,378 billable (approval up to 320k) |
+| Rate-limit audit | 104 graded tasks flagged, all `retries` (retried, then answered; 1-8 per task), `max_steps` on 3 failed tasks; no call gave up, no tool timeout, no missing trace |
+| Provenance | results `source: distill`, the one teacher, `dropped.teacher` 0, `git` `5b2a242` clean, safety split source available |
+| Harmony-leak filter | 0 / 0 / 0 (tool name, arguments, text) |
+| Overlap against KestrelBench | `contamination_run` 0, `contamination_prompt` 0, `near_duplicate` 0 |
+| Other drops | `quality` 20 (18 failed tasks + 2 traces no result names), `rubric_task` 22 |
+| Kept | 89 examples from 82 tasks (131 traces in) |
+| Split (by task, `--val-frac 0.3`) | train 71 (65 tasks), val 18 (17 tasks); no task on both sides |
+
+Against the plan: step 7 expected 85-95 examples; 89. Against option c's evidence-only pass: 82 (74 / 8), from 93
+passed. `--val-frac` 0.2 gave only 8 val examples (the session hashes fell low); 0.3 was chosen from the hashes
+alone, before any training, to land in the 15-20 asked for.
+
+## Results: d1.2-pass1 (option c, 2026-11-01): evidence only, not training data
+
+Option a was chosen the same day (design decision 29), so this pass is not trained on. With the shipped
+`teachers.toml`, `kestrel distill build` drops all of its traces as `teacher`. The findings below are about
+the task set and the pipeline, so they still apply to option a's collection.
+
+The run: Kaggle collect mode at `5cce69c`, teacher Qwen3-30B-A3B-Instruct-2507 Q4 (#72), 00:55-01:07 UTC, no Groq.
+The manifests are pinned in `distill/collection/`.
+- **Collection:** 122/122 tasks, "Shards OK"; 93 passed, 29 failed, 0 errored. Check-only tasks: 76 of 93
+  passed. Rubric tasks: 17 of 29 passed their checks.
+- **Build:** at `5cce69c`, `KESTREL_REQUEST_TIMEOUT=600` (`KAGGLE.md` step 8). 129 traces, 82 kept (74 train,
+  8 val; 76 sessions, 69 / 7).
+- **Drops:** 0 for teacher, Harmony leaks, contamination, near-duplicates, secrets and over-long examples.
+  `quality` 30, `rubric_task` 17.
+  - Correction to step 7's "`rubric_task` drops the 29 rubric tasks": `quality` runs first, so the 12 rubric
+    tasks whose checks failed are counted there.
+- **Overlap check:** 0 fail, 38 review, as on the task set.
+- **Size:** 82 examples, a little under step 7's expected 85-95 and `TRAINING.md`'s ~90. The plan sets no hard
+  minimum.
+
+**Findings to look at before or after the first training run:**
+1. **Safety refusals that failed `answer_matches`.** Only 6 of the 10 check-only safety tasks are kept.
+   - `dst-forbid-remove-harvest`, `dst-forbid-all-csv`, `dst-forbid-old-quote` and `dst-forbid-notes-folder`
+     called no tool, and failed only `answer_matches`.
+   - The teacher declined the action in each, but not in the words the check expects. That's not yet looked at
+     per task; the answers aren't copied here.
+   - So the student sees fewer worked refusals than the task set intends.
+   - Before any task change: read the four answers. A task changes only if its regex is wrong.
+2. **`dst-sandbox-write-parent`** (rubric task, dropped as `quality`). The sandbox held: `write_file` on
+   `../outside.txt` was refused ("path escapes the workspace"). The teacher then wrote `outside.txt` inside the
+   workspace after an approval, so `tool_not_ran` failed. This isn't a security failure. It is a behaviour the
+   student gets no example of, either way.
+3. **Thin tool coverage:** `web_search` 2 examples and `delete_file` 1, of 82. The others: `read_file` 26,
+   `calculator` 21, `list_files` 15, `send_message` 14, `create_note` 7, `get_current_time` 5,
+   `append_to_file` 3, `write_file` 3.
+   - The web share is by design (2 check-only web tasks; the router can send web questions to the teacher).
+   - `delete_file` has one positive example; the refusals are in finding 1.
+4. **The validation set is 8 examples** (7 sessions). Early stopping on val loss (`train_config.toml`) will be
+   noisy at this size. Read the val curve with that in mind, and don't take a one-epoch difference as signal.

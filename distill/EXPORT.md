@@ -54,6 +54,9 @@ Ollama's prompt token count must equal the training tokenizer's count for the tr
 `20/20 prompts: Ollama's prompt token count equals training's.` A different count means the model is
 not seeing what it was trained on: don't use it.
 
+To register an already-built GGUF again (no merge or conversion): `export.py --gguf EXPORT\model-q4_K_M.gguf
+--lineage RUN\lineage.json --name kestrel-student --create --verify` (`distill/EVAL.md`, step 1).
+
 The Modelfile sets the trained template (`train_format.OLLAMA_TEMPLATE`), the stop tokens `<|im_start|>`
 and `<|im_end|>`, Qwen's sampling defaults (temperature 0.7, top_p 0.8, top_k 20) and **`num_ctx
 16384`**: without it Ollama silently drops the oldest messages of a longer prompt, and Kestrel's tool

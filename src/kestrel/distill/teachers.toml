@@ -5,15 +5,23 @@
 # training other models on their outputs, and the demo provider is scripted text, not a model.
 # The loader refuses such entries, so editing this file can't let them in either.
 
-# Exactly one entry is active: the teacher chosen under known issue #72 (distill/COLLECTION.md, step 0).
+# Exactly one entry is active: the teacher chosen under known issue #72 (design decision 29). Never two at
+# once: one dataset, one teacher (design decision 22).
 
-# Option a: Groq's hosted gpt-oss-120b.
+# Option a: Groq's hosted gpt-oss-120b. Selected 11-01 (design decision 29): Groq Support confirmed the use
+# in writing on 2026-10-31, as #72's rule required.
 [[teacher]]
 provider = "groq"
 model = "openai/gpt-oss-120b"
 
-# Option c: gpt-oss-20b served by Ollama (on a Kaggle GPU). To switch, comment out option a and
-# uncomment these three lines.
+# Option c, not used (#72, design decision 29): Qwen3-30B-A3B-Instruct-2507 at Q4, served by Ollama on Kaggle
+# (distill/collect.ipynb) with Kestrel's template (#73). Won #72's pre-registered selection on 10-31
+# (distill/selection/); its collection d1.2-pass1 (distill/collection/) is kept as evidence, not training data.
+# [[teacher]]
+# provider = "ollama"
+# model = "kestrel-teacher-qwen3-30b-a3b"
+
+# Not selected (#72, 10-31): gpt-oss:20b, Ollama's own package. Kept for the record; never enable it.
 # [[teacher]]
 # provider = "ollama"
 # model = "gpt-oss:20b"

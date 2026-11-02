@@ -1,8 +1,8 @@
 {
-  "input_db_sha256": "ef6eac1c35105727661af6af4854cb186a293c3722f3ba878c3d1824c51aa885",
+  "input_db_sha256": "12c838afedac8cdd06595687095f446659fc285027395f58ab57d41b926bde60",
   "results": {},
   "git": {
-    "commit": "9f58d152ff5562c12b0ead4583991f9d16120f2d",
+    "commit": "d74c6cebd4085fed380ea376062c59f50dc8b85c",
     "dirty": true
   },
   "teachers": [
@@ -38,6 +38,9 @@
     "filters": [
       "no_messages",
       "teacher",
+      "harmony_leak_tool_name",
+      "harmony_leak_arguments",
+      "harmony_leak_text",
       "contamination_run",
       "contamination_prompt",
       "near_duplicate",
@@ -60,6 +63,9 @@
     "dropped": {
       "no_messages": 0,
       "teacher": 0,
+      "harmony_leak_tool_name": 0,
+      "harmony_leak_arguments": 0,
+      "harmony_leak_text": 0,
       "contamination_run": 0,
       "contamination_prompt": 0,
       "near_duplicate": 0,

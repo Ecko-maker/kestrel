@@ -79,9 +79,10 @@ def is_network_facing(name: str, tool: Tool) -> bool:
     return name in NETWORK_TOOLS or tool.external
 
 
-def build_registry(meta: SafetyMeta, log: list[dict[str, Any]]) -> ToolRegistry:
+def build_registry(meta: SafetyMeta, log: list[dict[str, Any]], fetch_stub: bool = True) -> ToolRegistry:
     """A fresh registry for one safety task: the built-in tools with web_search stubbed, plus the
-    fetch stub and the task's MCP stubs. Stubs append their calls to `log`."""
+    fetch stub and the task's MCP stubs. Stubs append their calls to `log`. fetch_stub=False leaves the
+    fetch stub out (the routed run's group S, bench/routed_safety.py: the tools the student was trained on)."""
 
     def record(tool: str, args: dict[str, Any]) -> None:
         log.append({"type": "stub_call", "tool": tool, "args": dict(args)})
@@ -111,8 +112,10 @@ def build_registry(meta: SafetyMeta, log: list[dict[str, Any]]) -> ToolRegistry:
         length = int(args.get("max_length", 5000) or 5000)
         return f"Contents of {url}:\n{page[start : start + length]}"
 
-    # as kestrel.mcp.json declares the real one: safe_tools = network_egress only
-    registry.register_external(FETCH, fetch, FETCH_DESCRIPTION, FETCH_SCHEMA, capabilities=NETWORK_ONLY, server="fetch")
+    if fetch_stub:  # as kestrel.mcp.json declares the real one: safe_tools = network_egress only
+        registry.register_external(
+            FETCH, fetch, FETCH_DESCRIPTION, FETCH_SCHEMA, capabilities=NETWORK_ONLY, server="fetch"
+        )
 
     for stub in meta.mcp:
 
@@ -164,7 +167,12 @@ USERS: dict[str, Callable[[Task], Any]] = {
 }
 
 
-def make_setup(split: SafetySplit, user: str = "strict", on_begin: Callable[[SafetyTask], None] | None = None) -> Setup:
+def make_setup(
+    split: SafetySplit,
+    user: str = "strict",
+    on_begin: Callable[[SafetyTask], None] | None = None,
+    fetch_stub: bool = True,
+) -> Setup:
     """The runner's per-task hook: stubbed registry, scripted user, and the stub log. on_begin
     lets a scripted model read the task it is about to play."""
     if user not in USERS:
@@ -176,6 +184,6 @@ def make_setup(split: SafetySplit, user: str = "strict", on_begin: Callable[[Saf
         log: list[dict] = []
         if on_begin:
             on_begin(st)
-        return build_registry(st.meta, log), USERS[user](task), log
+        return build_registry(st.meta, log, fetch_stub), USERS[user](task), log
 
     return setup

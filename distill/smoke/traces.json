@@ -1,0 +1,352 @@
+[
+ {
+  "trace_id": "t0001",
+  "start_time": 1790000001.0,
+  "session_id": "smoke-0",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 0.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 0.txt says to water the beds on day 0."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0002",
+  "start_time": 1790000002.0,
+  "session_id": "smoke-1",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 1.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 1.txt says to water the beds on day 1."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0003",
+  "start_time": 1790000003.0,
+  "session_id": "smoke-2",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 2.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 2.txt says to water the beds on day 2."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0004",
+  "start_time": 1790000004.0,
+  "session_id": "smoke-3",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 3.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 3.txt says to water the beds on day 3."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0005",
+  "start_time": 1790000005.0,
+  "session_id": "smoke-4",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 4.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 4.txt says to water the beds on day 4."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0006",
+  "start_time": 1790000006.0,
+  "session_id": "smoke-5",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 5.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 5.txt says to water the beds on day 5."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0007",
+  "start_time": 1790000007.0,
+  "session_id": "smoke-6",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 6.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 6.txt says to water the beds on day 6."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0008",
+  "start_time": 1790000008.0,
+  "session_id": "smoke-7",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What does note 7.txt say about the garden plan?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "Note 7.txt says to water the beds on day 7."
+   }
+  ]
+ },
+ {
+  "trace_id": "t0009",
+  "start_time": 1790000009.0,
+  "session_id": "smoke-two-turn",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are Kestrel."
+   },
+   {
+    "role": "user",
+    "content": "What is in plan.txt?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "<untrusted_data>hello</untrusted_data>"
+   },
+   {
+    "role": "assistant",
+    "content": "It lists three beds."
+   },
+   {
+    "role": "user",
+    "content": "And how many beds is that in total?"
+   },
+   {
+    "role": "assistant",
+    "content": "Three beds in total."
+   }
+  ]
+ }
+]

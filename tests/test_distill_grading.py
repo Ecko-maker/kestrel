@@ -297,6 +297,35 @@ def test_a_different_or_missing_fingerprint_stops_the_build(
     assert not (tmp_path / "out").exists()
 
 
+def test_a_different_request_timeout_is_named_with_the_setting_to_use(
+    tmp_path: Path, db: TraceDB, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kestrel.bench.runner import agent_fingerprint
+
+    monkeypatch.setenv("KESTREL_REQUEST_TIMEOUT", "600")  # as on Kaggle
+    kaggle = agent_fingerprint("groq", "openai/gpt-oss-120b")
+    monkeypatch.delenv("KESTREL_REQUEST_TIMEOUT")
+    db.add(convo("q", "a"))
+    results = _fingerprinted(tmp_path, "kaggle.json", kaggle)
+    assert _build(db, tmp_path / "out", results) == 2
+    err = capsys.readouterr().err
+    assert "Differs: request_timeout_s 600.0 in the file vs 60.0 now." in err
+    assert "set KESTREL_REQUEST_TIMEOUT=600 (the run's value)" in err
+    assert "collection commit" not in err  # the code is the same: only the setting differs
+    monkeypatch.setenv("KESTREL_REQUEST_TIMEOUT", "600")
+    assert _build(db, tmp_path / "out", results) == 0
+
+
+def test_a_different_code_input_points_to_the_collection_commit() -> None:
+    from kestrel.bench.runner import agent_fingerprint
+
+    current = agent_fingerprint("groq", "openai/gpt-oss-120b")
+    old = current | {"system_prompt": "000000000000", "request_timeout_s": 600.0, "sha": "0123456789ab"}
+    hint = ds.mismatch_hint(old, current)
+    assert f"system_prompt 000000000000 in the file vs {current['system_prompt']} now" in hint
+    assert "KESTREL_REQUEST_TIMEOUT=600" in hint and "build at the collection commit" in hint
+
+
 def test_kestrelbench_files_are_not_fingerprint_checked(tmp_path: Path) -> None:
     path = tmp_path / "bench.json"
     path.write_text(json.dumps({"meta": {"split": "main"}, "tasks": [{"id": "arith-percent"}]}), encoding="utf-8")

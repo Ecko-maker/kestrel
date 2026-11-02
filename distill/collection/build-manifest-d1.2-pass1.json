@@ -1,0 +1,140 @@
+{
+  "input_db_sha256": "db19dfd21d57651123df1b6c6a58262923aa71bd5b1ce98c9fb4d857c31d40ab",
+  "results": {
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-1-of-8.json": {
+      "sha256": "b1e0bf45ac8aa4a2286785931b4600d8554ec88a82fb5a174a3f56c0b53ee9db",
+      "source": "distill"
+    },
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-2-of-8.json": {
+      "sha256": "f14ed6e3b020d48690f67e41dc51e34fd1f2f95ea2fe71795787556bffda62db",
+      "source": "distill"
+    },
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-3-of-8.json": {
+      "sha256": "fadf95ebd917d653e19ce023925edbc8e73cbb1f7c3c968fef058e3c789174a3",
+      "source": "distill"
+    },
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-4-of-8.json": {
+      "sha256": "8799b69dd9cd91a83d8edf7ca28185a96b5b58ad9b5174e73c8f0d7fbab1b906",
+      "source": "distill"
+    },
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-5-of-8.json": {
+      "sha256": "46120adad9d1f4047e25bac6d717e8b80a477a31a0beb723f15be7eba4bfb381",
+      "source": "distill"
+    },
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-6-of-8.json": {
+      "sha256": "805f8d8bf13a9ed92750ae2a82247215e92bef10adf46e9f17da974fe311d97d",
+      "source": "distill"
+    },
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-7-of-8.json": {
+      "sha256": "adf5ef4eb6538b2455d0d04b9bb77424c99df46a8ecab724e672261ebce2add6",
+      "source": "distill"
+    },
+    "distill-d1.2-kestrel-teacher-qwen3-30b-a3b-shard-8-of-8.json": {
+      "sha256": "65445009939273c7a163b35555a749a03cea81c479cf7dbdd490b0712d24e35f",
+      "source": "distill"
+    }
+  },
+  "git": {
+    "commit": "5cce69cdee155f7499de8b89b68c2732e6a3058e",
+    "dirty": false
+  },
+  "teachers": [
+    {
+      "provider": "ollama",
+      "model": "kestrel-teacher-qwen3-30b-a3b"
+    }
+  ],
+  "settings": {
+    "max_tokens": 8000,
+    "val_frac": 0.1,
+    "split_salt": "2026",
+    "bench_prompts": 155,
+    "bench_sources": [
+      {
+        "source": "disk",
+        "path": "evals/kestrelbench"
+      },
+      {
+        "source": "git:evals/kestrelbench/safety",
+        "commit": "6f58ee528ce53bc011653c9b783973e0da077eba",
+        "tag": "safety-before",
+        "available": true,
+        "files": 9
+      }
+    ],
+    "near_duplicate": {
+      "fail_jaccard": 0.23,
+      "fail_run_words": 5
+    },
+    "grading": "checks-only",
+    "calibrated_judges": [],
+    "filters": [
+      "no_messages",
+      "teacher",
+      "harmony_leak_tool_name",
+      "harmony_leak_arguments",
+      "harmony_leak_text",
+      "contamination_run",
+      "contamination_prompt",
+      "near_duplicate",
+      "quality",
+      "task_changed",
+      "rubric_task",
+      "secret_canary",
+      "secret_pattern",
+      "secret_env_line",
+      "secret_env_value",
+      "too_long",
+      "duplicate"
+    ]
+  },
+  "stats": {
+    "traces_seen": 129,
+    "kept": 82,
+    "train": 74,
+    "val": 8,
+    "dropped": {
+      "no_messages": 0,
+      "teacher": 0,
+      "harmony_leak_tool_name": 0,
+      "harmony_leak_arguments": 0,
+      "harmony_leak_text": 0,
+      "contamination_run": 0,
+      "contamination_prompt": 0,
+      "near_duplicate": 0,
+      "quality": 30,
+      "task_changed": 0,
+      "rubric_task": 17,
+      "secret_canary": 0,
+      "secret_pattern": 0,
+      "secret_env_line": 0,
+      "secret_env_value": 0,
+      "too_long": 0,
+      "duplicate": 0
+    },
+    "sessions": {
+      "total": 76,
+      "train": 69,
+      "val": 7
+    },
+    "tokens": {
+      "p50": 1530.0,
+      "p90": 1961.0,
+      "max": 2348.0
+    },
+    "examples_per_tool": {
+      "append_to_file": 3,
+      "calculator": 21,
+      "create_note": 7,
+      "delete_file": 1,
+      "get_current_time": 5,
+      "list_files": 15,
+      "read_file": 26,
+      "send_message": 14,
+      "web_search": 2,
+      "write_file": 3
+    },
+    "with_approval": 27,
+    "with_rejection": 8
+  }
+}

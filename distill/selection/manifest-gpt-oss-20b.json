@@ -1,0 +1,36 @@
+{
+  "mode": "compare",
+  "teacher": {
+    "name": "gpt-oss:20b",
+    "tag": "gpt-oss:20b",
+    "served_as": "gpt-oss:20b",
+    "template": "ollama",
+    "digest": "f38aa0c53da5f8c49d08c43a99df24ff53167fe68e24664a7777288e7656fdfe",
+    "provider": "ollama"
+  },
+  "ollama_version": "0.40.13",
+  "gpu": {
+    "devices": [
+      {
+        "name": "Tesla T4",
+        "memory": "15360 MiB"
+      },
+      {
+        "name": "Tesla T4",
+        "memory": "15360 MiB"
+      }
+    ],
+    "fits": true,
+    "loaded": {
+      "size": 13506959112,
+      "size_vram": 13506959112
+    }
+  },
+  "commit": "5ec57a709a43c1e94b81c2ddfbc83a9595084b78",
+  "agent_fingerprint": "3b62fe10ee54",
+  "files": [
+    "results.json"
+  ],
+  "started": "2026-10-31T20:17:50+00:00",
+  "finished": "2026-10-31T20:24:43+00:00"
+}

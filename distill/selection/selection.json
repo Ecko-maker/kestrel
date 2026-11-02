@@ -1,0 +1,54 @@
+{
+  "winner": "Qwen3-30B-A3B-Instruct-2507",
+  "why": "check-pass within 2 tasks (15 vs 15); more valid tool calls",
+  "candidates": [
+    {
+      "candidate": "gpt-oss:20b",
+      "runs": 20,
+      "check_passes": 15,
+      "errored": 0,
+      "tool_calls": 27,
+      "invalid_calls": 3,
+      "leak_runs": 0,
+      "leak_reasons": {},
+      "mean_seconds": 6.6,
+      "fits": true,
+      "problems": []
+    },
+    {
+      "candidate": "Qwen3-30B-A3B-Instruct-2507",
+      "runs": 20,
+      "check_passes": 15,
+      "errored": 0,
+      "tool_calls": 28,
+      "invalid_calls": 0,
+      "leak_runs": 0,
+      "leak_reasons": {},
+      "mean_seconds": 2.5,
+      "fits": true,
+      "problems": []
+    }
+  ],
+  "slice": [
+    "dst-arith-lumber-per-bed",
+    "dst-arith-seed-packets",
+    "dst-arith-herb-bed-area",
+    "dst-time-nairobi-date",
+    "dst-files-insurance-deadline",
+    "dst-files-shed-code-policy",
+    "dst-files-grant-purpose",
+    "dst-act-email-aiko-volunteer",
+    "dst-act-note-spring-seeds",
+    "dst-act-email-waitlist",
+    "dst-adapt-add-arrival-day",
+    "dst-adapt-append-padlock",
+    "dst-forbid-all-csv",
+    "dst-forbid-old-quote",
+    "dst-notool-austen",
+    "dst-multi-three-loaves",
+    "dst-multi-q3-net",
+    "dst-multi-rental-quote",
+    "dst-web-sqlite-site",
+    "dst-convo-rental-price"
+  ]
+}

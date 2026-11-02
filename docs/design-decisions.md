@@ -451,3 +451,48 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Implementation (step 8, 2026-10-18).** `src/kestrel/router.py`: a `RoutedLLM` with FallbackLLM's interface, built only for `routed`. The agent gained three guarded hooks (`begin_turn` with the registry's `prepare` for checking tool calls without running them, `escalate("max_steps")` with a fresh teacher budget capped at 2 x max_steps, and route attributes on llm_call spans); without a router none of them runs, and the agent fingerprint stays `cc5c16377662`. Escalation reasons are split into pre_route, quality and student_health; a routed bench run stops above `KESTREL_ROUTER_MAX_STUDENT_HEALTH` (default 10% of turns, after 10 tasks). Pre-routing on context uses `KESTREL_ROUTER_CTX_MARGIN` (default 80%). Steps per turn are recorded, and the quality verdict is stated with and without passes that needed more than max_steps; the claim must hold without them. Decision 5 refined: the verdict against the after-run alone and against all three references must agree, or fresh teacher repeats are needed. The approval gate is tested with the teacher's calls; tiers v2 isn't on this branch yet (#77).
 
 **Why:** a claim the noise can't support is worse than none. Tying the teacher reference to the same code as the routed system, and refusing to reuse old runs when they disagree beyond measured noise, keeps the comparison like for like. Making the router fail safe (deterministic signals, no repeated actions, user rejections respected) means routing can never weaken the approval model.
+
+## 29. Phase 4 teacher: option a, Groq + gpt-oss-120b (owner decision, 2026-11-01; closes #72)
+
+**Decision:** the teacher for Phase 4 distillation is **option a, `groq` + `openai/gpt-oss-120b`**, by the rule pre-registered in known issue #72: option a if Groq confirmed in writing by 2026-11-04, otherwise option c.
+- **Groq's confirmation.** In a support chat on 2026-10-31 (06:50 PDT), Groq Support confirmed that using gpt-oss-120b outputs to fine-tune a smaller open model for this personal AI agent project is permitted, provided the use follows Groq's AI Usage Policy and the applicable terms. Summarized, not quoted; the owner keeps the transcript privately, and it isn't copied into the repository.
+- **The AI Usage Policy** ("Groq Acceptable Use & Responsible AI Policy", effective 2025-10-15, read 2026-11-01) has no clause on training with outputs, distillation or competing models. Its limits that touch this project are the usage limits (rate limits, no spreading use over several accounts or organizations) and the general bans (illegal or harmful use, high-risk automated decisions, circumventing safety measures), which collection keeps.
+- **Scope kept, as described to Groq:** a personal project; no hosted or inference service; the student weights are not published.
+- **Option c is not used for training.** The Kaggle teacher selection (`distill/selection/`) and the Qwen3-30B-A3B collection d1.2-pass1 (`distill/collection/`) stay pinned as evidence. One dataset has one teacher (design decision 22's fallback paragraph): `teachers.toml` lists only Groq's entry, so `kestrel distill build` drops any Qwen trace as `teacher`.
+- **`docs/phase4-plan.md` section 8 stays as frozen.** The option c amendment (`docs/phase4-plan-option-c-amendment-draft.md`) is not applied.
+- **Draft-and-ask (#59): collect now, fix later.** The habit is not fixed before collection. The distill tasks that expect an approval-gated action (30 by a count of their checks; 29 check-only) need the gated tool call to pass, so a trace that drafts and asks fails its checks and is dropped as `quality`. The student is not trained on the habit, but it also gets fewer examples of those tasks. **Consequence:** the later prompt fix changes the agent fingerprint, so it must re-measure the routed system as well as the teacher, or the student is retrained on traces from the fixed prompt.
+- **Budget:** collection on Groq's free tier over two days, with its own approval line in `docs/STATUS.md` (up to 320k billable over 11-01 and 11-02; one command per day, `--token-budget` leaving a 15k margin in Groq's rolling window).
+
+**Alternatives:**
+- **Option c** (Qwen3-30B-A3B on Kaggle, no Groq): built, selected by #72's rule and collected (82 examples). Not used because the pre-registered condition for option a was met; a 120B teacher is the stronger one, and it is the teacher the Phase 3 references and section 8 were written for.
+- **Mixing both teachers' traces:** more examples, but the dataset would no longer have one teacher, and the claim compares the student with one named teacher.
+- **Fixing #59 before collection:** cleaner traces, but a measured agent change first (main suite and safety split before and after, more Groq days), delaying collection past the plan.
+
+**Why:** the decision was pre-registered with its condition before either answer was known, and the condition was met, so following it avoids choosing a teacher after seeing results. Keeping option c's evidence pinned but out of training keeps the record honest without diluting the dataset.
+
+## D-pending-phase4-cost-report. Phase 4 cost from the traces, priced with one table for both sides
+
+**Decision:** section 8.2's cost rule is computed by `kestrel bench cost` (`src/kestrel/bench/cost.py`) from each results file's trace database, not from the cost stored on the traces.
+- Every llm_call span is priced again with the current `prices.toml` list prices, the same table for the routed run and the teacher reference, so a price change between their dates can't favour either side.
+- Ollama calls cost $0 (local hardware, electricity not counted). A non-local call without a list price is "unpriced".
+- The judge isn't counted. Cached input is priced as ordinary input on both sides (prices.toml has no cached price).
+- Per task, the cost is the mean over its runs; D = routed - teacher; shown when the 95% paired bootstrap upper bound of mean(D) is < 0 (10,000 resamples, seed 2026, in micro-dollars so rounding can't hide it).
+- Any missing trace, unpriced call, task on one side only, or routed teacher that isn't the reference's model makes it **can't decide**: no `--cost-shown` flag is given until fixed.
+- The same report gives Groq billable tokens per 100 tasks (Groq spans only, cached input left out), latency p50/p95, and the teacher's share of turns and of task runs with 95% intervals (bootstrap over tasks of the ratio, since a task's repeats aren't independent).
+
+**Alternatives:** the trace's stored `list_price_usd` (priced at run time, so two runs weeks apart could use different tables, and a trace whose calls were all local stores None); billable tokens from the results rows (a routed row's `tokens` include the student's Ollama tokens, which never count on Groq).
+
+**Why:** a cost claim must price exactly the same work the same way on both sides, and it shouldn't pass on a gap in the data.
+
+## D-pending-routed-safety-groups. The routed safety run covers only the tasks the student can be sent
+
+**Decision (owner, 2026-11-01, before any routed run; amendment 8.7 of `docs/phase4-plan.md`):** the safety split's tasks are split from their own data (`src/kestrel/bench/routed_safety.py`).
+- **Group F (19):** tasks that need `fetch__fetch` (fetch pages, vector `fetch`, or a goal or expected outcome naming it) or register an MCP stub. They are the teacher by router v1's pre-route rule, so they aren't re-run; their result is the teacher's measured tiers v2.1 one.
+- **Group S (29):** every other task, run routed with the fetch stub left out (`bench run --split safety --safety-group S`; results record `safety_group` and `fetch_stub`).
+- The gate is 0 system-level successes under the strict user on group S, and rubber-stamp 0, the teacher's.
+- The student alone runs all 48 locally, reported and not gated.
+- The drift guard's reading is fixed in the same amendment.
+
+**Alternatives:** run all 48 as pre-registered (~299k billable to re-measure the teacher under another fingerprint); skip the routed safety run (no evidence on the turns the student does answer); train the student with the fetch and MCP tools (a new collection and dataset).
+
+**Why:** spend Groq only where the routed system can differ from the teacher, and make the split a property of the task data, so it can't be chosen by looking at results.

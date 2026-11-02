@@ -124,7 +124,83 @@ def test_training_checks_its_three_data_files_before_loading_a_model(tmp_path: P
     (tmp_path / "train.jsonl").write_text("{}\n", encoding="utf-8")  # e.g. only the smoke file
     with pytest.raises(SystemExit, match=r"missing val\.jsonl, manifest\.json"):
         train.main(["--data", str(tmp_path), "--out", str(tmp_path / "out")])
-    train.check_data(ROOT / "distill" / "smoke")  # a complete folder passes
+    train.check_data(ROOT / "distill" / "smoke", CONFIG)  # a complete folder passes
+
+
+def test_training_refuses_another_teacher_or_an_old_pipeline(tmp_path: Path) -> None:
+    import shutil
+
+    for name in train.DATA_FILES:
+        shutil.copy(ROOT / "distill" / "smoke" / name, tmp_path / name)
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    qwen = manifest | {"teachers": [{"provider": "ollama", "model": "kestrel-teacher-qwen3-30b-a3b"}]}
+    (tmp_path / "manifest.json").write_text(json.dumps(qwen), encoding="utf-8")
+    with pytest.raises(SystemExit, match="design decision 29"):
+        train.main(["--data", str(tmp_path), "--out", str(tmp_path / "out")])
+    old = manifest | {"settings": manifest["settings"] | {"filters": manifest["settings"]["filters"][:2]}}
+    (tmp_path / "manifest.json").write_text(json.dumps(old), encoding="utf-8")
+    with pytest.raises(SystemExit, match="rebuild it"):
+        train.main(["--data", str(tmp_path), "--out", str(tmp_path / "out")])
+
+
+def test_the_training_config_matches_teachers_toml_and_the_pipeline() -> None:
+    from kestrel.distill import dataset
+
+    want = [{"provider": p, "model": m} for p, m in sorted(dataset.load_teachers())]
+    assert CONFIG["data"]["teachers"] == want  # what `distill build` writes into the manifest
+    assert CONFIG["data"]["filters"] == list(dataset.FILTERS)
+
+
+def test_a_real_run_needs_the_snapshot_commit(tmp_path: Path) -> None:
+    assert train.code_commit() is None  # the repo's distill/ has no COMMIT file; only a snapshot does
+    with pytest.raises(SystemExit, match="no COMMIT file"):
+        train.main(["--data", str(ROOT / "distill" / "smoke"), "--out", str(tmp_path / "out")])
+
+
+def test_the_train_snapshot_is_the_commit_flat_and_reproducible(tmp_path: Path) -> None:
+    import subprocess
+    import zipfile
+
+    snap = load("kestrel_train_snapshot_script", ROOT / "scripts" / "build_train_snapshot.py")
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    a = snap.build(head, tmp_path / "a")
+    b = snap.build(head, tmp_path / "b")
+    assert a.read_bytes() == b.read_bytes() and a.name == f"kestrel-train-code-{head[:12]}.zip"
+    z = zipfile.ZipFile(a)
+    assert sorted(z.namelist()) == sorted([*snap.FILES, "COMMIT", "SHA256SUMS"])  # flat, no folders
+    assert z.read("COMMIT").decode().strip() == head
+    for name, path in snap.FILES.items():
+        shown = subprocess.run(["git", "show", f"{head}:{path}"], cwd=ROOT, capture_output=True).stdout
+        assert z.read(name) == shown
+
+
+def test_the_dataset_upload_packs_only_what_train_py_accepts(tmp_path: Path) -> None:
+    import shutil
+    import zipfile
+
+    snap = load("kestrel_train_snapshot_script_data", ROOT / "scripts" / "build_train_snapshot.py")
+    z = zipfile.ZipFile(snap.build_dataset(ROOT / "distill" / "smoke", tmp_path / "out"))
+    assert sorted(z.namelist()) == ["SHA256SUMS", "manifest.json", "train.jsonl", "val.jsonl"]  # flat
+    assert z.read("train.jsonl") == (ROOT / "distill" / "smoke" / "train.jsonl").read_bytes()
+    qwen = tmp_path / "qwen"
+    shutil.copytree(ROOT / "distill" / "smoke", qwen)
+    manifest = json.loads((qwen / "manifest.json").read_text(encoding="utf-8"))
+    manifest["teachers"] = [{"provider": "ollama", "model": "kestrel-teacher-qwen3-30b-a3b"}]
+    (qwen / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(SystemExit, match="teachers"):
+        snap.build_dataset(qwen, tmp_path / "out")
+
+
+def test_the_modelfile_licence_names_the_option_a_teacher() -> None:
+    teacher = CONFIG["data"]["teachers"][0]["model"].split("/")[-1]  # gpt-oss-120b
+    licence = next(line for line in export.modelfile(tf.OLLAMA_TEMPLATE, "m.gguf").splitlines() if "LICENSE" in line)
+    assert "Apache-2.0" in licence and CONFIG["base_model"]["id"] in licence and f"from {teacher}" in licence
+
+
+def test_the_smoke_dataset_is_what_distill_build_writes_today() -> None:
+    """distill/smoke is rebuilt from distill/smoke/traces.json by scripts/build_smoke_dataset.py."""
+    smoke = load("kestrel_build_smoke_script", ROOT / "scripts" / "build_smoke_dataset.py")
+    assert smoke.check() == []
 
 
 # --- Tool-schema pinning ------------------------------------------------------------
@@ -190,3 +266,42 @@ def test_base_and_student_get_the_same_modelfile() -> None:
     )
     source = (ROOT / "distill" / "export.py").read_text(encoding="utf-8")
     assert source.count("modelfile(template, gguf.name)") == 1  # one call, used for --base and the student
+
+
+def test_gguf_mode_writes_the_same_modelfile_next_to_an_existing_gguf(tmp_path: Path) -> None:
+    """--gguf (serve a GGUF built earlier) skips merge and conversion and writes the student's Modelfile."""
+    gguf = tmp_path / "model-q4_K_M.gguf"
+    gguf.write_bytes(b"GGUF")
+    assert export.main(["--gguf", str(gguf)]) == 0
+    assert (tmp_path / "Modelfile").read_text(encoding="utf-8") == export.modelfile(tf.OLLAMA_TEMPLATE, gguf.name)
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (["--base"], "leave out --adapter and --base"),
+        (["--out", "elsewhere"], "leave out --out"),
+        (["--verify"], "needs --lineage"),
+        (["--verify", "--lineage", "lineage.json"], "no tokenizer folder"),
+    ],
+)
+def test_gguf_mode_refuses_what_it_cant_honour(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], extra: list[str], message: str
+) -> None:
+    gguf = tmp_path / "model-q4_K_M.gguf"
+    gguf.write_bytes(b"GGUF")
+    with pytest.raises(SystemExit):
+        export.main(["--gguf", str(gguf), *extra])
+    assert message in capsys.readouterr().err
+    assert not (tmp_path / "Modelfile").exists()
+
+
+def test_training_md_states_the_configs_settings() -> None:
+    """distill/TRAINING.md's settings table says what train_config.toml does."""
+    doc = (ROOT / "distill" / "TRAINING.md").read_text(encoding="utf-8")
+    lora, tr, base = CONFIG["lora"], CONFIG["training"], CONFIG["base_model"]
+    assert f"`{base['id']}` @ `{base['revision'][:8]}" in doc
+    assert f"rank {lora['r']}, alpha {lora['alpha']}, dropout {lora['dropout']}" in doc
+    assert f"{tr['epochs']} at most" in doc and f"patience {tr['early_stopping_patience']}" in doc
+    assert f"{tr['batch_size']} × {tr['gradient_accumulation']} gradient accumulation" in doc
+    assert f"{CONFIG['data']['max_length']:,} tokens" in doc
