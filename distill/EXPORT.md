@@ -97,10 +97,10 @@ Expand-Archive $zip $a                                   # -> $a\adapter\ and $a
 Get-FileHash $zip                                        # note it in the Phase 4 log
 
 # 1. The lineage (KAGGLE.md step 10): every line must say OK.
-#    The code commit is the COMMIT inside the uploaded code zip (kestrel-train-code-a4b33721d452.zip).
-#    The 11-02 run used that code unchanged; only its notebook had an extra first cell, CUDA_VISIBLE_DEVICES=0
-#    (TRAINING.md, run log), which lineage.json doesn't record: the notebook isn't part of the code zip.
-uv run --no-sync python scripts/check_lineage.py "$a\lineage.json" --code-commit a4b33721d452c6aa83f0fc068bec1bb6db677296
+#    The code commit is the COMMIT inside the uploaded code zip (kestrel-train-code-5b175f17addf.zip; both a4b3372
+#    attempts stopped in trainer.train(), TRAINING.md run log). The notebook's extra first cell,
+#    CUDA_VISIBLE_DEVICES=0, isn't in lineage.json: the notebook isn't part of the code zip.
+uv run --no-sync python scripts/check_lineage.py "$a\lineage.json" --code-commit 5b175f17addf6df84826983702d5a1f6093d4e6e
 
 # 2. Room to merge: ~9 GB free RAM, ~20 GB free disk under $env:TEMP.
 "{0:N1} GB RAM free" -f ((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB)

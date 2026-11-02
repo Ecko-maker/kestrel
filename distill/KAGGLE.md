@@ -212,5 +212,6 @@ teacher output: the Kaggle dataset must be Private, never public.**
 9. The version > **Output** > download **`kestrel-adapter.zip`** (`adapter/` + `lineage.json`).
 10. Check `lineage.json`: `code_commit` = the code zip's commit, `dataset.manifest_sha256` = the data zip's
     `manifest.json` hash (in its `SHA256SUMS`), `dataset.teachers` = groq + openai/gpt-oss-120b,
-    `base_model.revision` = `cdbee75f…`. Then `EXPORT.md` and `EVAL.md` step 1. The 11-02 run: code
-    `a4b3372` unchanged, the notebook with the extra first cell above; `code_commit` is `a4b3372`.
+    `base_model.revision` = `cdbee75f…`. Then `EXPORT.md` and `EVAL.md` step 1. Since 11-02 the code is
+    `5b175f1` (`kestrel-train-code-5b175f17addf.zip`, a New Version of `kestrel-distill-code`; the data dataset unchanged): both
+    `a4b3372` attempts stopped in `trainer.train()` (`TRAINING.md`, run log); `code_commit` will be `5b175f1…`.

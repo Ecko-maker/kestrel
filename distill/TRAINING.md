@@ -109,14 +109,22 @@ their pins**; torch was Kaggle's preinstalled build (not pinned). From the run's
 
 From now on the install cell prints this table before any GPU work and stops on any difference.
 
-**What it didn't check: the number of GPUs.** The smoke test trains with its own loop on GPU 0
-(`device_map={"": 0}`), never through the Trainer, so a second visible GPU changes nothing for it, while
-the real run's `SFTTrainer` wraps the model in `nn.DataParallel` and refuses it (the 11-02 run, below).
-Its record names only GPU 0, so whether 10-20 ran with one or two T4s visible isn't recorded. Not a
-version problem: the 11-02 run had all six libraries at their pins (the install cell stops otherwise),
-TRL 1.16.0 included. Since 11-02 both GPU modes stop before loading a model when more than one GPU is
-visible, and `gpu_smoke.json` / `lineage.json` record `gpu_count` and `CUDA_VISIBLE_DEVICES`. The smoke
-test still doesn't go through the Trainer (known issue KI-pending-gpu-smoke-own-loop).
+**What the 10-20 pass didn't check: the Trainer.** Until 11-02 the smoke test trained with its own
+AdamW loop on GPU 0 (`device_map={"": 0}`): float32 LoRA weights, no fp16 GradScaler, no gradient
+clipping, never `SFTTrainer`. The 11-02 real run then failed twice on what only `SFTTrainer` does (run
+log, step 5): with two GPUs visible it builds `nn.DataParallel` and refuses it; and its constructor casts a
+4-bit model's LoRA weights to bfloat16 (trl 1.16.0, whatever `fp16` says), so the first fp16 step on a T4
+fails in `clip_grad_norm_` -> `GradScaler.unscale_`. Not a version problem: all six libraries were at their
+pins both times, and both behaviours are TRL 1.16.0's. The 10-20 record names only GPU 0, so its GPU count
+isn't recorded.
+
+**Since 11-02 (code `5b175f1`)** the smoke test also runs **one real `SFTTrainer` step** through the same
+`make_trainer()` as the real run, with its fp16, gradient checkpointing and clipping: check `trainer_step`
+(loss, grad norm, the trainable dtypes) in `gpu_smoke.json`. `make_trainer()` casts the LoRA weights back to
+float32 after TRL's constructor and refuses to train unless every trainable parameter is float32; both GPU
+modes refuse more than one visible GPU; `gpu_count` and `CUDA_VISIBLE_DEVICES` are recorded. Still not
+exercised before the real run: evaluation and checkpoint saving on the GPU (known issue
+KI-pending-gpu-smoke-own-loop).
 
 ## 5. Run the training
 
@@ -143,14 +151,19 @@ If the log shows `loss is not finite` (float16 overflow on T4): lower `learning_
 - **2026-11-02, first attempt: stopped** in `trainer.train()`, no adapter. Accelerator "GPU T4 x2" left two
   GPUs visible; the Trainer wrapped the 4-bit model in `nn.DataParallel` and TRL's `SFTTrainer` refused it.
   The GPU smoke test before it had passed (it doesn't use the Trainer, see step 4).
-- **2026-11-02, the run whose adapter is used** (the owner restarted it on Kaggle): code dataset
+- **2026-11-02, second attempt (restart): stopped at step 0/45**, no adapter. Code dataset
   `kestrel-distill-code` from **`a4b3372`, unchanged** (`COMMIT` = `a4b33721d452c6aa83f0fc068bec1bb6db677296`,
   zip sha256 `bb7084e1…`); data dataset with `manifest.json` sha256 **`e39dd661…`**; both **Private**. The
   notebook was `distill/train.ipynb` as of `a4b3372` with **one extra first cell** typed on Kaggle:
-  `import os` and `os.environ["CUDA_VISIBLE_DEVICES"] = "0"` (the `train.py` subprocess inherits it). The
-  notebook isn't in the code dataset, so `lineage.json`'s `code_commit` is still `a4b3372`, and its
-  `libraries` have no `gpu_count` (added after `a4b3372`). The repo's notebook now has that cell, and passes
-  the setting to `train.py` explicitly.
+  `import os` and `os.environ["CUDA_VISIBLE_DEVICES"] = "0"` (the `train.py` subprocess inherits it); the
+  repo's notebook now has that cell and passes the setting to `train.py` explicitly. It failed with
+  `NotImplementedError: "_amp_foreach_non_finite_check_and_unscale_cuda" not implemented for 'BFloat16'`
+  (`clip_grad_norm_` -> `GradScaler.unscale_`): TRL's constructor had cast the LoRA weights to bfloat16 (step 4).
+- **Next attempt: code `5b175f1`** (`kestrel-train-code-5b175f17addf.zip`, sha256 `c012d2f2…`,
+  `C:\Users\noahi\Documents\kestrel-kaggle-upload\`), uploaded as a **New Version** of the code dataset;
+  the data dataset stays as it is (`e39dd661…`); `train_config.toml` unchanged. The notebook needs no change
+  beyond the first cell it already has. Its GPU smoke test now includes the trainer step, so a repeat
+  stops there, before the full run. `lineage.json`'s `code_commit` will be `5b175f17addf6df84826983702d5a1f6093d4e6e`.
 
 ## 6. Download and check
 
@@ -166,7 +179,8 @@ Get-Content kestrel-adapter\lineage.json | ConvertFrom-Json | Select-Object -Exp
 from the manifest. `base_model.revision` must be the pinned revision, `code_commit` (top level) the
 snapshot's commit, and `results.best_eval_loss` the val loss of the epoch that was kept.
 `scripts/check_lineage.py` checks all of these (`EXPORT.md`, "When `kestrel-adapter.zip` arrives"). For the
-11-02 run `code_commit` is `a4b3372` although its notebook had an extra first cell (run log, step 5).
+run on code `5b175f1`, `code_commit` is `5b175f1…`; its notebook's extra first cell isn't in the lineage (the
+notebook isn't part of the code zip; run log, step 5).
 
 Next: `EXPORT.md` (merge, GGUF, Ollama, and the check that Ollama serves the trained prompt format).
 
