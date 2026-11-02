@@ -61,7 +61,16 @@ def test_live_against_ollamas_renderer() -> None:
     )
     if not path.is_file():
         pytest.skip("Ollama's renderer isn't built here (distill/EXPORT.md, 'Template parity')")
-    assert tp.compare(tp.render_python(POINTS), tp.render_ollama(POINTS), "Ollama") == 0
+    ollama = tp.render_ollama(POINTS)
+    assert tp.compare(tp.render_python(POINTS), ollama["prompts"], "Ollama") == 0
+    assert ollama["tool_tag"] == tp.TOOL_TAG
+
+
+def test_ollama_parses_the_students_tool_calls() -> None:
+    """11-02: Ollama takes its tool-call tag from the template (tools.parseTag). With a bare range over
+    ToolCalls it fell back to "{", so the student's well-formed <tool_call> replies came back as text."""
+    assert GOLDEN["tool_tag"] == tp.TOOL_TAG == "<tool_call>"
+    assert tp.check_tag("{", "test") == 1
 
 
 def test_first_difference_names_the_line() -> None:

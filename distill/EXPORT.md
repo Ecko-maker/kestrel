@@ -62,6 +62,14 @@ Ollama's prompt token count must equal the training tokenizer's count for the tr
 `20/20 prompts: Ollama's prompt token count equals training's.` A different count means the model is
 not seeing what it was trained on: don't use it.
 
+**Less than ~9 GB of free RAM:** add `--low-memory`. It merges one tensor at a time (each base tensor read
+from its shard, given `W + (alpha / r) * B @ A` the way peft 0.21 computes it, written to ~256 MB shards):
+peak ~1-1.5 GB instead of the whole float16 model. Plain LoRA only (it refuses DoRA, rsLoRA,
+`modules_to_save` and the like). `tests/test_train_format.py::test_low_memory_merge_is_bit_identical_to_peft`
+checks it gives exactly `merge_and_unload`'s tensors, config and tokenizer on the `--smoke` model. The
+converter and `llama-quantize` read memory-mapped files and need little RAM of their own; quantizing maps
+the 7.7 GB f16 GGUF, so expect some paging on a full laptop.
+
 To register an already-built GGUF again (no merge or conversion): `export.py --gguf EXPORT\model-q4_K_M.gguf
 --lineage RUN\lineage.json --name kestrel-student --create --verify` (`distill/EVAL.md`, step 1).
 
@@ -121,6 +129,19 @@ Remove-Item "$env:TEMP\kestrel-export\model-f16.gguf"
 Any `FAIL` in step 1, or a `MISMATCH` line in step 3: stop, don't use the model. Then `EVAL.md`, from step 1.4
 (router settings) and the free runs.
 
+**Run log, 2026-11-02 (the first real student, code `5b175f1`):** lineage all OK. Base download 7.51 GB
+into `~\.cache\huggingface\hub\models--Qwen--Qwen3-4B-Instruct-2507`. Only 2-3.6 GB of RAM was free, so the
+export ran with `--low-memory` (252 LoRA modules into 398 tensors, 30 shards; lowest available 0.25 GB,
+page file +~1.6 GB, during quantization only). GGUF Q4_K_M 2,497,278,880 bytes, sha256 `53052ecf…` (= the
+Ollama blob of `kestrel-student`). Tool schemas identical; 20/20 token counts; template parity 20/20.
+A 3-task sanity run (`arith-percent`, `files-list`, `notool-capital`, `--judge none`) then failed both tool
+tasks: the student wrote correct `<tool_call>` blocks, but Ollama returned them as text. Ollama reads its
+tool-call tag from the template (`tools.parseTag`: the first text inside an `{{ if .ToolCalls }}`), and the
+template had only a `range`, so the tag was `{`. Fixed in `OLLAMA_TEMPLATE` (same rendered bytes);
+`template_parity.py` now also checks the tag with Ollama's own `tools.NewParser` and records it in
+`golden.json`. Re-created from the same GGUF: 20/20 again, the calls parse, the sanity run 3/3, no tool-call
+text or template tokens left in the answers. A smoke check, not a measurement.
+
 ## The base model, for comparisons
 
 ```powershell
@@ -142,7 +163,8 @@ Go's JSON encoding on both sides, because that is all Ollama can write. Two chec
    fixed conversations with `render()` and with `distill/parity/main.go`, a short Go program that calls
    Ollama's `openai.FromChatRequest` and `template.Execute` (the server's code, at the version pinned in
    `distill/parity/go.mod`). They must be identical byte for byte; a difference prints the first differing
-   line. The renderings are kept in `distill/parity/golden.json`, which a test compares with `render()`
+   line. It also asks Ollama's `tools.NewParser` which tag it parses tool calls after: it must be
+   `<tool_call>` (a reply is only turned into `tool_calls` when it starts with the template's tag). The renderings are kept in `distill/parity/golden.json`, which a test compares with `render()`
    on every `pytest` run, CI included.
 2. **At runtime, against the real server:** `export.py --verify` (above).
 

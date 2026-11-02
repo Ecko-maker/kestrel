@@ -40,8 +40,10 @@ to get it) and Ollama. No model calls beyond the local Ollama server.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
 import json
+import math
 import os
 import subprocess
 import sys
@@ -103,6 +105,97 @@ def merge(adapter: Path, out: Path, cfg: dict[str, Any], smoke: bool) -> Path:
     target = out / "merged"
     merged.save_pretrained(target, safe_serialization=True)
     AutoTokenizer.from_pretrained(adapter).save_pretrained(target)
+    return target
+
+
+# What merge_low_memory() refuses: an adapter whose merge isn't W + (alpha / r) * B @ A on the listed modules.
+UNSUPPORTED_LORA = ("use_dora", "use_rslora", "fan_in_fan_out", "lora_bias", "modules_to_save", "rank_pattern",
+                    "alpha_pattern", "target_parameters", "trainable_token_indices", "layer_replication")  # fmt: skip
+SHARD_BYTES = 256 * 2**20  # output shards of the low-memory merge; a bigger tensor gets a shard of its own
+
+
+def merge_low_memory(adapter: Path, out: Path, cfg: dict[str, Any], smoke: bool) -> Path:
+    """merge() one tensor at a time, for a laptop without ~9 GB of free RAM: each base tensor is read from
+    its safetensors shard, cast to float16, given W + (alpha / r) * B @ A as peft 0.21 merges it (the adapter
+    stays float32, so the product is float32 and is added into the float16 weight) and written out in small
+    shards. Peak memory is about
+    one shard plus the largest tensor (the embedding, ~0.8 GB) instead of the whole model. The result is
+    bit-identical to merge() (tests/test_train_format.py compares them on the --smoke model)."""
+    import torch
+    from safetensors import safe_open
+    from safetensors.torch import load_file, save_file
+    from transformers import AutoConfig, AutoTokenizer, GenerationConfig
+
+    lora_cfg = json.loads((adapter / "adapter_config.json").read_text(encoding="utf-8"))
+    if lora_cfg.get("peft_type") != "LORA" or lora_cfg.get("bias", "none") != "none":
+        raise SystemExit("--low-memory merges plain LoRA adapters only: use merge() (no --low-memory)")
+    if bad := [k for k in UNSUPPORTED_LORA if lora_cfg.get(k)]:
+        raise SystemExit(f"--low-memory can't merge an adapter with {', '.join(bad)}: use merge() (no --low-memory)")
+    scale = lora_cfg["lora_alpha"] / lora_cfg["r"]
+    loras: dict[str, dict[str, torch.Tensor]] = {}
+    for key, tensor in load_file(str(adapter / "adapter_model.safetensors")).items():
+        module, _, part = key.removeprefix("base_model.model.").rpartition(".lora_")
+        if part not in ("A.weight", "B.weight"):
+            raise SystemExit(f"--low-memory: unexpected adapter tensor {key}")
+        loras.setdefault(module, {})[part[0]] = tensor
+
+    source = base_source(cfg, adapter, smoke)
+    config = AutoConfig.from_pretrained(source)
+    index = source / "model.safetensors.index.json"
+    files = (
+        sorted(set(json.loads(index.read_text(encoding="utf-8"))["weight_map"].values()))
+        if index.is_file()
+        else ["model.safetensors"]
+    )
+    plan: list[tuple[str, str, int]] = []  # (file, key, float16 bytes), in the base's order
+    for name in files:
+        with safe_open(str(source / name), framework="pt") as f:
+            for key in f.keys():  # noqa: SIM118 (safe_open has no __iter__)
+                if key == "lm_head.weight" and config.tie_word_embeddings:
+                    continue  # save_pretrained leaves out a tied head
+                plan.append((name, key, math.prod(f.get_slice(key).get_shape()) * 2))
+    shards: list[list[tuple[str, str]]] = [[]]
+    size = 0
+    for name, key, nbytes in plan:
+        if shards[-1] and size + nbytes > SHARD_BYTES:
+            shards.append([])
+            size = 0
+        shards[-1].append((name, key))
+        size += nbytes
+
+    target = out / "merged"
+    target.mkdir(parents=True, exist_ok=True)
+    for old in target.glob("model*.safetensors*"):
+        old.unlink()
+    weight_map: dict[str, str] = {}
+    used: set[str] = set()
+    total = 0
+    for i, shard in enumerate(shards, 1):
+        shard_name = f"model-{i:05d}-of-{len(shards):05d}.safetensors"
+        tensors: dict[str, torch.Tensor] = {}
+        for name, key in shard:
+            with safe_open(str(source / name), framework="pt") as f:
+                weight = f.get_tensor(key).to(torch.float16)
+            module = key.removesuffix(".weight")
+            if key.endswith(".weight") and module in loras:
+                a, b = loras[module]["A"], loras[module]["B"]
+                weight += (b.float() @ a.float()) * scale  # float32 delta into the float16 weight, as peft's merge
+                used.add(module)
+            tensors[key] = weight.contiguous()
+            weight_map[key] = shard_name
+            total += weight.numel() * 2
+        save_file(tensors, str(target / shard_name), metadata={"format": "pt"})
+        del tensors
+    if missing := sorted(set(loras) - used):
+        raise SystemExit(f"--low-memory: adapter modules not found in the base model: {missing[:3]}")
+    index_out = {"metadata": {"total_size": total}, "weight_map": weight_map}
+    (target / "model.safetensors.index.json").write_text(json.dumps(index_out, indent=2) + "\n", encoding="utf-8")
+    config.dtype = torch.float16
+    config.save_pretrained(target)
+    with contextlib.suppress(OSError):  # the base may have no generation_config.json
+        GenerationConfig.from_pretrained(source).save_pretrained(target)
+    AutoTokenizer.from_pretrained(adapter).save_pretrained(target)
+    print(f"merged {len(used)} LoRA modules into {len(plan)} tensors, {len(shards)} shards (low memory)")
     return target
 
 
@@ -224,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name", default="kestrel-student", help="Ollama model name (default kestrel-student)")
     parser.add_argument("--config", type=Path, default=HERE / "train_config.toml")
     parser.add_argument("--smoke", action="store_true", help="the adapter of a train.py --smoke run")
+    parser.add_argument("--low-memory", action="store_true", help="merge one tensor at a time (no ~9 GB of free RAM)")
     parser.add_argument("--quantize", default="q4_K_M", help="llama-quantize type (default q4_K_M)")
     parser.add_argument("--llama-cpp", type=Path, default=default_llama_cpp(), help="pinned llama.cpp folder")
     parser.add_argument("--create", action="store_true", help="run `ollama create`")
@@ -251,8 +345,9 @@ def main(argv: list[str] | None = None) -> int:
         if not args.base and args.adapter is None:
             parser.error("--adapter is required (or --base for the untrained base model)")
         args.out.mkdir(parents=True, exist_ok=True)
+        merger = merge_low_memory if args.low_memory else merge
         merged = (
-            base_source(cfg, args.adapter, args.smoke) if args.base else merge(args.adapter, args.out, cfg, args.smoke)
+            base_source(cfg, args.adapter, args.smoke) if args.base else merger(args.adapter, args.out, cfg, args.smoke)
         )
         gguf = to_gguf(merged, args.out, args.llama_cpp, args.quantize)
     template = load_train_format().OLLAMA_TEMPLATE

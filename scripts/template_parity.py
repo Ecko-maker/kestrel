@@ -6,6 +6,8 @@ For every fixed conversation in distill/parity/cases.json, and every point where
 - by Ollama's own renderer: distill/parity/main.go, built against the Ollama version in its go.mod, which
   runs the server's OpenAI conversion and template code on train_format.OLLAMA_TEMPLATE.
 They must be identical, byte for byte. A difference exits 1 and prints the first differing line.
+The other direction too: the tag Ollama's tool-call parser takes from the template (tools.NewParser) must
+be TOOL_TAG, or the student's <tool_call> replies come back as plain text (11-02: it was "{").
 
     uv run --no-sync python scripts/template_parity.py                 # Python vs Ollama (needs the renderer)
     uv run --no-sync python scripts/template_parity.py --write-golden  # refresh distill/parity/golden.json
@@ -34,6 +36,7 @@ from kestrel.distill import train_format as tf  # noqa: E402
 PARITY = ROOT / "distill" / "parity"
 CASES = PARITY / "cases.json"
 GOLDEN = PARITY / "golden.json"
+TOOL_TAG = "<tool_call>"  # what the student writes before a call (train_format.render)
 
 
 def ollama_version() -> str:
@@ -72,7 +75,8 @@ def renderer() -> Path:
     return path
 
 
-def render_ollama(pts: list[tuple[str, list[dict], list[dict]]]) -> dict[str, str]:
+def render_ollama(pts: list[tuple[str, list[dict], list[dict]]]) -> dict[str, Any]:
+    """{"tool_tag": the parser's tag, "prompts": {name: Ollama's rendering}}."""
     request = {
         "template": tf.OLLAMA_TEMPLATE,
         "cases": [{"name": n, "request": {"model": "student", "messages": m, "tools": t or None}} for n, m, t in pts],
@@ -95,6 +99,14 @@ def first_difference(a: str, b: str) -> str:
         if x != y:
             return f"line {i + 1}:\n  training: {x!r}\n  ollama:   {y!r}"
     return f"line {min(len(la), len(lb)) + 1}: one text is longer ({len(la)} vs {len(lb)} lines)"
+
+
+def check_tag(tag: str, label: str) -> int:
+    if tag == TOOL_TAG:
+        print(f"Tool-call tag {tag!r} ({label}): replies with tool calls are parsed.")
+        return 0
+    print(f"TOOL TAG MISMATCH ({label}): Ollama parses tool calls after {tag!r}, the student writes {TOOL_TAG!r}")
+    return 1
 
 
 def compare(python: dict[str, str], other: dict[str, str], label: str) -> int:
@@ -291,14 +303,21 @@ def main(argv: list[str] | None = None) -> int:
         if stale:
             print("golden.json is stale (template or Ollama version changed): run --write-golden")
             return 1
-        return compare(python, golden["prompts"], f"golden, Ollama {golden['ollama']}")
+        label = f"golden, Ollama {golden['ollama']}"
+        return compare(python, golden["prompts"], label) | check_tag(golden["tool_tag"], label)
     ollama = render_ollama(pts)
-    status = compare(python, ollama, f"Ollama {ollama_version()}")
+    label = f"Ollama {ollama_version()}"
+    status = compare(python, ollama["prompts"], label) | check_tag(ollama["tool_tag"], label)
     if args.write_golden:
         if status:
-            print("Not writing golden.json: the renderings differ.")
+            print("Not writing golden.json: the renderings or the tool-call tag differ.")
             return status
-        golden = {"ollama": ollama_version(), "template_sha256": template_sha(), "prompts": ollama}
+        golden = {
+            "ollama": ollama_version(),
+            "template_sha256": template_sha(),
+            "tool_tag": ollama["tool_tag"],
+            "prompts": ollama["prompts"],
+        }
         GOLDEN.write_text(json.dumps(golden, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         print(f"Wrote {GOLDEN}")
     return status

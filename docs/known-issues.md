@@ -487,6 +487,21 @@ Every safety task's registry (`bench/stubs.py` `build_registry`) adds the `fetch
 - `--gpu-smoke` now also runs **one real `SFTTrainer` step** through `make_trainer()`, with the real run's fp16, gradient checkpointing and gradient clipping (check `trainer_step`); either failure above would have failed it. Tests: `test_train_refuses_more_than_one_visible_gpu`, `test_notebook_shows_one_gpu_before_anything_imports_torch`, `test_make_trainer_undoes_trls_bfloat16_cast_of_4bit_lora` (TRL's real constructor), `test_gpu_smoke_trainer_step_fails_without_the_float32_fix`, `test_trainable_parameters_must_be_float32`, `test_compute_dtype_must_exist_on_the_gpu`.
 - Still open: the step has no evaluation, checkpoint save or best-model reload; those are first exercised by the real run (the CPU smoke run covers them, not on CUDA or in 4-bit). A TRL upgrade that stops casting shows in `test_make_trainer_undoes_trls_bfloat16_cast_of_4bit_lora`.
 **Done when:** the GPU smoke test with the trainer step has passed on Kaggle and the real run trains past step 0 with float32 LoRA weights; or a smoke step also evaluates and saves once.
+- **Met 2026-11-02:** the run on code `5b175f1` trained 45 of 45 steps, with evaluation, checkpoints and the best-model reload, on one T4 (`distill/TRAINING.md`, run log). Close when `main` numbers it.
+
+### KI-pending-ollama-tool-tag. Ollama returned the student's tool calls as text (fixed 2026-11-02)
+**Labels:** `distillation`, `serving`, `medium`
+The first real student wrote well-formed calls (`<tool_call>\n{"name": "calculator", "arguments": {...}}\n</tool_call>`, the trained format), but `kestrel-student` gave them back as message content with no `tool_calls`: 2 of 3 sanity tasks failed `tool_called`. Ollama 0.40 parses tool calls after a tag it reads from the TEMPLATE (`tools/template.go` `parseTag`: the first text inside an `{{ if .ToolCalls }}`, before any action); `OLLAMA_TEMPLATE` only had `{{ range $j, $c := $m.ToolCalls }}`, so the tag fell back to `{` and only replies that start with `{` were parsed. Template parity (prompt bytes) and `--verify` (prompt token counts) check what goes *into* the model, not how its reply is read, so both passed.
+- Fixed: `OLLAMA_TEMPLATE` wraps the calls in `{{ if .ToolCalls }}` and writes `<tool_call>` as literal text in the separator's first branch; the rendered prompts are byte-identical (20/20 against Ollama's renderer and against `golden.json`), so the student needs no retraining. `distill/parity/main.go` also prints `tools.NewParser(...).Tag()`; `template_parity.py` requires `<tool_call>` and records it in `golden.json`; `test_ollama_parses_the_students_tool_calls` checks it in CI. The old template gives `{` through the same renderer.
+- Checked on the real server (0.40.13) after re-creating the model from the same GGUF: a made-up calculator prompt comes back as `tool_calls`, and the 3 sanity tasks pass.
+- The 10-30 local routed run's `kestrel-qwen3-base-test` carried Qwen's own Jinja template, not this one, so it didn't show the problem.
+**Done when:** `main` has the fixed template and every served student and base model is created from it (`ollama show NAME --template` contains `{{- if .ToolCalls }}`).
+
+### KI-pending-router-text-tool-call. The router accepts a reply whose tool call stayed in the text
+**Labels:** `distillation`, `router`, `medium`
+`Router.check()` (`src/kestrel/router.py`) escalates on an empty reply or a parsed tool call that fails validation. A reply whose call came back as content (as in KI-pending-ollama-tool-tag, or a student that writes a slightly wrong tag) has no `tool_calls` and non-empty content, so it is accepted as the final answer: no escalation, and the task fails as if the student had answered wrongly. With the fixed template this needs a malformed tag from the student, but nothing catches it.
+- Proposed: count content containing `<tool_call>` (or the template's tag) as `invalid_tool_call: tool call in the text`, before the answer is shown. A change to `src/kestrel/`, so its PR runs the CI subset on Groq. Not done without the owner's OK.
+**Done when:** the router escalates such replies (a scripted-model test), or the owner decides it isn't needed.
 
 ---
 

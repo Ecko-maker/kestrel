@@ -224,6 +224,65 @@ def test_gpu_smoke_trainer_step_fails_without_the_float32_fix(
     assert not ok and "aren't float32 (torch.bfloat16" in msg
 
 
+def test_low_memory_merge_is_bit_identical_to_peft(
+    train_script: Any, tok: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """11-02: the laptop had ~2 GB of RAM free for the 4B merge, so export.py --low-memory merges one tensor at
+    a time. On the --smoke model (base saved in bfloat16, as Qwen ships it; random non-zero LoRA weights;
+    several output shards) it must give exactly merge()'s tensors, through peft's own merge_and_unload."""
+    pytest.importorskip("peft", reason="needs the optional `train` extra")
+    import torch
+    from peft import LoraConfig, get_peft_model
+    from safetensors.torch import load_file
+    from transformers import AutoModelForCausalLM
+
+    spec = importlib.util.spec_from_file_location("kestrel_export_low_memory", ROOT / "distill" / "export.py")
+    assert spec is not None and spec.loader is not None
+    export = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export)
+
+    run = tmp_path / "run"
+    train_script.build_model(CONFIG, tok, smoke=True).to(torch.bfloat16).save_pretrained(run / "base")
+    lora = CONFIG["lora"]
+    model = get_peft_model(
+        AutoModelForCausalLM.from_pretrained(run / "base", dtype=torch.float32),
+        LoraConfig(r=lora["r"], lora_alpha=lora["alpha"], target_modules=lora["target_modules"], task_type="CAUSAL_LM"),
+    )
+    torch.manual_seed(2026)
+    for name, p in model.named_parameters():
+        if "lora_" in name:
+            p.data = torch.randn_like(p) * 0.05  # lora_B starts at zero: a zero delta would prove nothing
+    model.save_pretrained(run / "adapter")
+    tok.save_pretrained(run / "adapter")
+
+    peft_dir = export.merge(run / "adapter", tmp_path / "peft", CONFIG, smoke=True)
+    monkeypatch.setattr(export, "SHARD_BYTES", 64 * 1024)
+    low_dir = export.merge_low_memory(run / "adapter", tmp_path / "low", CONFIG, smoke=True)
+
+    def tensors(folder: Path) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for f in sorted(folder.glob("model*.safetensors")):
+            out |= load_file(str(f))
+        return out
+
+    want, got = tensors(peft_dir), tensors(low_dir)
+    assert len(list(low_dir.glob("model*.safetensors"))) > 1
+    assert set(got) == set(want)
+    assert all(got[k].dtype == want[k].dtype == torch.float16 and torch.equal(got[k], want[k]) for k in want)
+    base = load_file(str(run / "base" / "model.safetensors"))
+    q = "model.layers.0.self_attn.q_proj.weight"
+    assert not torch.equal(got[q], base[q].to(torch.float16))  # the adapter really was merged in
+    config = [json.loads((d / "config.json").read_text(encoding="utf-8")) for d in (peft_dir, low_dir)]
+    assert config[0] == config[1]
+    assert (peft_dir / "tokenizer.json").read_bytes() == (low_dir / "tokenizer.json").read_bytes()
+
+    (run / "adapter" / "adapter_config.json").write_text(
+        json.dumps(json.loads((run / "adapter" / "adapter_config.json").read_text()) | {"use_dora": True}), "utf-8"
+    )
+    with pytest.raises(SystemExit, match="use_dora"):
+        export.merge_low_memory(run / "adapter", tmp_path / "dora", CONFIG, smoke=True)
+
+
 def test_notebook_pins_match_the_lock_and_call_the_script() -> None:
     """The Kaggle notebook installs exactly the versions uv.lock resolved, and only runs train.py."""
     import re

@@ -159,11 +159,18 @@ If the log shows `loss is not finite` (float16 overflow on T4): lower `learning_
   repo's notebook now has that cell and passes the setting to `train.py` explicitly. It failed with
   `NotImplementedError: "_amp_foreach_non_finite_check_and_unscale_cuda" not implemented for 'BFloat16'`
   (`clip_grad_norm_` -> `GradScaler.unscale_`): TRL's constructor had cast the LoRA weights to bfloat16 (step 4).
-- **Next attempt: code `5b175f1`** (`kestrel-train-code-5b175f17addf.zip`, sha256 `c012d2f2…`,
-  `C:\Users\noahi\Documents\kestrel-kaggle-upload\`), uploaded as a **New Version** of the code dataset;
-  the data dataset stays as it is (`e39dd661…`); `train_config.toml` unchanged. The notebook needs no change
-  beyond the first cell it already has. Its GPU smoke test now includes the trainer step, so a repeat
-  stops there, before the full run. `lineage.json`'s `code_commit` will be `5b175f17addf6df84826983702d5a1f6093d4e6e`.
+- **2026-11-02, third attempt: trained.** Code `5b175f1` (`kestrel-train-code-5b175f17addf.zip`, sha256
+  `c012d2f2…`, a New Version of the code dataset), data `e39dd661…` unchanged, `train_config.toml` unchanged,
+  one T4 visible (`gpu_count` 1). `train.py` ran 19:43:39-20:27:38 UTC (**44 min**, loading included): **5 of
+  5 epochs, 45 of 45 steps**, early stopping didn't trigger (patience 1; val loss fell every epoch).
+
+  | Epoch | 1 | 2 | 3 | 4 | 5 |
+  |---|---|---|---|---|---|
+  | Val loss | 0.660 | 0.470 | 0.424 | 0.411 | **0.409** |
+
+  Best = last epoch (checkpoint 45, the gain in epoch 5 was 0.0016). Train loss 1.64 at step 5 -> 0.48 at
+  step 45 (run mean 0.696). `kestrel-adapter.zip` sha256 `582bd559…`; `check_lineage.py`: every line OK.
+  Exported and served the same day (`EXPORT.md`, run log); backup `C:\kestrel-backup\2026-11-02\student\`.
 
 ## 6. Download and check
 
