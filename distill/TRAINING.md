@@ -60,7 +60,9 @@ kaggle.com > **Code** > **New Notebook** > **File** > **Import Notebook** > `dis
 the right-hand panel:
 
 - **Input** > Add Input: both datasets.
-- **Settings** > **Accelerator: GPU T4 x2** (the script uses one GPU). Prefer T4 over P100: bitsandbytes'
+- **Settings** > **Accelerator: GPU T4 x2**. The notebook's first cell sets `CUDA_VISIBLE_DEVICES=0` before
+  anything imports torch, so `train.py` sees one GPU; it refuses to start with more than one visible (two
+  make the Trainer wrap the model in `nn.DataParallel`, which SFTTrainer refuses). Prefer T4 over P100: bitsandbytes'
   4-bit kernels target newer GPUs, and the P100 may not be supported.
 - **Settings** > **Internet: On** (pip and the model download).
 
@@ -107,6 +109,15 @@ their pins**; torch was Kaggle's preinstalled build (not pinned). From the run's
 
 From now on the install cell prints this table before any GPU work and stops on any difference.
 
+**What it didn't check: the number of GPUs.** The smoke test trains with its own loop on GPU 0
+(`device_map={"": 0}`), never through the Trainer, so a second visible GPU changes nothing for it, while
+the real run's `SFTTrainer` wraps the model in `nn.DataParallel` and refuses it (the 11-02 run, below).
+Its record names only GPU 0, so whether 10-20 ran with one or two T4s visible isn't recorded. Not a
+version problem: the 11-02 run had all six libraries at their pins (the install cell stops otherwise),
+TRL 1.16.0 included. Since 11-02 both GPU modes stop before loading a model when more than one GPU is
+visible, and `gpu_smoke.json` / `lineage.json` record `gpu_count` and `CUDA_VISIBLE_DEVICES`. The smoke
+test still doesn't go through the Trainer (known issue KI-pending-gpu-smoke-own-loop).
+
 ## 5. Run the training
 
 Attach **kestrel-distill-data**, set `RUN_TRAINING = True` in the full training cell, then **Run All**
@@ -127,6 +138,20 @@ the quota shown in your account; it varies).
 If the log shows `loss is not finite` (float16 overflow on T4): lower `learning_rate` in
 `train_config.toml`, re-upload the code dataset, and run again.
 
+**Run log**
+
+- **2026-11-02, first attempt: stopped** in `trainer.train()`, no adapter. Accelerator "GPU T4 x2" left two
+  GPUs visible; the Trainer wrapped the 4-bit model in `nn.DataParallel` and TRL's `SFTTrainer` refused it.
+  The GPU smoke test before it had passed (it doesn't use the Trainer, see step 4).
+- **2026-11-02, the run whose adapter is used** (the owner restarted it on Kaggle): code dataset
+  `kestrel-distill-code` from **`a4b3372`, unchanged** (`COMMIT` = `a4b33721d452c6aa83f0fc068bec1bb6db677296`,
+  zip sha256 `bb7084e1…`); data dataset with `manifest.json` sha256 **`e39dd661…`**; both **Private**. The
+  notebook was `distill/train.ipynb` as of `a4b3372` with **one extra first cell** typed on Kaggle:
+  `import os` and `os.environ["CUDA_VISIBLE_DEVICES"] = "0"` (the `train.py` subprocess inherits it). The
+  notebook isn't in the code dataset, so `lineage.json`'s `code_commit` is still `a4b3372`, and its
+  `libraries` have no `gpu_count` (added after `a4b3372`). The repo's notebook now has that cell, and passes
+  the setting to `train.py` explicitly.
+
 ## 6. Download and check
 
 **Output** tab > `kestrel-adapter.zip` > Download. It holds `adapter/` (the LoRA adapter and tokenizer)
@@ -140,6 +165,8 @@ Get-Content kestrel-adapter\lineage.json | ConvertFrom-Json | Select-Object -Exp
 `manifest_sha256` must equal the hash from step 1; `traces_db_sha256`, `teachers` and `grading` come
 from the manifest. `base_model.revision` must be the pinned revision, `code_commit` (top level) the
 snapshot's commit, and `results.best_eval_loss` the val loss of the epoch that was kept.
+`scripts/check_lineage.py` checks all of these (`EXPORT.md`, "When `kestrel-adapter.zip` arrives"). For the
+11-02 run `code_commit` is `a4b3372` although its notebook had an extra first cell (run log, step 5).
 
 Next: `EXPORT.md` (merge, GGUF, Ollama, and the check that Ollama serves the trained prompt format).
 

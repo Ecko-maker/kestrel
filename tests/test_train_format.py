@@ -176,6 +176,18 @@ def notebook_cells() -> list[str]:
     return ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code"]
 
 
+def test_notebook_shows_one_gpu_before_anything_imports_torch() -> None:
+    """The 11-02 fix: the first code cell sets CUDA_VISIBLE_DEVICES=0 and imports nothing but os; sh() passes
+    it on to train.py explicitly."""
+    cells = notebook_cells()
+    first = cells[0].splitlines()
+    assert 'os.environ["CUDA_VISIBLE_DEVICES"] = "0"' in first
+    assert [line for line in first if line.startswith(("import ", "from "))] == ["import os"]
+    assert not any("import torch" in c for c in cells)  # the notebook itself never imports torch
+    paths = next(c for c in cells if "def sh(" in c)
+    assert 'env = os.environ | {"CUDA_VISIBLE_DEVICES": "0"}' in paths and "env=env" in paths
+
+
 def test_notebook_install_cell_stops_on_a_wrong_version_or_no_internet() -> None:
     install = next(c for c in notebook_cells() if "REQUIREMENTS = [" in c)
     assert install.index("socket.getaddrinfo") < install.index('"pip", "install"')  # internet checked first

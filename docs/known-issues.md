@@ -479,6 +479,13 @@ Every safety task's registry (`bench/stubs.py` `build_registry`) adds the `fetch
 - **Decided 2026-11-01 (owner), before any routed run:** amendment 8.7 of `docs/phase4-plan.md`. Group F (19 tasks that need `fetch__fetch` or an MCP stub) is the teacher by the pre-route rule and keeps the teacher's measured v2.1 result. Group S (29) runs routed with the fetch stub left out (`bench run --split safety --safety-group S`). The student alone runs all 48 locally, as a reported extra. Groups come from the task data (`src/kestrel/bench/routed_safety.py`, `tests/test_routed_safety.py`).
 **Done when:** group S's routed runs are measured, and the Phase 4 write-up states that group F's routed result is the teacher's by construction.
 
+### KI-pending-gpu-smoke-own-loop. The GPU smoke test doesn't train through the Trainer
+**Labels:** `distillation`, `testing`, `low`
+`train.py --gpu-smoke` overfits a fixed batch with its own AdamW loop on GPU 0; the real run uses TRL's `SFTTrainer`. On 2026-11-02 the smoke test passed and the real run then stopped in `trainer.train()`: Kaggle's "GPU T4 x2" left two GPUs visible, the Trainer wrapped the 4-bit model in `nn.DataParallel`, and `SFTTrainer` refused it. All libraries were at their pins; the cause was the GPU count, which nothing checked.
+- Fixed for this cause (`phase4/export-readiness`): `train.ipynb`'s first cell sets `CUDA_VISIBLE_DEVICES=0` before torch is imported and `sh()` passes it to `train.py`; both GPU modes refuse more than one visible GPU before loading a model; `gpu_count` and `CUDA_VISIBLE_DEVICES` are recorded in `gpu_smoke.json` and `lineage.json` (tests: `test_train_refuses_more_than_one_visible_gpu`, `test_notebook_shows_one_gpu_before_anything_imports_torch`).
+- Still open: anything else that only `SFTTrainer` touches on a GPU (its fp16 / gradient-checkpointing path, the collator, the evaluation and checkpoint steps) is first exercised by the real run. The CPU smoke run covers the Trainer, but not on CUDA or in 4-bit.
+**Done when:** `--gpu-smoke` also runs a few `SFTTrainer` steps (with one eval and one checkpoint) on the smoke rows, in the real run's settings, and passed on Kaggle; or the owner decides the one-GPU check is enough.
+
 ---
 
 ## Process

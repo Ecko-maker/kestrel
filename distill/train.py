@@ -9,6 +9,10 @@ of synthetic examples (an overfitting test: the loss must fall by half), every e
 tokens, and afterwards a greedy generation makes a tool call train_format can parse. It also prints the
 library versions next to the pins in the config.
 
+Both GPU modes refuse to start when more than one GPU is visible: with two (Kaggle's "GPU T4 x2") the
+Trainer wraps the model in nn.DataParallel, which TRL's SFTTrainer refuses, and the 11-02 run stopped there.
+Set CUDA_VISIBLE_DEVICES=0 before torch is imported (train.ipynb's first cell does).
+
 DIR holds train.jsonl, val.jsonl and manifest.json; for --gpu-smoke, CODE holds the synthetic smoke
 train.jsonl next to this file (Kaggle uploads are flat). OUT must be writable: on Kaggle, under
 /kaggle/working (/kaggle/input is read-only; the script refuses it). Settings come from the config file. Output:
@@ -81,6 +85,24 @@ def check_data(data: Path, cfg: dict[str, Any]) -> None:
         )
 
 
+def check_one_gpu(count: int) -> None:
+    """One GPU is all QLoRA here needs. More than one: the Trainer builds nn.DataParallel and SFTTrainer refuses
+    it (11-02, Kaggle's "GPU T4 x2"); stop before the model is loaded, not inside train()."""
+    if count > 1:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        raise SystemExit(
+            f"{count} GPUs are visible (CUDA_VISIBLE_DEVICES={visible!r}); train.py uses exactly one. "
+            'Set os.environ["CUDA_VISIBLE_DEVICES"] = "0" before anything imports torch '
+            "(train.ipynb's first cell), then restart the session and run from the top."
+        )
+
+
+def gpu_count() -> int:
+    import torch
+
+    return int(torch.cuda.device_count())
+
+
 def code_commit() -> str | None:
     """The commit of the training code: the COMMIT file scripts/build_train_snapshot.py puts next to this file."""
     path = HERE / "COMMIT"
@@ -105,6 +127,8 @@ def versions() -> dict[str, Any]:
 
         found["cuda"] = torch.version.cuda
         found["gpu"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+        found["gpu_count"] = torch.cuda.device_count()
+        found["cuda_visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES")
     except ImportError:
         pass
     return found
@@ -132,7 +156,10 @@ def version_report(found: dict[str, Any], pins: dict[str, str]) -> tuple[list[st
         ok = have == want
         mismatched += [] if ok else [name]
         lines.append(f"  {name:<13}{have or 'missing':<14} pin {want:<10} {'ok' if ok else 'MISMATCH'}")
-    lines.append(f"  python {found.get('python')}, CUDA {found.get('cuda')}, GPU {found.get('gpu')}")
+    lines.append(
+        f"  python {found.get('python')}, CUDA {found.get('cuda')}, GPU {found.get('gpu')}"
+        f" ({found.get('gpu_count')} visible, CUDA_VISIBLE_DEVICES={found.get('cuda_visible_devices')!r})"
+    )
     return lines, mismatched
 
 
@@ -436,10 +463,13 @@ def main(argv: list[str] | None = None) -> int:
     with args.config.open("rb") as f:
         cfg = tomllib.load(f)
     if args.gpu_smoke:
+        check_one_gpu(gpu_count())
         return 0 if gpu_smoke(args.data, args.out, cfg)["passed"] else 1
     check_data(args.data, cfg)
     if not args.smoke and code_commit() is None:
         raise SystemExit("no COMMIT file next to train.py: upload a snapshot from scripts/build_train_snapshot.py")
+    if not args.smoke:  # --smoke runs on the CPU
+        check_one_gpu(gpu_count())
     lineage = run(args.data, args.out, args.config, args.smoke)
     r = lineage["results"]
     print(f"train loss {r['train_loss']:.4f}, best val loss {r['best_eval_loss']}, steps {r['steps']}")

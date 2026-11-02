@@ -98,6 +98,8 @@ Get-FileHash $zip                                        # note it in the Phase 
 
 # 1. The lineage (KAGGLE.md step 10): every line must say OK.
 #    The code commit is the COMMIT inside the uploaded code zip (kestrel-train-code-a4b33721d452.zip).
+#    The 11-02 run used that code unchanged; only its notebook had an extra first cell, CUDA_VISIBLE_DEVICES=0
+#    (TRAINING.md, run log), which lineage.json doesn't record: the notebook isn't part of the code zip.
 uv run --no-sync python scripts/check_lineage.py "$a\lineage.json" --code-commit a4b33721d452c6aa83f0fc068bec1bb6db677296
 
 # 2. Room to merge: ~9 GB free RAM, ~20 GB free disk under $env:TEMP.
