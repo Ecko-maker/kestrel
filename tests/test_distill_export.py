@@ -144,6 +144,31 @@ def test_train_refuses_more_than_one_visible_gpu(monkeypatch: pytest.MonkeyPatch
         train.main(["--smoke", "--data", str(ROOT / "distill" / "smoke"), "--out", out])
 
 
+def test_compute_dtype_must_exist_on_the_gpu() -> None:
+    train.check_compute_dtype("float16", bf16_supported=False)  # T4: train_config.toml's setting
+    train.check_compute_dtype("bfloat16", bf16_supported=True)
+    with pytest.raises(SystemExit, match=r"no bfloat16 .*use float16"):
+        train.check_compute_dtype("bfloat16", bf16_supported=False)
+    with pytest.raises(SystemExit, match="not float16, bfloat16 or float32"):
+        train.check_compute_dtype("int8", bf16_supported=True)
+    assert CONFIG["quantization"]["compute_dtype"] == "float16" and CONFIG["training"]["fp16"] is True
+
+
+def test_trainable_parameters_must_be_float32() -> None:
+    torch = pytest.importorskip("torch", reason="needs the optional `train` extra")
+    layer = torch.nn.Linear(4, 4)
+    assert train.check_trainable_float32(layer) == 2
+    for dtype in (torch.bfloat16, torch.float16):
+        bad = torch.nn.Linear(4, 4).to(dtype)
+        with pytest.raises(SystemExit, match=rf"2 of 2 trainable parameters aren't float32 \({dtype}; first: weight"):
+            train.check_trainable_float32(bad)
+        assert train.upcast_trainable(bad) == 2 and train.check_trainable_float32(bad) == 2
+    frozen = torch.nn.Linear(4, 4).to(torch.bfloat16).requires_grad_(False)
+    assert train.upcast_trainable(frozen) == 0  # frozen weights keep their dtype
+    with pytest.raises(SystemExit, match="no trainable parameters"):
+        train.check_trainable_float32(frozen)
+
+
 def test_train_accepts_kaggle_working() -> None:
     train.check_out(Path("/kaggle/working/run"))
     train.check_out(Path("/kaggle/working/input"))  # only a path that starts /kaggle/input is refused
