@@ -1,8 +1,9 @@
 # Can a 4B model do most of an agent's work?
 
-*Skeleton draft, 2026-11-03. Sections 1–4 and 6 use only numbers that exist now, each linked to its source. Section 5 is
-placeholders, filled from `evals/reports/phase4-result.md` once the section 8 runs are done (the table at the end says
-where each one comes from). Nothing here says how the routed system did: that isn't measured yet.*
+*Draft, 2026-11-03. Sections 1–4 and 6 use only numbers that exist now, each linked to its source. Section 5 is
+placeholders apart from the two pinned check-pass rates (teacher alone, student alone), filled from
+`evals/reports/phase4-result.md` once the section 8 runs are done (the table at the end says where each one comes
+from). Nothing here says how the routed system did: that isn't measured yet.*
 
 ## 1. The question
 
@@ -105,6 +106,11 @@ I froze the claim and the test on 2026-10-30, before any teacher data existed ([
 - **A drift guard.** The teacher reference was measured a week earlier, so the old agent re-ran the CI subset in the
   same week (2026-11-03). Against its own runs of 10-07 it scored **+0 points (95% CI −10 to +11)**: by the rule fixed
   on 11-01, drift not shown ([control](../../evals/controls/README.md), [known issue #58](../known-issues.md)).
+- **One result I saw before the routed run.** The student alone (no router, no teacher, no judge) ran the main suite
+  once, and I looked at it before the routed runs started. It passed every check on **90 of 100 tasks (95% CI
+  84–96%)**; the teacher's after-run ×3 gives 92% (88–96%) on the same metric. That's context, not the claim, and I
+  recorded it as a disclosure that changes nothing in the frozen design: same 5 repeats, same metric, same margin, no
+  interim look ([pinned run](../../evals/after-runs/student-main-x1.json), [8.7](../phase4-plan.md#87-amendments)).
 
 ## 4. Safety
 
@@ -128,7 +134,7 @@ I froze the claim and the test on 2026-10-30, before any teacher data existed ([
 
 | | Teacher alone | Routed | Student alone |
 |---|---|---|---|
-| Check-pass rate (95% CI) | {{TEACHER_CHECK_RATE}} | {{ROUTED_CHECK_RATE}} | {{STUDENT_CHECK_RATE}} |
+| Check-pass rate (95% CI) | 92% (88–96%), ×3 | {{ROUTED_CHECK_RATE}} | 90% (84–96%), ×1 |
 | List-price cost per 1,000 tasks | {{COST_PER_1000_TASKS_TEACHER}} | {{COST_PER_1000_TASKS_ROUTED}} | {{COST_PER_1000_TASKS_STUDENT}} |
 | Groq billable tokens per 100 tasks | {{GROQ_BILLABLE_PER_100_TEACHER}} | {{GROQ_BILLABLE_PER_100_ROUTED}} | |
 | Latency p50 / p95 per task run | {{LATENCY_TEACHER}} | {{LATENCY_ROUTED}} | |
@@ -163,7 +169,7 @@ I froze the claim and the test on 2026-10-30, before any teacher data existed ([
 ## Filling section 5 (delete this part before publishing)
 
 Every placeholder comes from `evals/reports/phase4-result.md` (written by `scripts/phase4_result.py`, branch
-`phase4/results-kit`) or from the chart file it writes beside it. The script writes labelled rows, not named values, so
+`phase4/integration`) or from the chart file it writes beside it. The script writes labelled rows, not named values, so
 each placeholder is named after the row it copies; copy the cell as written.
 
 | Placeholder | Where in `phase4-result.md` |
@@ -177,7 +183,7 @@ each placeholder is named after the row it copies; copy the cell as written.
 | `{{STUDENT_HEALTH}}` | "## Verdict", row "Student-health stop": the Holds cell |
 | `{{CONTEXT_090}}` | "Not part of the verdict", line "At 0.90 for context: lower bound …" |
 | `{{SECONDARY}}` | "Not part of the verdict", line "Secondary metric (full rule, judge `gpt-oss-120b` v2): …" (`not run` unless re-judged) |
-| `{{TEACHER_CHECK_RATE}}`, `{{ROUTED_CHECK_RATE}}`, `{{STUDENT_CHECK_RATE}}` | "## Cost vs quality" table, column "Check-pass rate (95% CI, over tasks)", rows "Teacher alone", "Routed", "Student alone" (without a student run, the line "Student alone: not measured…") |
+| `{{ROUTED_CHECK_RATE}}` | "## Cost vs quality" table, column "Check-pass rate (95% CI, over tasks)", row "Routed". The Teacher alone and Student alone cells are already filled from the pins; check they match that table's rows |
 | `{{COST_PER_1000_TASKS_TEACHER}}`, `{{COST_PER_1000_TASKS_ROUTED}}`, `{{COST_PER_1000_TASKS_STUDENT}}` | "## Cost vs quality" table, column "List-price cost per 1,000 tasks", rows "Teacher alone", "Routed", "Student alone" |
 | `{{GROQ_BILLABLE_PER_100_TEACHER}}`, `{{GROQ_BILLABLE_PER_100_ROUTED}}` | "## Cost" table, row "Groq billable tokens per 100 tasks" |
 | `{{LATENCY_TEACHER}}`, `{{LATENCY_ROUTED}}` | "## Cost" table, row "Latency p50 / p95 per task run" |
