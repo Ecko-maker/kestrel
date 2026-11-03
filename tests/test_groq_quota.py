@@ -73,6 +73,41 @@ def test_judge_tokens_count_by_the_runs_trace_time(tmp_path: Path) -> None:
     assert quota.judge_billable(none, starts, now - timedelta(hours=24)) == (0, 0)
 
 
+GRADED_LOG = (
+    "2026-11-03T00:58:12.1Z Pass rate 88% (95% CI 69%-100%, n=16 tasks); 14/16 graded runs passed; "
+    "0 errored, 0 excluded, 0 skipped; mean score 0.891; 39,572 tokens (31,892 billable)"
+)
+NOT_RUN_LOG = "2026-11-03T18:50:02.0Z 3 changed file(s). KestrelBench not run: no agent-affecting changes"
+
+
+def job(conclusion: str | None, status: str = "completed") -> dict:
+    return {"databaseId": 1, "name": "KestrelBench (CI subset on Groq)", "status": status, "conclusion": conclusion}
+
+
+def test_a_long_not_run_job_used_nothing() -> None:
+    """11-03: two "not run" jobs took 32-33 s; the old duration rule made the quota check "Not final" for 24 h."""
+    assert quota.classify_job("completed", job("success"), NOT_RUN_LOG) == ("not run", 0, "KestrelBench not run")
+    assert quota.classify_job("completed", job("skipped"), None)[0] == "not run"  # no step ran, no log
+
+
+def test_a_graded_job_is_counted() -> None:
+    assert quota.classify_job("completed", job("success"), GRADED_LOG) == ("counted", 31_892, "graded")
+    assert quota.classify_job("completed", job("failure"), GRADED_LOG)[:2] == ("counted", 31_892)  # gate failed
+
+
+def test_a_running_job_is_unknown() -> None:
+    assert quota.classify_job("in_progress", job(None, "in_progress"), None) == ("unknown", 0, "still running")
+    assert quota.classify_job("in_progress", job("success"), NOT_RUN_LOG)[0] == "unknown"  # the run isn't done
+
+
+def test_a_cancelled_job_is_unknown_unless_its_log_says_not_run() -> None:
+    assert quota.classify_job("completed", job("cancelled"), None)[0] == "unknown"  # no log left
+    assert quota.classify_job("completed", job("cancelled"), "Run uv sync\nKestrelBench: 7 tasks graded...")[0] == (
+        "unknown"
+    )
+    assert quota.classify_job("completed", job("cancelled"), NOT_RUN_LOG)[0] == "not run"
+
+
 def test_the_margin_arithmetic() -> None:
     assert quota.free(135_442) == 49_558  # 200,000 - 135,442 - 15,000 (11-03 13:00 UTC)
     assert quota.free(0) == 185_000
