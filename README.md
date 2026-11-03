@@ -12,7 +12,7 @@ Kestrel is a personal AI agent, built from scratch with its own agent loop and n
 | KestrelBench v1.1 (100 tasks), gpt-oss-120b on Groq | **92% pass rate** (95% CI 86–97%) | [baseline report](evals/reports/baseline-v1.1.md) |
 | Prompt-injection attacks that got through, tiers v2.1 | **0 of 29** at system level (95% CI 0–12%), from 1 of 29 before | [safety report](evals/reports/safety-after-v2.1.md), [before/after](docs/tiers-v2-design.md) |
 | Cost to run and to evaluate | **$0**: free tiers only (Groq, Gemini, local Ollama, Kaggle GPUs) | [prices.toml](src/kestrel/prices.toml) (`actual_*` = 0) |
-| Phase 4: distill a small open model | **in progress**: pre-registered, training set built (89 examples), nothing trained yet | [pre-registration](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) |
+| Phase 4: distill a small open model | **in progress**: student trained and served; the pre-registered routed runs are next | [pre-registration](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) |
 
 | Approve, edit or reject every action | See every step as a timeline |
 |---|---|
@@ -28,14 +28,15 @@ Kestrel is a personal AI agent, built from scratch with its own agent loop and n
 - **Web console:** live chat, the agent's steps as they happen, approval cards, trace waterfalls.
 - **KestrelBench:** 100 main tasks, a 48-task safety split (29 attacks, 1 policy probe, 18 benign) and evals in CI.
 - **Early local voice:** wake word and speech-to-text on the laptop, with no cloud speech service ([design decisions 19–21](docs/design-decisions.md)).
-- **Production basics:** Docker (non-root, health check), CI on Linux and Windows, secret scanning, 965 tests.
+- **Production basics:** Docker (non-root, health check), CI on Linux and Windows, secret scanning, 1,081 tests.
 
 **Being measured now (Phase 4, distillation):** the plan is to train a small open model (the student, Qwen3-4B) on successful traces from a large open-weight teacher (gpt-oss-120b on Groq), then route each request to the student first and fall back to the teacher.
 - The decision rule was frozen on 2026-10-30, before any teacher data existed: the routed system must reach at least 95% of the teacher's quality and cost less per task ([section 8](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30)).
 - Built so far: the trace-dataset builder, a Kaggle QLoRA training script (its GPU smoke test passed), the export to Ollama with a byte-for-byte template check, and router v1 (off by default).
-- The teacher's data was collected on 2026-11-01 and 11-02 (104 of 122 distill tasks passed), and the training set is built: 89 examples, 71 train and 18 validation, split by task. **No student has been trained, so there is no Phase 4 result yet.**
+- The teacher's data was collected on 2026-11-01 and 11-02 (104 of 122 distill tasks passed), and the training set is built: 89 examples, 71 train and 18 validation, split by task.
+- The student is trained (QLoRA on a Kaggle T4) and served on local Ollama with the trained prompt format checked byte for byte. **The routed runs that decide the Phase 4 claim haven't run yet, so there is no Phase 4 result.**
 
-**Next:** train and export the student, then the pre-registered routed runs. **Long-term memory with hybrid RAG is built on branches but parked** until after Phase 4 (owner decision, 2026-10-26); it isn't in `main`.
+**Next:** the pre-registered routed runs. **Long-term memory with hybrid RAG is built on branches but parked** until after Phase 4 (owner decision, 2026-10-26); it isn't in `main`.
 
 | Phase | Status |
 |---|---|
@@ -44,6 +45,32 @@ Kestrel is a personal AI agent, built from scratch with its own agent loop and n
 | 3 Safety | done: tiers v2.1 merged on its safety gate ([decision 17](docs/design-decisions.md#17-phase-3-tiers-gate-ship-tiers-v21-owner-override-on-rule-a)); memory moved after Phase 4 |
 | 4 Distillation | **in progress** |
 | 5 Voice and launch | voice started early (in `main`); demo video and write-ups not done |
+
+## Results
+
+Each number links to the report it comes from. Write-up of Phase 3: [Teaching an agent to ask before it leaks](docs/blog/01-safe-agent.md).
+
+**Phase 2, evals.**
+- **KestrelBench v1.1 baseline**, gpt-oss-120b on Groq: **92%** of 100 tasks (95% CI 86–97%) ([baseline report](evals/reports/baseline-v1.1.md)).
+- **Run-to-run noise**, measured: two runs of the identical agent flip 9% of tasks ([run-to-run report](evals/reports/run-to-run.md)).
+- **The LLM judge isn't calibrated yet** ([#21](docs/known-issues.md)).
+
+**Phase 3, safety (tiers v2.1).** The 48-task safety split has 29 attacks with declared goals and canaries.
+
+| Measure | Before | After |
+|---|---|---|
+| Attacks that got through, strict user | 1/29 (95% CI 0–18%) | **0/29** (0–12%) |
+| Attacks the model attempted, strict user | 1/29 | 1/29 (0–18%) |
+| Attacks that got through, rubber-stamp user | 0/28 graded | 0/29 (0–12%) |
+| Benign tasks passed every repeat | 12/18 | 11/18 (36–83%) |
+
+Sources: the before side is in the [design document](docs/tiers-v2-design.md); the after side is the [safety report](evals/reports/safety-after-v2.1.md). The main suite's non-inferiority at 6 points was **not shown**: −3 points, 95% CI −7 to +1 ([rule C verdict](evals/reports/rule-c-verdict.md)). The benign rule A was **not met** and overridden by the owner, on the record ([decision 17](docs/design-decisions.md#17-phase-3-tiers-gate-ship-tiers-v21-owner-override-on-rule-a)).
+
+**Phase 4, distillation: in progress.**
+- **The student is trained:** Qwen3-4B, QLoRA, 5 epochs, validation loss 0.660 → 0.409 ([training log](distill/TRAINING.md)).
+- **It's served on local Ollama** ([export log](distill/EXPORT.md)).
+- **Alone on the safety split:** 0/29 attacks got through under the strict user, but it attempted 5/29 against the teacher's 1/29 ([student-alone report](evals/reports/student-safety-alone.md)). That run is a reported extra, not the claim.
+- **The claim itself is still open:** routed ≥ 95% of the teacher's quality at lower cost, decided by the [pre-registered](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) routed runs, which haven't run yet.
 
 ## How it's evaluated
 
