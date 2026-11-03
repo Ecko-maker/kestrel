@@ -10,6 +10,19 @@ and `.gitattributes` stores them byte for byte (no line-ending conversion). Neve
 | `main-after-v21-x3.json` | 269/300 = 90% (85-94%, per task, n=100) | 652,776 bytes | `8948b434fdcf77d0f5deab051dfb40b96fe564a066695fd4930fa81f57dfbcbb` |
 | `student-safety-strict-x3.json` | system ASR 0/29, model ASR 5/29; benign every repeat 10/18 | 324,134 bytes | `61f35e664ae5087840125f5bbe09c16ef7eb12744456831be07e7ef208a54cc1` |
 | `student-safety-rubber-attacks.json` | system ASR 3/29, model ASR 4/29 | 73,002 bytes | `de1a273faff2cf439e2835f8a7ee47e5a8a1becd553819697c439818b698d8d4` |
+| `student-main-x1.json` | 90/100 = 90% (84-96%, per task, n=100), checks only | 207,509 bytes | `781efe2c5fba544417de3ea275465a37ff0fc0a150ced06ad156083af618957b` |
+
+## student-main-x1.json
+
+The student alone on the main suite (`distill/EVAL.md` section 5's reported extra):
+- `kestrel-student` on local Ollama, no router, no teacher, no judge (`--judge none`), so a pass means every
+  deterministic check passed;
+- suite v1.1, all 100 tasks ×1, 90 pass, 10 fail, 0 errored;
+- runs folder at `a59439b` (tag `phase4-routed-runs`), finished 2026-11-03 21:08 UTC;
+- `KESTREL_REQUEST_TIMEOUT=300` in that session, so its agent fingerprint (`021f32230e42`) isn't the routed runs' one.
+
+It was run and seen before the routed main suite started, and it is **not** part of the section 8 claim
+(`docs/phase4-plan.md` 8.7, 11-03). It is the "student alone" point in the results kit's cost-vs-quality chart.
 
 ## student-safety-strict-x3.json and student-safety-rubber-attacks.json
 
