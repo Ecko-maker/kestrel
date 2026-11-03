@@ -3,6 +3,7 @@ one fake set per section 8.5 outcome, and the refusals. No model calls, no Groq.
 
 import hashlib
 import importlib.util
+import json
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -124,9 +125,20 @@ def test_the_pinned_references_are_the_files_in_git() -> None:
         "drift_reference": ROOT / "evals" / "reports" / "ci-repeat3-2026-10-07.json",
         "student_safety_strict": ROOT / "evals" / "after-runs" / "student-safety-strict-x3.json",
         "student_safety_rubber": ROOT / "evals" / "after-runs" / "student-safety-rubber-attacks.json",
+        "student_main": ROOT / "evals" / "after-runs" / "student-main-x1.json",
     }
     for key, path in files.items():
         assert hashlib.sha256(path.read_bytes()).hexdigest() == kit.PINNED[key], key
+
+
+def test_the_student_alone_point_defaults_to_the_pinned_main_run(tmp_path: Path) -> None:
+    """11-03: the chart's "student alone" point is the pinned student-main-x1.json, with no flag needed; its
+    check-pass rate is the one 8.7 gives for context (90%, 95% CI 84-96%)."""
+    paths = kit.default_paths(tmp_path / "runs")
+    assert paths["student_main"] == ROOT / "evals" / "after-runs" / "student-main-x1.json"
+    assert paths["student_db"] == tmp_path / "runs" / "logs" / "bench.db"
+    data = json.loads(paths["student_main"].read_text(encoding="utf-8"))
+    assert kit.check_pass_rate(data, True).fmt() == "90% (95% CI 84–96%, n=100)"
 
 
 def test_nice_axis_steps() -> None:

@@ -344,8 +344,7 @@ rejudge at ~83k each with an approval line), and section 4's student-alone safet
 When steps 3-5 are finished, from this folder:
 
 ```powershell
-uv run --no-sync python scripts/phase4_result.py `
-    --student-main ..\kestrel-runs\evals\results\<the student-alone main run>.json --student-db ..\kestrel-runs\logs\bench.db
+uv run --no-sync python scripts/phase4_result.py
 ```
 
 It reads the runs folder's files by the names above, and the pinned references in git:
@@ -362,7 +361,9 @@ It writes `evals/reports/phase4-result.md` and `evals/reports/phase4-cost-qualit
 - the cost table with escalation reasons;
 - the cost-vs-quality chart (teacher alone, routed, student alone).
 
-Without `--student-main` the chart leaves the student out and says so.
+The "student alone" point is the pinned `evals/after-runs/student-main-x1.json` (11-03, checks only, ×1; context
+only, not the claim: `docs/phase4-plan.md` 8.7), costed from its traces in `..\kestrel-runs\logs\bench.db`.
+`--student-main FILE --student-db DB` replace them; if either is missing the chart leaves the student out and says so.
 
 **It writes nothing on incomplete inputs.** Instead it prints what's missing and exits 2:
 - a routed task with fewer than 5 runs done, or traces that don't price every call;

@@ -71,6 +71,7 @@ PINNED = {
     "teacher_safety_rubber": "d663322c94e01a260e0f8a51d560082287b51f85c476c9e5a67bb48b7423d81f",
     "student_safety_strict": "61f35e664ae5087840125f5bbe09c16ef7eb12744456831be07e7ef208a54cc1",
     "student_safety_rubber": "de1a273faff2cf439e2835f8a7ee47e5a8a1becd553819697c439818b698d8d4",
+    "student_main": "781efe2c5fba544417de3ea275465a37ff0fc0a150ced06ad156083af618957b",
 }
 OLD_AGENT = "cc5c16377662"  # the drift control's agent (#58, 8.3)
 ROUTER_BLOCK = {"provider", "model", "router", "sha"}  # 8.1: the only fingerprint fields routed may change
@@ -97,8 +98,10 @@ def default_paths(runs: Path) -> dict[str, Path | list[Path] | None]:
         "student_safety_strict": ROOT / "evals" / "after-runs" / "student-safety-strict-x3.json",
         "student_safety_rubber": ROOT / "evals" / "after-runs" / "student-safety-rubber-attacks.json",
         "rejudged": None,
-        "student_main": None,
-        "student_db": None,
+        # the chart's "student alone" point: the pinned student-alone main suite (x1, checks only; phase4-plan 8.7,
+        # 11-03), its traces in the runs folder's bench.db (for its cost: Ollama, $0 at list price)
+        "student_main": ROOT / "evals" / "after-runs" / "student-main-x1.json",
+        "student_db": runs / "logs" / "bench.db",
     }
 
 
