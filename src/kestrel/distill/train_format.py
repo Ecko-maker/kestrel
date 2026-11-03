@@ -60,11 +60,15 @@ OLLAMA_TEMPLATE = (
     '{{- if gt (len $rest) 1 }}{{ if eq (index $rest 1).Role "tool" }}{{ $nextTool = true }}{{ end }}{{ end }}'
     '{{- if eq $m.Role "user" }}<|im_start|>user{{ "\\n" }}{{ $m.Content }}<|im_end|>{{ "\\n" }}'
     '{{- else if eq $m.Role "assistant" }}<|im_start|>assistant{{ "\\n" }}{{ $m.Content }}'
-    "{{- range $j, $c := $m.ToolCalls }}"
-    '{{- if or $j $m.Content }}{{ "\\n" }}{{ end }}'
-    '<tool_call>{{ "\\n" }}{"name": "{{ $c.Function.Name }}", "arguments": {{ $c.Function.Arguments }}}'
+    # Ollama also reads its tool-call tag from here (tools.parseTag): the first text inside an
+    # {{ if .ToolCalls }}, before any action. Without it the tag is "{" and a reply that starts with
+    # <tool_call> is returned as plain text, not parsed (11-02). Same bytes as one range with the newline first.
+    "{{- if .ToolCalls }}{{- range $j, $c := .ToolCalls }}"
+    '{{- if and (not $j) (not $m.Content) }}<tool_call>{{ else }}{{ "\\n" }}<tool_call>{{ end }}'
+    '{{ "\\n" }}{"name": "{{ $c.Function.Name }}", "arguments": {{ $c.Function.Arguments }}}'
     '{{ "\\n" }}</tool_call>'
-    '{{- end }}<|im_end|>{{ "\\n" }}'
+    "{{- end }}{{- end }}"
+    '<|im_end|>{{ "\\n" }}'
     '{{- else if eq $m.Role "tool" }}'
     '{{- if ne $prev "tool" }}<|im_start|>user{{ end }}'
     '{{ "\\n" }}<tool_response>{{ "\\n" }}{{ $m.Content }}{{ "\\n" }}</tool_response>'

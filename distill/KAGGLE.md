@@ -200,7 +200,10 @@ teacher output: the Kaggle dataset must be Private, never public.**
 2. Again with the data zip > title `kestrel-distill-data`, **Private** > Create.
 3. **Code** > **New Notebook** > **File** > **Import Notebook** > `distill/train.ipynb`.
 4. Right panel > **Input** > **Add Input** > **Your Datasets** > add both.
-5. **Settings** > Accelerator **GPU T4 x2**; **Internet On** (needs the verified phone number).
+5. **Settings** > Accelerator **GPU T4 x2**; **Internet On** (needs the verified phone number). The
+   notebook's first cell makes only GPU 0 visible; `train.py` refuses more than one (the 11-02 first attempt
+   stopped on two: `TRAINING.md`, run log). A notebook imported before that fix needs that cell added by hand
+   as its first: `import os` and `os.environ["CUDA_VISIBLE_DEVICES"] = "0"`.
 6. In the training cell set `RUN_TRAINING = True` (first cell: no setting to change; it finds both datasets).
 7. **Save Version** > **Save & Run All (Commit)** > Save. It runs the GPU smoke test first and stops if it fails;
    about 30-45 min in all.
@@ -209,4 +212,6 @@ teacher output: the Kaggle dataset must be Private, never public.**
 9. The version > **Output** > download **`kestrel-adapter.zip`** (`adapter/` + `lineage.json`).
 10. Check `lineage.json`: `code_commit` = the code zip's commit, `dataset.manifest_sha256` = the data zip's
     `manifest.json` hash (in its `SHA256SUMS`), `dataset.teachers` = groq + openai/gpt-oss-120b,
-    `base_model.revision` = `cdbee75f…`. Then `EXPORT.md` and `EVAL.md` step 1.
+    `base_model.revision` = `cdbee75f…`. Then `EXPORT.md` and `EVAL.md` step 1. Since 11-02 the code is
+    `5b175f1` (`kestrel-train-code-5b175f17addf.zip`, a New Version of `kestrel-distill-code`; the data dataset unchanged): both
+    `a4b3372` attempts stopped in `trainer.train()` (`TRAINING.md`, run log); `code_commit` will be `5b175f1…`.

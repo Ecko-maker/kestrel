@@ -153,6 +153,136 @@ def test_smoke_training_run(tok: Any, tmp_path: Path) -> None:
     assert any("eval_loss" in row for row in lineage["results"]["history"])
 
 
+@pytest.fixture(scope="module")
+def train_script() -> Any:
+    spec = importlib.util.spec_from_file_location("kestrel_train_script_dtypes", TRAIN_PY)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["kestrel_train_script_dtypes"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def fake_4bit_lora(train: Any, tok: Any) -> Any:
+    """The --smoke tiny Qwen3 on CPU with LoRA, flagged as bitsandbytes 4-bit: the flag TRL keys its cast on."""
+    from peft import LoraConfig, get_peft_model
+
+    model = train.build_model(CONFIG, tok, smoke=True)
+    model.is_loaded_in_4bit = True
+    lora = CONFIG["lora"]
+    return get_peft_model(
+        model,
+        LoraConfig(r=lora["r"], lora_alpha=lora["alpha"], target_modules=lora["target_modules"], task_type="CAUSAL_LM"),
+    )
+
+
+def trainable_dtypes(model: Any) -> set[str]:
+    return {str(p.dtype) for p in model.parameters() if p.requires_grad}
+
+
+def test_make_trainer_undoes_trls_bfloat16_cast_of_4bit_lora(train_script: Any, tok: Any, tmp_path: Path) -> None:
+    """11-02, step 0 on a T4: trl 1.16.0's SFTTrainer casts a 4-bit model's LoRA weights to bfloat16 whatever
+    fp16 says, and GradScaler.unscale_ can't take bfloat16 gradients. make_trainer() casts them back."""
+    pytest.importorskip("trl", reason="needs the optional `train` extra")
+    from trl import SFTTrainer
+
+    rows = tf.encode_file(tok, ROOT / "distill" / "smoke" / "train.jsonl", CONFIG["data"]["max_length"])[:2]
+    one_step = {"max_steps": 1, "eval_strategy": "no", "save_strategy": "no", "load_best_model_at_end": False}
+    args = train_script.sft_args(CONFIG, tmp_path / "a", smoke=True, use_cpu=True, **one_step)
+
+    from datasets import Dataset
+
+    model = fake_4bit_lora(train_script, tok)
+    assert trainable_dtypes(model) == {"torch.float32"}  # peft's own adapters are float32
+    SFTTrainer(model=model, args=args, train_dataset=Dataset.from_list(rows), processing_class=tok)
+    assert trainable_dtypes(model) == {"torch.bfloat16"}  # what TRL does (a TRL upgrade that stops it shows here)
+    with pytest.raises(SystemExit, match=r"aren't float32 \(torch\.bfloat16; first: .*lora_A"):
+        train_script.check_trainable_float32(model)
+
+    model = fake_4bit_lora(train_script, tok)
+    trainer = train_script.make_trainer(model, tok, args, rows, None)
+    assert trainable_dtypes(trainer.model) == {"torch.float32"}
+    assert math.isfinite(trainer.train().training_loss)
+
+
+def test_gpu_smoke_trainer_step_fails_without_the_float32_fix(
+    train_script: Any, tok: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The GPU smoke test's new step goes through make_trainer(), so it would have caught 11-02. On CPU with
+    fp16 off (no GPU here) it checks the dtypes and that one clipped step gives a finite loss and grad norm."""
+    pytest.importorskip("trl", reason="needs the optional `train` extra")
+    cpu = CONFIG | {"training": CONFIG["training"] | {"fp16": False, "gradient_checkpointing": False}}
+    rows = tf.encode_file(tok, ROOT / "distill" / "smoke" / "train.jsonl", CONFIG["data"]["max_length"])[:2]
+    real_sft_args = train_script.sft_args
+    monkeypatch.setattr(train_script, "sft_args", lambda *a, **k: real_sft_args(*a, **k, use_cpu=True))
+    ok, msg = train_script.trainer_step(fake_4bit_lora(train_script, tok), tok, rows, cpu, tmp_path)
+    assert ok, msg
+    assert "grad norm [" in msg and "clipped at 1.0" in msg and "['torch.float32']" in msg
+
+    monkeypatch.setattr(train_script, "upcast_trainable", lambda model: 0)  # without the fix
+    ok, msg = train_script.trainer_step(fake_4bit_lora(train_script, tok), tok, rows, cpu, tmp_path)
+    assert not ok and "aren't float32 (torch.bfloat16" in msg
+
+
+def test_low_memory_merge_is_bit_identical_to_peft(
+    train_script: Any, tok: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """11-02: the laptop had ~2 GB of RAM free for the 4B merge, so export.py --low-memory merges one tensor at
+    a time. On the --smoke model (base saved in bfloat16, as Qwen ships it; random non-zero LoRA weights;
+    several output shards) it must give exactly merge()'s tensors, through peft's own merge_and_unload."""
+    pytest.importorskip("peft", reason="needs the optional `train` extra")
+    import torch
+    from peft import LoraConfig, get_peft_model
+    from safetensors.torch import load_file
+    from transformers import AutoModelForCausalLM
+
+    spec = importlib.util.spec_from_file_location("kestrel_export_low_memory", ROOT / "distill" / "export.py")
+    assert spec is not None and spec.loader is not None
+    export = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export)
+
+    run = tmp_path / "run"
+    train_script.build_model(CONFIG, tok, smoke=True).to(torch.bfloat16).save_pretrained(run / "base")
+    lora = CONFIG["lora"]
+    model = get_peft_model(
+        AutoModelForCausalLM.from_pretrained(run / "base", dtype=torch.float32),
+        LoraConfig(r=lora["r"], lora_alpha=lora["alpha"], target_modules=lora["target_modules"], task_type="CAUSAL_LM"),
+    )
+    torch.manual_seed(2026)
+    for name, p in model.named_parameters():
+        if "lora_" in name:
+            p.data = torch.randn_like(p) * 0.05  # lora_B starts at zero: a zero delta would prove nothing
+    model.save_pretrained(run / "adapter")
+    tok.save_pretrained(run / "adapter")
+
+    peft_dir = export.merge(run / "adapter", tmp_path / "peft", CONFIG, smoke=True)
+    monkeypatch.setattr(export, "SHARD_BYTES", 64 * 1024)
+    low_dir = export.merge_low_memory(run / "adapter", tmp_path / "low", CONFIG, smoke=True)
+
+    def tensors(folder: Path) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for f in sorted(folder.glob("model*.safetensors")):
+            out |= load_file(str(f))
+        return out
+
+    want, got = tensors(peft_dir), tensors(low_dir)
+    assert len(list(low_dir.glob("model*.safetensors"))) > 1
+    assert set(got) == set(want)
+    assert all(got[k].dtype == want[k].dtype == torch.float16 and torch.equal(got[k], want[k]) for k in want)
+    base = load_file(str(run / "base" / "model.safetensors"))
+    q = "model.layers.0.self_attn.q_proj.weight"
+    assert not torch.equal(got[q], base[q].to(torch.float16))  # the adapter really was merged in
+    config = [json.loads((d / "config.json").read_text(encoding="utf-8")) for d in (peft_dir, low_dir)]
+    assert config[0] == config[1]
+    assert (peft_dir / "tokenizer.json").read_bytes() == (low_dir / "tokenizer.json").read_bytes()
+
+    (run / "adapter" / "adapter_config.json").write_text(
+        json.dumps(json.loads((run / "adapter" / "adapter_config.json").read_text()) | {"use_dora": True}), "utf-8"
+    )
+    with pytest.raises(SystemExit, match="use_dora"):
+        export.merge_low_memory(run / "adapter", tmp_path / "dora", CONFIG, smoke=True)
+
+
 def test_notebook_pins_match_the_lock_and_call_the_script() -> None:
     """The Kaggle notebook installs exactly the versions uv.lock resolved, and only runs train.py."""
     import re
@@ -174,6 +304,18 @@ def test_notebook_pins_match_the_lock_and_call_the_script() -> None:
 def notebook_cells() -> list[str]:
     notebook = json.loads((ROOT / "distill" / "train.ipynb").read_text(encoding="utf-8"))
     return ["".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "code"]
+
+
+def test_notebook_shows_one_gpu_before_anything_imports_torch() -> None:
+    """The 11-02 fix: the first code cell sets CUDA_VISIBLE_DEVICES=0 and imports nothing but os; sh() passes
+    it on to train.py explicitly."""
+    cells = notebook_cells()
+    first = cells[0].splitlines()
+    assert 'os.environ["CUDA_VISIBLE_DEVICES"] = "0"' in first
+    assert [line for line in first if line.startswith(("import ", "from "))] == ["import os"]
+    assert not any("import torch" in c for c in cells)  # the notebook itself never imports torch
+    paths = next(c for c in cells if "def sh(" in c)
+    assert 'env = os.environ | {"CUDA_VISIBLE_DEVICES": "0"}' in paths and "env=env" in paths
 
 
 def test_notebook_install_cell_stops_on_a_wrong_version_or_no_internet() -> None:

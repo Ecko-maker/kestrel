@@ -1,12 +1,15 @@
 // Render chat prompts exactly as the Ollama server does, for the template parity check.
 //
 // Input (stdin): {"template": "<Go template text>", "cases": [{"name": ..., "request": <an OpenAI
-// chat-completions request: model, messages, tools>}]}. Output (stdout): {"<name>": "<rendered prompt>"}.
+// chat-completions request: model, messages, tools>}]}. Output (stdout): {"tool_tag": "<tag>", "prompts":
+// {"<name>": "<rendered prompt>"}}.
 //
 // Each request goes through the same two steps as a request from Kestrel's Ollama provider (which uses
 // the OpenAI-compatible endpoint): openai.FromChatRequest (OpenAI format -> Ollama messages and tools,
-// e.g. argument strings -> maps), then template.Parse + Execute (server/prompt.go renderPrompt). The
-// Ollama version is pinned in go.mod to the one installed; bump both together.
+// e.g. argument strings -> maps), then template.Parse + Execute (server/prompt.go renderPrompt). tool_tag is
+// the tag the server's tool-call parser takes from the same template (server/routes.go: tools.NewParser):
+// replies are only parsed into tool calls when they use it. The Ollama version is pinned in go.mod to the
+// one installed; bump both together.
 package main
 
 import (
@@ -17,6 +20,7 @@ import (
 
 	"github.com/ollama/ollama/openai"
 	"github.com/ollama/ollama/template"
+	"github.com/ollama/ollama/tools"
 )
 
 type input struct {
@@ -41,7 +45,7 @@ func main() {
 	if err != nil {
 		fail("parsing template: %v", err)
 	}
-	out := map[string]string{}
+	prompts := map[string]string{}
 	for _, c := range in.Cases {
 		req, err := openai.FromChatRequest(c.Request)
 		if err != nil {
@@ -51,8 +55,9 @@ func main() {
 		if err := tmpl.Execute(&b, template.Values{Messages: req.Messages, Tools: req.Tools}); err != nil {
 			fail("%s: rendering: %v", c.Name, err)
 		}
-		out[c.Name] = b.String()
+		prompts[c.Name] = b.String()
 	}
+	out := map[string]any{"tool_tag": tools.NewParser(tmpl.Template, nil).Tag(), "prompts": prompts}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(out); err != nil {

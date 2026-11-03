@@ -115,6 +115,60 @@ def test_train_refuses_an_output_folder_under_kaggle_input(out: str) -> None:
         train.main(["--gpu-smoke", "--data", "anything", "--out", out])  # stops before torch is imported
 
 
+def test_train_refuses_more_than_one_visible_gpu(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """11-02: Kaggle's "GPU T4 x2" showed two GPUs and SFTTrainer refused nn.DataParallel inside train(); both
+    GPU modes now stop before a model is loaded. The 10-20 GPU smoke test used its own loop, not the Trainer."""
+    train.check_one_gpu(0)
+    train.check_one_gpu(1)
+    with pytest.raises(SystemExit, match=r"2 GPUs are visible .* uses exactly one"):
+        train.check_one_gpu(2)
+
+    def loaded(*_: object) -> None:
+        pytest.fail("a model was loaded with two GPUs visible")
+
+    monkeypatch.setattr(train, "gpu_count", lambda: 2)
+    monkeypatch.setattr(train, "gpu_smoke", loaded)
+    monkeypatch.setattr(train, "run", loaded)
+    monkeypatch.setattr(train, "code_commit", lambda: "a4b33721d452c6aa83f0fc068bec1bb6db677296")
+    out = str(tmp_path / "out")
+    with pytest.raises(SystemExit, match='CUDA_VISIBLE_DEVICES"\\] = "0"'):
+        train.main(["--gpu-smoke", "--data", "anything", "--out", out])
+    with pytest.raises(SystemExit, match="GPUs are visible"):
+        train.main(["--data", str(ROOT / "distill" / "smoke"), "--out", out])
+
+    def cpu_run(*_: object) -> None:
+        raise RuntimeError("cpu run reached")
+
+    monkeypatch.setattr(train, "run", cpu_run)  # --smoke is CPU only: the GPU count isn't asked
+    with pytest.raises(RuntimeError, match="cpu run reached"):
+        train.main(["--smoke", "--data", str(ROOT / "distill" / "smoke"), "--out", out])
+
+
+def test_compute_dtype_must_exist_on_the_gpu() -> None:
+    train.check_compute_dtype("float16", bf16_supported=False)  # T4: train_config.toml's setting
+    train.check_compute_dtype("bfloat16", bf16_supported=True)
+    with pytest.raises(SystemExit, match=r"no bfloat16 .*use float16"):
+        train.check_compute_dtype("bfloat16", bf16_supported=False)
+    with pytest.raises(SystemExit, match="not float16, bfloat16 or float32"):
+        train.check_compute_dtype("int8", bf16_supported=True)
+    assert CONFIG["quantization"]["compute_dtype"] == "float16" and CONFIG["training"]["fp16"] is True
+
+
+def test_trainable_parameters_must_be_float32() -> None:
+    torch = pytest.importorskip("torch", reason="needs the optional `train` extra")
+    layer = torch.nn.Linear(4, 4)
+    assert train.check_trainable_float32(layer) == 2
+    for dtype in (torch.bfloat16, torch.float16):
+        bad = torch.nn.Linear(4, 4).to(dtype)
+        with pytest.raises(SystemExit, match=rf"2 of 2 trainable parameters aren't float32 \({dtype}; first: weight"):
+            train.check_trainable_float32(bad)
+        assert train.upcast_trainable(bad) == 2 and train.check_trainable_float32(bad) == 2
+    frozen = torch.nn.Linear(4, 4).to(torch.bfloat16).requires_grad_(False)
+    assert train.upcast_trainable(frozen) == 0  # frozen weights keep their dtype
+    with pytest.raises(SystemExit, match="no trainable parameters"):
+        train.check_trainable_float32(frozen)
+
+
 def test_train_accepts_kaggle_working() -> None:
     train.check_out(Path("/kaggle/working/run"))
     train.check_out(Path("/kaggle/working/input"))  # only a path that starts /kaggle/input is refused

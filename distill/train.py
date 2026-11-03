@@ -9,6 +9,18 @@ of synthetic examples (an overfitting test: the loss must fall by half), every e
 tokens, and afterwards a greedy generation makes a tool call train_format can parse. It also prints the
 library versions next to the pins in the config.
 
+Both GPU modes refuse to start when more than one GPU is visible: with two (Kaggle's "GPU T4 x2") the
+Trainer wraps the model in nn.DataParallel, which TRL's SFTTrainer refuses, and the 11-02 run stopped there.
+Set CUDA_VISIBLE_DEVICES=0 before torch is imported (train.ipynb's first cell does).
+
+Precision: the base model loads in 4-bit with float16 compute (T4 and P100 have no bfloat16), and every
+trainable (LoRA) parameter is float32 when training starts: fp16 mixed precision's GradScaler unscales
+float32 gradients only. TRL's SFTTrainer casts the trainable parameters of a 4-bit model to bfloat16 in its
+constructor (trl 1.16.0, sft_trainer.py: QLoRA paper recipe), whatever fp16/bf16 say; on a T4 the first
+optimizer step then fails in clip_grad_norm_ -> GradScaler.unscale_ (the 11-02 run, at step 0). So
+make_trainer() casts them back to float32 after the constructor and refuses to train otherwise, and
+--gpu-smoke runs one real SFTTrainer step (fp16, gradient clipping) through make_trainer().
+
 DIR holds train.jsonl, val.jsonl and manifest.json; for --gpu-smoke, CODE holds the synthetic smoke
 train.jsonl next to this file (Kaggle uploads are flat). OUT must be writable: on Kaggle, under
 /kaggle/working (/kaggle/input is read-only; the script refuses it). Settings come from the config file. Output:
@@ -81,6 +93,65 @@ def check_data(data: Path, cfg: dict[str, Any]) -> None:
         )
 
 
+def check_one_gpu(count: int) -> None:
+    """One GPU is all QLoRA here needs. More than one: the Trainer builds nn.DataParallel and SFTTrainer refuses
+    it (11-02, Kaggle's "GPU T4 x2"); stop before the model is loaded, not inside train()."""
+    if count > 1:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        raise SystemExit(
+            f"{count} GPUs are visible (CUDA_VISIBLE_DEVICES={visible!r}); train.py uses exactly one. "
+            'Set os.environ["CUDA_VISIBLE_DEVICES"] = "0" before anything imports torch '
+            "(train.ipynb's first cell), then restart the session and run from the top."
+        )
+
+
+def gpu_count() -> int:
+    import torch
+
+    return int(torch.cuda.device_count())
+
+
+def check_compute_dtype(name: str, bf16_supported: bool) -> None:
+    """The 4-bit compute dtype must be one the GPU has: T4 and P100 have no bfloat16."""
+    if name == "bfloat16" and not bf16_supported:
+        raise SystemExit(
+            "[quantization] compute_dtype is bfloat16, but this GPU has no bfloat16 (T4, P100): use float16"
+        )
+    if name not in ("float16", "bfloat16", "float32"):
+        raise SystemExit(f"[quantization] compute_dtype {name!r} is not float16, bfloat16 or float32")
+
+
+def upcast_trainable(model: Any) -> int:
+    """Casts every trainable floating-point parameter to float32 in place; returns how many were cast."""
+    import torch
+
+    cast = 0
+    for param in model.parameters():
+        if param.requires_grad and param.is_floating_point() and param.dtype != torch.float32:
+            param.data = param.data.to(torch.float32)
+            cast += 1
+    return cast
+
+
+def check_trainable_float32(model: Any) -> int:
+    """Stops unless there are trainable parameters and every one is float32 (fp16 mixed precision keeps float32
+    master weights: GradScaler can't unscale float16 or bfloat16 gradients). Returns their number."""
+    import torch
+
+    trainable = [(name, p.dtype) for name, p in model.named_parameters() if p.requires_grad]
+    if not trainable:
+        raise SystemExit("no trainable parameters: the LoRA adapter wasn't attached")
+    wrong = [(name, dtype) for name, dtype in trainable if dtype != torch.float32]
+    if wrong:
+        kinds = sorted({str(dtype) for _, dtype in wrong})
+        raise SystemExit(
+            f"{len(wrong)} of {len(trainable)} trainable parameters aren't float32 ({', '.join(kinds)}; first: "
+            f"{wrong[0][0]}). fp16 training needs float32 LoRA weights: GradScaler can't unscale "
+            "bfloat16/float16 gradients (T4: 'not implemented for BFloat16'). Build the trainer with make_trainer()."
+        )
+    return len(trainable)
+
+
 def code_commit() -> str | None:
     """The commit of the training code: the COMMIT file scripts/build_train_snapshot.py puts next to this file."""
     path = HERE / "COMMIT"
@@ -105,6 +176,8 @@ def versions() -> dict[str, Any]:
 
         found["cuda"] = torch.version.cuda
         found["gpu"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+        found["gpu_count"] = torch.cuda.device_count()
+        found["cuda_visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES")
     except ImportError:
         pass
     return found
@@ -132,7 +205,10 @@ def version_report(found: dict[str, Any], pins: dict[str, str]) -> tuple[list[st
         ok = have == want
         mismatched += [] if ok else [name]
         lines.append(f"  {name:<13}{have or 'missing':<14} pin {want:<10} {'ok' if ok else 'MISMATCH'}")
-    lines.append(f"  python {found.get('python')}, CUDA {found.get('cuda')}, GPU {found.get('gpu')}")
+    lines.append(
+        f"  python {found.get('python')}, CUDA {found.get('cuda')}, GPU {found.get('gpu')}"
+        f" ({found.get('gpu_count')} visible, CUDA_VISIBLE_DEVICES={found.get('cuda_visible_devices')!r})"
+    )
     return lines, mismatched
 
 
@@ -226,9 +302,18 @@ def gpu_smoke(data: Path, out: Path, cfg: dict[str, Any]) -> dict[str, Any]:
     tool_ok = bool(calls) and all(c.get("name") in tool_names for c in calls)
     print(f"generation: {text[:300]!r}\nparsed tool calls: {calls}")
 
+    step_ok, step_msg = trainer_step(model, tokenizer, rows, cfg, out)
+    print(step_msg)
+
     report = {
-        "passed": trainable_ok and overfit_ok and tool_ok,
-        "checks": {"trainable_tokens": trainable_ok, "loss_drop": overfit_ok, "tool_call": tool_ok},
+        "passed": trainable_ok and overfit_ok and tool_ok and step_ok,
+        "checks": {
+            "trainable_tokens": trainable_ok,
+            "loss_drop": overfit_ok,
+            "tool_call": tool_ok,
+            "trainer_step": step_ok,
+        },
+        "trainer_step": step_msg,
         "trainable_tokens": counts,
         "losses": losses,
         "generation": text,
@@ -271,6 +356,7 @@ def build_model(cfg: dict[str, Any], tokenizer: Any, smoke: bool) -> Any:
         )
         return AutoModelForCausalLM.from_config(config, dtype=torch.float32)
     q = cfg["quantization"]
+    check_compute_dtype(q["compute_dtype"], torch.cuda.is_available() and torch.cuda.is_bf16_supported())
     bnb = BitsAndBytesConfig(
         load_in_4bit=q["load_in_4bit"],
         bnb_4bit_quant_type=q["quant_type"],
@@ -289,11 +375,95 @@ def build_model(cfg: dict[str, Any], tokenizer: Any, smoke: bool) -> Any:
     return prepare_model_for_kbit_training(model, use_gradient_checkpointing=cfg["training"]["gradient_checkpointing"])
 
 
-def run(data: Path, out: Path, config_path: Path, smoke: bool) -> dict[str, Any]:
+def sft_args(cfg: dict[str, Any], output_dir: Path, smoke: bool, **override: Any) -> Any:
+    """The SFTConfig of a run: train_config.toml's [training], with --smoke's CPU settings, then override."""
+    from trl import SFTConfig
+
+    train_cfg = cfg["training"]
+    settings: dict[str, Any] = {
+        "output_dir": str(output_dir),
+        "num_train_epochs": train_cfg["epochs"],
+        "per_device_train_batch_size": train_cfg["batch_size"],
+        "per_device_eval_batch_size": train_cfg["batch_size"],
+        "gradient_accumulation_steps": 1 if smoke else train_cfg["gradient_accumulation"],
+        "learning_rate": train_cfg["learning_rate"],
+        "lr_scheduler_type": train_cfg["scheduler"],
+        "warmup_steps": 0 if smoke else train_cfg["warmup_steps"],
+        "logging_steps": 1 if smoke else train_cfg["logging_steps"],
+        "load_best_model_at_end": True,
+        "metric_for_best_model": "eval_loss",
+        "greater_is_better": False,
+        "save_total_limit": 2,
+        "seed": cfg["seed"],
+        "data_seed": cfg["seed"],
+        "fp16": False if smoke else train_cfg["fp16"],
+        "bf16": False,
+        "gradient_checkpointing": False if smoke else train_cfg["gradient_checkpointing"],
+        "report_to": "none",
+        "max_length": None,  # train_format already refused anything longer; never truncate here
+        "packing": False,
+        "dataset_kwargs": {"skip_prepare_dataset": True},  # rows are already input_ids + labels
+    }
+    return SFTConfig(**(settings | override))
+
+
+def make_trainer(model: Any, tokenizer: Any, args: Any, train_rows: list, val_rows: list | None, **kw: Any) -> Any:
+    """SFTTrainer, then the LoRA weights back to float32 (its constructor casts a 4-bit model's to bfloat16),
+    checked before any step runs."""
     from datasets import Dataset
+    from trl import SFTTrainer
+
+    trainer = SFTTrainer(
+        model=model,
+        args=args,
+        train_dataset=Dataset.from_list(train_rows),
+        eval_dataset=Dataset.from_list(val_rows) if val_rows else None,
+        processing_class=tokenizer,
+        **kw,
+    )
+    cast = upcast_trainable(trainer.model)
+    n = check_trainable_float32(trainer.model)
+    print(f"trainable parameters: {n}, all float32 ({cast} cast back from the trainer's dtype)")
+    return trainer
+
+
+def trainer_step(model: Any, tokenizer: Any, rows: list, cfg: dict[str, Any], out: Path) -> tuple[bool, str]:
+    """One real optimizer step through make_trainer() with the real run's precision settings (fp16, gradient
+    checkpointing, gradient clipping): what the 11-02 run failed at, step 0. Not saved or evaluated."""
+    import torch
+
+    args = sft_args(
+        cfg,
+        out / "trainer-step",
+        smoke=False,
+        max_steps=1,
+        gradient_accumulation_steps=1,
+        warmup_steps=0,
+        logging_steps=1,
+        eval_strategy="no",
+        save_strategy="no",
+        load_best_model_at_end=False,
+    )
+    try:
+        trainer = make_trainer(model, tokenizer, args, rows, None)
+        result = trainer.train()
+        check_trainable_float32(trainer.model)
+    except (Exception, SystemExit) as e:  # a failed step fails the check; the report says why
+        return False, f"trainer step: {type(e).__name__}: {e}"
+    loss = result.training_loss
+    norms = [row["grad_norm"] for row in trainer.state.log_history if "grad_norm" in row]
+    ok = math.isfinite(loss) and all(math.isfinite(float(x)) for x in norms) and bool(norms)
+    dtypes = sorted({str(p.dtype) for p in trainer.model.parameters() if p.requires_grad})
+    clip = args.max_grad_norm
+    msg = f"trainer step: loss {loss:.4f}, grad norm {norms}, clipped at {clip}, fp16 {args.fp16}, trainable {dtypes}"
+    del trainer
+    torch.cuda.empty_cache()
+    return ok, msg
+
+
+def run(data: Path, out: Path, config_path: Path, smoke: bool) -> dict[str, Any]:
     from peft import LoraConfig, get_peft_model
     from transformers import AutoTokenizer, EarlyStoppingCallback, set_seed
-    from trl import SFTConfig, SFTTrainer
 
     with config_path.open("rb") as f:
         cfg = tomllib.load(f)
@@ -335,37 +505,13 @@ def run(data: Path, out: Path, config_path: Path, smoke: bool) -> dict[str, Any]
         "save_steps": cfg["smoke"]["eval_steps"],
         "use_cpu": True,
     }
-    args = SFTConfig(
-        output_dir=str(out / "checkpoints"),
-        num_train_epochs=train_cfg["epochs"],
-        per_device_train_batch_size=train_cfg["batch_size"],
-        per_device_eval_batch_size=train_cfg["batch_size"],
-        gradient_accumulation_steps=1 if smoke else train_cfg["gradient_accumulation"],
-        learning_rate=train_cfg["learning_rate"],
-        lr_scheduler_type=train_cfg["scheduler"],
-        warmup_steps=0 if smoke else train_cfg["warmup_steps"],
-        logging_steps=1 if smoke else train_cfg["logging_steps"],
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        greater_is_better=False,
-        save_total_limit=2,
-        seed=cfg["seed"],
-        data_seed=cfg["seed"],
-        fp16=False if smoke else train_cfg["fp16"],
-        bf16=False,
-        gradient_checkpointing=False if smoke else train_cfg["gradient_checkpointing"],
-        report_to="none",
-        max_length=None,  # train_format already refused anything longer; never truncate here
-        packing=False,
-        dataset_kwargs={"skip_prepare_dataset": True},  # rows are already input_ids + labels
-        **(smoke_steps if smoke else per_epoch),
-    )
-    trainer = SFTTrainer(
-        model=model,
-        args=args,
-        train_dataset=Dataset.from_list(train_rows),
-        eval_dataset=Dataset.from_list(val_rows),
-        processing_class=tokenizer,
+    args = sft_args(cfg, out / "checkpoints", smoke, **(smoke_steps if smoke else per_epoch))
+    trainer = make_trainer(
+        model,
+        tokenizer,
+        args,
+        train_rows,
+        val_rows,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=train_cfg["early_stopping_patience"])],
     )
     result = trainer.train()
@@ -436,10 +582,13 @@ def main(argv: list[str] | None = None) -> int:
     with args.config.open("rb") as f:
         cfg = tomllib.load(f)
     if args.gpu_smoke:
+        check_one_gpu(gpu_count())
         return 0 if gpu_smoke(args.data, args.out, cfg)["passed"] else 1
     check_data(args.data, cfg)
     if not args.smoke and code_commit() is None:
         raise SystemExit("no COMMIT file next to train.py: upload a snapshot from scripts/build_train_snapshot.py")
+    if not args.smoke:  # --smoke runs on the CPU
+        check_one_gpu(gpu_count())
     lineage = run(args.data, args.out, args.config, args.smoke)
     r = lineage["results"]
     print(f"train loss {r['train_loss']:.4f}, best val loss {r['best_eval_loss']}, steps {r['steps']}")
