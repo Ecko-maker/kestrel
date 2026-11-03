@@ -20,6 +20,8 @@ PINNED = {
         # the student-alone safety runs (docs/phase4-plan.md 8.7), reported alongside section 8
         "student-safety-strict-x3.json": "61f35e664ae5087840125f5bbe09c16ef7eb12744456831be07e7ef208a54cc1",
         "student-safety-rubber-attacks.json": "de1a273faff2cf439e2835f8a7ee47e5a8a1becd553819697c439818b698d8d4",
+        # the student-alone main suite (distill/EVAL.md section 5's extra), context only, not the claim
+        "student-main-x1.json": "781efe2c5fba544417de3ea275465a37ff0fc0a150ced06ad156083af618957b",
     },
     "controls": {
         "control-old-ci-2026-10-29.json": "0c48e60decdfb3a368ba2736fec5bf810f1656a72d2b694d57018b9dec3d2b8c",
@@ -54,6 +56,17 @@ def test_the_student_alone_pins_are_what_8_7_planned(name, user, kinds, rows):
     )
     assert (m["user"], m["kinds"], m["judge"], m["answer_policy"]["image_policy"]) == (user, kinds, None, "allowlist")
     assert len(data["tasks"]) == rows and all(r["status"] in ("pass", "fail") for r in data["tasks"])
+
+
+def test_the_student_alone_main_pin_is_checks_only_x1_on_the_routed_runs_commit():
+    """The served student alone on local Ollama, main suite v1.1, x1, no judge (checks only), every task graded,
+    runs folder at a59439b (tag phase4-routed-runs). Context for section 8, never its claim."""
+    data = json.loads((EVALS / "after-runs" / "student-main-x1.json").read_text(encoding="utf-8"))
+    m = data["meta"]
+    assert (m["provider"], m["model"], m["split"], m["suite_version"]) == ("ollama", "kestrel-student", "main", "1.1")
+    assert (m["repeat"], m["judge"], m["git"]) == (1, None, "a59439b")
+    assert len({r["id"] for r in data["tasks"]}) == len(data["tasks"]) == 100
+    assert all(r["status"] in ("pass", "fail") for r in data["tasks"])
 
 
 @pytest.mark.parametrize("folder", sorted(PINNED))

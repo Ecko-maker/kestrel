@@ -4,13 +4,19 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-03, from the 11-03 drift-control session (log below).
+2026-11-03 evening, from the 11-03 quota-fix and blog session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT) `phase4/kaggle-teacher` + `phase4/student-eval` (PR #50, `43d5522`, 2026-11-02 19:55 UTC) and `phase4/export-readiness` (PR #53, `2cb2a4b`, 2026-11-03 00:55 UTC: the first trained student's export path, the Ollama tool-call tag fix, the router's `text_tool_call` escalation). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
 
-**The single next step:** the routed main suite R=5 on 11-04 from about 09:30 EST, in `..\kestrel-runs` at `a59439b`, only after `scripts/groq_quota.py --need <the day's budget>` prints OK, with `--token-budget` set to that budget (approved up to 400,000 over at most 3 days; `KESTREL_REQUEST_TIMEOUT` unset; the lineage set per session). Then routed group S.
+**The single next step:** routed main suite day 1 starts 11-04 after 09:40 EST (cancelled CI runs leave the window at 09:38), in `..\kestrel-runs` at `a59439b`, only after `scripts/groq_quota.py --need <the day's budget>` prints OK; router variables set per session (`distill/EVAL.md` 1.4), output filtered to a log (no interim look).
+
+## 2026-11-03 evening (quota-fix and blog session; KestrelBench not run, no Groq)
+
+1. **11-03: `groq_quota.py` reads each job's log (#61), EVAL.md router-variables note (#62), demo kit merged (#59).** A KestrelBench job counts as having used Groq only if its log lacks "KestrelBench not run"; the two 32–33 s not-run jobs now count as not run. Without `KESTREL_ROUTER_STUDENT_MODEL` a routed run is labelled `qwen3:4b` (found in the pre-flight; the student is still the one called).
+2. **Blog post 2 skeleton** on `docs/blog-phase4` (`d1f92ab`, no PR): section 5 is placeholders mapped to `evals/reports/phase4-result.md`.
+3. **Next:** routed main suite day 1 starts 11-04 after 09:40 EST (cancelled CI runs leave the window at 09:38), once the quota check prints OK. Pre-flight passed offline: `a59439b`, default `35fac5ba6277`, routed `4da8f4b3c792` (router block only), dry run 500 runs.
 
 ## 2026-11-03 (drift-control session; KestrelBench not run, no Groq from the session)
 
