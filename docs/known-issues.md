@@ -137,7 +137,7 @@ The `[e]dit` option's "open in your editor" path (`$EDITOR` / Notepad) has never
 
 ### 21. The judge isn't calibrated yet
 **Labels:** `evals`, `medium`
-The tooling is ready, but no human labels exist yet, so the judge's agreement with a person is unmeasured. Until then, rubric-graded results (43 of 100 tasks) are provisional and the README says "judge not yet calibrated".
+The owner labelled 74 answers by 2026-11-03 (result below), but the "done when" isn't met: kappa can't be read yet. Until it is, rubric-graded results (43 of 100 tasks) are provisional and the README says the judge isn't calibrated.
 
 **Tooling:**
 - `kestrel bench label`: pass/fail/skip, judge verdict hidden, terminal only.
@@ -151,6 +151,18 @@ The tooling is ready, but no human labels exist yet, so the judge's agreement wi
 - The judge is also the model under test (self-grading). Candidate replacement: `qwen/qwen3.8-27b` (different family, own free quota). A 3-answer smoke test parsed cleanly and graded that task 1, but it is not yet compared on labels.
 - It errs both ways. A review of 15 sampled passes (`evals/reports/baseline-pass-review.md`) found 2 of the 9 judge-graded ones lenient: an overclaimed capability, and unsupported details plus a misreported source in a web answer.
 - It sees only the first 600 characters of each tool result, so it can't check faithfulness against the rest. Raising the cap to 2,000 is proposed as judge v2; not applied.
+
+**Calibration result (2026-11-03; `kestrel bench calibrate`, stored judge v2 verdicts, no model calls):**
+- **Labels:** 75 rows in `evals/labels/human.jsonl` (74 labelled, 1 skipped), all from `kestrel bench label` with the verdict hidden, from `evals/results/run2-v1.1-judge-v2.json` and the pinned `evals/baselines/baseline-v1.1-judge-v2-final.json`.
+  - The 32 labels on the git-ignored run 2 file have the same answer and stored score in the pinned `run2-v1.1-judge-v2-final.json`.
+- **Held-out (the reported number), 32 labelled answers:** agreement **91% (95% CI 78–100%)**; Cohen's kappa **0.0**.
+  - **Why kappa is 0:** every held-out human label is "pass". Kappa can't exceed 0 when one rater never says fail, so this isn't evidence of a bad judge, and it isn't evidence of a good one either.
+  - **All 3 disagreements are the judge being too strict:** `forbid-clear-by-overwrite` (×2) and `forbid-remove-meeting`. Phase 2's failure analysis flagged the same two tasks: `evals/reports/baseline-failures.md`, groups 5 ("confirmed misgrade") and 6 ("debatable strictness … needs human labels").
+- **Dev (context only, never reported as the result), 42 labelled answers:** agreement 95% (95% CI 88–100%); kappa 0.0.
+  - Here the *judge* never says fail.
+  - Its 2 disagreements are too lenient: `act-packing-list` and `convo-second-city`, both failed by the owner.
+- **Reading:** each half lacks one of the two outcomes on one side, so kappa is 0 in both. Agreement is high, and the judge errs both ways, as the Phase 2 pass review found.
+- **Status: stays open.** The "done when" below (kappa ≥ 0.6) is not met, and it is not changed after seeing this result.
 
 **Done when:** the owner has labelled answers in both halves (aim for 20+ per half; label repeats to get more than the 43 rubric tasks), and the README reports held-out agreement and kappa, with kappa ≥ 0.6, or the judge prompt (improved on dev only) or judge model is changed until it is.
 
