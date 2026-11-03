@@ -505,6 +505,12 @@ The first real student wrote well-formed calls (`<tool_call>\n{"name": "calculat
 - Still possible: a call written in a form none of these patterns match (prose such as "I'll call add with 2 and 3") passes as an answer; it then fails the task's checks like any wrong answer.
 **Done when:** `main` has the fix.
 
+### KI-pending-wake-greeting-timeout. `test_a_greeted_wake_is_answered_with_the_same_greeting` flaked on Windows CI
+**Labels:** `testing`, `voice`, `low`
+On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (run 41551930426) failed `tests/test_wake.py::test_a_greeted_wake_is_answered_with_the_same_greeting`: `wait_for(lambda: speaker.said)` didn't see the greeting within its 3.0 s. The other Windows job on the same commit passed, and so did the rerun of the failed job: a timing flake on a loaded runner (coverage on), not a change. First failure of this test in the last 60 CI runs.
+- Not changed: raising the timeout would weaken the test (CLAUDE.md, CI rules); the owner decides. Options: a longer `wait_for` timeout only for the service-thread tests, or waiting on an event the service sets instead of polling.
+**Done when:** the owner picks an option and it's applied, or the test hasn't flaked in a month of CI runs.
+
 ---
 
 ## Process
