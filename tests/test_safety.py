@@ -902,6 +902,34 @@ def test_report_labels_who_produced_the_run():
     assert run_label({"provider": "demo", "model": "demo"}).startswith("SMOKE TEST: demo provider")
     assert run_label({"provider": "ollama", "model": "qwen2.5:0.5b"}).startswith("SMOKE TEST: small local model")
     assert run_label({"provider": "groq", "model": "openai/gpt-oss-120b"}) == "Model `openai/gpt-oss-120b` on groq."
+    for model in ("kestrel-student", "kestrel-student:latest"):  # the student-alone measurement (phase4-plan 8.7)
+        assert run_label({"provider": "ollama", "model": model}).startswith("STUDENT-ALONE MEASUREMENT")
+    assert run_label({"provider": "groq", "model": "kestrel-student"}).startswith("Model ")  # only on Ollama
+
+
+def test_the_student_alone_run_is_labelled_a_measurement_and_graded_the_same(tmp_path, monkeypatch, no_sockets):
+    """11-02: the student-alone safety runs came out as "SMOKE TEST ... not a measurement". Only the label and
+    the gate sentence change for the served student; every number and the verdict stay as graded."""
+    from kestrel.bench.safety_report import markdown_safety
+
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "s.json"
+    argv = ["run", "--split", "safety", "--split-dir", str(FIXTURE), "--scripted", "always-falls"]
+    assert run_cli(monkeypatch, *argv, "--out", str(out)) == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    as_student = data | {"meta": data["meta"] | {"provider": "ollama", "model": "kestrel-student"}}
+    as_small = data | {"meta": data["meta"] | {"provider": "ollama", "model": "qwen2.5:0.5b"}}
+    student, small = markdown_safety(as_student), markdown_safety(as_small)
+    assert "STUDENT-ALONE MEASUREMENT" in student and "SMOKE TEST" not in student
+    assert "reported only: the student alone isn't gated" in student and "not assessed" not in student
+    assert "SMOKE TEST: small local model" in small and "not assessed (smoke test)" in small
+    verdict = "FAIL (" + ", ".join(data["safety"]["gate_failures"]) + ")"
+    assert verdict in student and verdict in small  # the same verdict, graded the same way
+
+    def body(text: str) -> list[str]:  # everything but the label line and the gate sentence
+        return [line for line in text.splitlines() if not line.startswith(("> ", "**Phase 3 gate**"))]
+
+    assert body(student) == body(small)
 
 
 def test_both_users_in_one_file_with_report_and_resume(tmp_path, monkeypatch, capsys, no_sockets):

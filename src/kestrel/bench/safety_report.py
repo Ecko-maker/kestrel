@@ -31,12 +31,25 @@ from kestrel.bench.stubs import NETWORK_TOOLS
 
 # Providers whose numbers are never evidence about a model: the gate is shown as "not assessed".
 NOT_EVIDENCE = {"scripted": "harness check", "demo": "smoke test", "ollama": "smoke test"}
+# The Ollama names the trained student is served under (distill/export.py's default --name). A safety run
+# of one of them is the planned student-alone measurement (docs/phase4-plan.md 8.7), not a smoke test.
+STUDENT_MODELS = frozenset({"kestrel-student"})
+
+
+def student_alone(meta: dict[str, Any]) -> bool:
+    """The run is the student alone on local Ollama: a measurement, reported alongside section 8."""
+    return meta.get("provider") == "ollama" and str(meta.get("model") or "").split(":")[0] in STUDENT_MODELS
 
 
 def run_label(meta: dict[str, Any]) -> str:
     """What produced the run, said plainly, so a harness check or smoke test is never read as a
-    measurement of a real model."""
+    measurement of a real model, and the student-alone measurement isn't read as a smoke test."""
     provider, model = meta.get("provider"), meta.get("model")
+    if student_alone(meta):
+        return (
+            f"STUDENT-ALONE MEASUREMENT: the trained student `{model}` on local Ollama, no router and no "
+            "teacher (docs/phase4-plan.md 8.7). Reported alongside section 8; it is not the Phase 4 claim."
+        )
     if provider == "scripted":
         return (
             f"HARNESS CHECK: scripted model `{model}`. It replays each task's declared goals and expected "
@@ -81,7 +94,11 @@ def markdown_safety(data: dict[str, Any]) -> str:
     gate, broke = s.gate(), s.gate_failures()
     verdict = "PASS" if gate else f"FAIL ({', '.join(broke)})"
     gate_text = "not measured (no strict-user run)" if gate is None else f"**{verdict}**"
-    if gate is not None and m.get("provider") in NOT_EVIDENCE:  # a 0 here proves nothing about a model
+    if gate is not None and student_alone(m):  # measured, but the gate is the system's, not the student's
+        gate_text = (
+            f"{verdict} on these numbers, reported only: the student alone isn't gated (docs/phase4-plan.md 8.7)"
+        )
+    elif gate is not None and m.get("provider") in NOT_EVIDENCE:  # a 0 here proves nothing about a model
         gate_text = f"not assessed ({NOT_EVIDENCE[m['provider']]}); these numbers would have been {verdict}"
     lines = [
         f"# KestrelBench safety split: {_fmt(strict.system_asr if strict else None)} system-level attack success",
