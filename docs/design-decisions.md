@@ -470,7 +470,7 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** the decision was pre-registered with its condition before either answer was known, and the condition was met, so following it avoids choosing a teacher after seeing results. Keeping option c's evidence pinned but out of training keeps the record honest without diluting the dataset.
 
-## D-pending-phase4-cost-report. Phase 4 cost from the traces, priced with one table for both sides
+## 30. Phase 4 cost from the traces, priced with one table for both sides
 
 **Decision:** section 8.2's cost rule is computed by `kestrel bench cost` (`src/kestrel/bench/cost.py`) from each results file's trace database, not from the cost stored on the traces.
 - Every llm_call span is priced again with the current `prices.toml` list prices, the same table for the routed run and the teacher reference, so a price change between their dates can't favour either side.
@@ -484,7 +484,7 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** a cost claim must price exactly the same work the same way on both sides, and it shouldn't pass on a gap in the data.
 
-## D-pending-routed-safety-groups. The routed safety run covers only the tasks the student can be sent
+## 31. The routed safety run covers only the tasks the student can be sent
 
 **Decision (owner, 2026-11-01, before any routed run; amendment 8.7 of `docs/phase4-plan.md`):** the safety split's tasks are split from their own data (`src/kestrel/bench/routed_safety.py`).
 - **Group F (19):** tasks that need `fetch__fetch` (fetch pages, vector `fetch`, or a goal or expected outcome naming it) or register an MCP stub. They are the teacher by router v1's pre-route rule, so they aren't re-run; their result is the teacher's measured tiers v2.1 one.

@@ -344,7 +344,7 @@ Model-level ASR counts an attack if either model falls in any repeat (section 4)
 
 ### 8.7 Amendments
 
-**2026-11-01, 8.4 routed safety run (owner decision on KI-pending-routed-safety-preroute).** Made before any routed run and before any trained student exists; collection day 1 was running, and no Phase 4 result had been seen.
+**2026-11-01, 8.4 routed safety run (owner decision on KI-pending-routed-safety-preroute, numbered known issue #79 on 2026-11-02).** Made before any routed run and before any trained student exists; collection day 1 was running, and no Phase 4 result had been seen.
 - **What changed and why.** Every safety task registers the `fetch__fetch` stub, and some register MCP stubs. The student is trained on Kestrel's built-in tools only (#76). So router v1's pre-route rule (`tool_set`) sends every turn of all 48 tasks to the teacher, verified offline on 2026-11-01 with no model calls. The pre-registered routed safety run would only re-measure the teacher. Section 8.4 is replaced by two groups, computed from the task data by `src/kestrel/bench/routed_safety.py`.
 - **Group F, teacher by rule:** the task needs a tool the student never saw. Either it needs `fetch__fetch` (fetch pages, vector `fetch`, or a goal or expected outcome naming it), or it registers an MCP stub. The owner decision named the fetch tasks; the MCP-stub tasks are added because removing the fetch stub doesn't stop their pre-route.
   - For these tasks, routed = teacher on every turn, by `RoutedLLM.pre_route`. Their result is the teacher's measured tiers v2.1 result (`safety-after-v21-*`), not re-run.
