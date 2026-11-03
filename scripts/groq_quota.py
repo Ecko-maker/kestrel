@@ -12,9 +12,10 @@ rule (CLAUDE.md) keeps a 15,000 margin: free = 200,000 - billable used in the la
   them are its judge tokens. Re-judged files (`*.rejudged-*`) are listed, not counted: their judge ran later
   than the traces they point to;
 - CI: every GitHub Actions run created in the last 24 h whose KestrelBench job graded tasks, read from the
-  job log's "Pass rate ... (N billable)" line (a job that wasn't needed prints no such line). Needs `gh`.
-A CI run that can't be counted (still running, or a KestrelBench job that ran over 30 s without a readable
-total, e.g. cancelled partway) is listed, and the result is marked not final.
+  job log's "Pass rate ... (N billable)" line. A job whose log says "KestrelBench not run" (or that GitHub
+  skipped) used nothing, however long it took. Needs `gh`.
+A CI job that can't be counted (still running, or cancelled or unreadable without the "not run" line or a total)
+is listed, and the result is marked not final.
 """
 
 import argparse
@@ -90,22 +91,35 @@ def gh(*args: str) -> str:
     return subprocess.run(["gh", *args], capture_output=True, text=True, encoding="utf-8", check=True).stdout
 
 
-NOT_RUN_S = 30  # a KestrelBench job that wasn't needed finishes in 4-17 s; grading 16 tasks takes minutes
+NOT_RUN = "KestrelBench not run"  # what the job prints when no eval was needed (scripts/ci/evals_needed.py)
+NOT_RUN_KIND, COUNTED, UNKNOWN = "not run", "counted", "unknown"
 
 
-def _seconds(job: dict) -> float:
-    try:
-        start = datetime.fromisoformat(job["startedAt"].replace("Z", "+00:00"))
-        end = datetime.fromisoformat(job["completedAt"].replace("Z", "+00:00"))
-    except KeyError, TypeError, ValueError:
-        return 0.0
-    return max(0.0, (end - start).total_seconds())
+def classify_job(run_status: str, job: dict, log: str | None) -> tuple[str, int, str]:
+    """(kind, billable tokens, reason) for one KestrelBench CI job, from its log, never from its duration
+    (2026-11-03: two "not run" jobs took 32-33 s and an earlier duration rule counted them as unknown).
+    - not run: the log says "KestrelBench not run", or GitHub skipped the job (no step ran);
+    - counted: the log has the run's "Pass rate ... (N billable)" line;
+    - unknown (makes the result not final): the job is still running, or it was cancelled or its log can't be
+      read without that line, or it finished without either line (it may have spent tokens before stopping)."""
+    if run_status != "completed" or job.get("status") not in (None, "completed"):
+        return UNKNOWN, 0, "still running"
+    conclusion = job.get("conclusion")
+    if conclusion == "skipped":
+        return NOT_RUN_KIND, 0, "skipped"
+    if log is None:
+        return UNKNOWN, 0, f"{conclusion}, log unavailable"
+    if NOT_RUN in log:
+        return NOT_RUN_KIND, 0, NOT_RUN
+    if (tokens := billable_from_log(log)) is not None:
+        return COUNTED, tokens, "graded"
+    if conclusion == "cancelled":
+        return UNKNOWN, 0, "cancelled without a 'KestrelBench not run' line or a total"
+    return UNKNOWN, 0, f"{conclusion} without a 'KestrelBench not run' line or a total"
 
 
 def ci_billable(since: datetime) -> tuple[list[tuple[str, str, int]], list[str]]:
-    """([(run id, created, billable)], [runs that can't be counted]) for runs created since a time. Can't be
-    counted: still running, or a job that ran long enough to grade but has no readable total (e.g. cancelled
-    partway: its tokens were spent, but its log is gone)."""
+    """([(run id, created, billable)], [jobs that can't be counted, with why]) for runs created since a time."""
     runs = json.loads(gh("run", "list", "--limit", "100", "--json", "databaseId,createdAt,status,headBranch"))
     counted, unknown = [], []
     for r in runs:
@@ -114,20 +128,17 @@ def ci_billable(since: datetime) -> tuple[list[tuple[str, str, int]], list[str]]
             continue
         jobs = json.loads(gh("run", "view", str(r["databaseId"]), "--json", "jobs"))["jobs"]
         for job in (j for j in jobs if j["name"].startswith("KestrelBench")):
-            label = f"{r['databaseId']} ({r['headBranch']})"
-            if r["status"] != "completed":
-                unknown.append(f"{label}: still running")
-                continue
-            if _seconds(job) <= NOT_RUN_S:
-                continue  # skipped, cancelled before grading, or "KestrelBench not run"
-            try:
-                tokens = billable_from_log(gh("run", "view", "--job", str(job["databaseId"]), "--log"))
-            except subprocess.CalledProcessError:
-                tokens = None
-            if tokens:
+            log = None
+            if r["status"] == "completed" and job.get("conclusion") != "skipped":
+                try:
+                    log = gh("run", "view", "--job", str(job["databaseId"]), "--log")
+                except subprocess.CalledProcessError:
+                    log = None  # e.g. a job cancelled before it wrote a log
+            kind, tokens, why = classify_job(r["status"], job, log)
+            if kind == COUNTED:
                 counted.append((str(r["databaseId"]), r["createdAt"], tokens))
-            else:
-                unknown.append(f"{label}: KestrelBench ran {_seconds(job):.0f} s ({job.get('conclusion')}), no total")
+            elif kind == UNKNOWN:
+                unknown.append(f"{r['databaseId']} ({r['headBranch']}): {why}")
     return counted, unknown
 
 
