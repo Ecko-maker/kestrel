@@ -4,13 +4,19 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-03, from the 11-03 export-merge session (log below).
+2026-11-03, from the 11-03 student-safety session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT) `phase4/kaggle-teacher` + `phase4/student-eval` (PR #50, `43d5522`, 2026-11-02 19:55 UTC) and `phase4/export-readiness` (PR #53, `2cb2a4b`, 2026-11-03 00:55 UTC: the first trained student's export path, the Ollama tool-call tag fix, the router's `text_tool_call` escalation). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
 
-**The single next step:** tonight's free local runs, `distill/EVAL.md` F1-F3 (the student `kestrel-student` alone on local Ollama, no judge, no Groq) in a standalone PowerShell window in `..\kestrel-runs` moved to `main` `2cb2a4b`.
+**The single next step:** the owner's approval lines for the Groq-funded section 8 runs, in order: the same-week drift control (~40k, cap 55k), the routed main suite R=5, routed safety group S (plan in the 11-03 student-safety session below; no approval line added yet). The free runs F1-F3 are done.
+
+## 2026-11-03 (student-safety session; KestrelBench not run, no Groq)
+
+1. **11-02 evening: the free runs F1-F3 ran** (`kestrel-student` alone on local Ollama, runs folder at `7ec2e84`, no judge, Groq and Gemini blocked in the window). F1 timing smoke 10/10, p50 14.5 s per task. F2 strict ×3 and F3 rubber-stamp ×1, 0 errored: system ASR strict **0/29**, rubber-stamp **3/29**; model ASR strict 5/29, rubber-stamp 4/29; benign every repeat 10/18. Teacher v2.1: 0/29, 0/29, 1/29, 0/29, 11/18. No paired difference significant (exact McNemar p = 0.22, 0.125, 0.25; benign −7 points, 95% CI −28 to +13). Report `evals/reports/student-safety-alone.md`; the 7 undeclared actions and 2 one-click links are listed there for the owner's review, nothing declared. Reported alongside section 8 (8.7), not the claim.
+2. **Pinned:** `evals/after-runs/student-safety-strict-x3.json` (`61f35e66…`) and `student-safety-rubber-attacks.json` (`de1a273f…`), with a pinning test. Backup `C:\kestrel-backup\2026-11-03\` (results + `bench.db` by the sqlite3 backup API, `MANIFEST.txt`).
+3. **The "SMOKE TEST" label** on those reports came from `safety_report.run_label()`, which labelled every Ollama run so. Fixed on `bench/student-alone-label` (`8d998d9`, pushed, no PR): the served student's runs are labelled the student-alone measurement; grading unchanged (test: the report is identical apart from the label and the gate sentence). It changes `src/kestrel/`, so its PR runs the CI subset on Groq (~56k): it needs its own approval line and quota, best after the section 8 runs.
 
 ## 2026-11-03 (export-merge session; no Groq from the session)
 
@@ -151,6 +157,7 @@ Merge order: ~~PR #14 → `phase3/tiers-v2`~~ (done, `02c1d2e`) → ~~`console/h
 | `phase4/kaggle-teacher` | 4 | **merged into `main`** with `phase4/student-eval` (PR #50, `43d5522`, 2026-11-02); `5b2a242` = the collection commit | keep (the collection commit) |
 | `phase4/student-eval` | 4 | **merged into `main`** (PR #50, `43d5522`, 2026-11-02; decisions 30-31 and issue 79 numbered in PR #52); `a4b3372` = the first training code commit | can be deleted (merged; `phase4/export-readiness` merged too) |
 | `phase4/export-readiness` | 4 | **merged into `main`** (PR #53, `2cb2a4b`, 2026-11-03): training fixes, the student's export (`--low-memory`), the Ollama tool-tag fix, the router's `text_tool_call`; `5b175f1` = the training code commit | can be deleted (merged) |
+| `bench/student-alone-label` | 4 | the safety report labels the served student's runs as the student-alone measurement (8.7), not a smoke test; `8d998d9`, pushed, no PR | PR when Groq allows (~56k, CI subset; approval line first) |
 | `main` | – | = `origin/main` `2cb2a4b` (PR #53) | – |
 
 **Deleted 2026-10-28** (owner OK; local and `origin`): `master`, `dev`, `phase2/kestrelbench` (merged into `main`); `docs/status-2026-10-27`, `-27-voice`, `-28`, `-28-verdict`, `-28-gate` (merged); `docs/status-2026-10-26`, `docs/approvals-2026-10-26`, `labels/judge-calibration` (squash-merged as PRs #18, #20, #19; GitHub keeps their tips under the PRs); `phase3/memory-safety` (tip kept by tag `safety-before`, `6f58ee5`); `phase4/trace-dataset-v0` (tip kept by the new tag `archive/phase4-trace-dataset-v0-289274e`). Kept for now: `phase3/results-analysis` (in tiers-v2 via #14; delete without a tag once tiers-v2 is in `main`), `docs/merge-plan`, the Dependabot branches (open PRs).
@@ -246,5 +253,6 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | Kaggle notebook and dataset versions | Kaggle | – |
 | Option a collection and training set: results file, `distill.db`, the dataset (89 examples) | `..\kestrel-runs\evals\results\distill-d1.2-groq-gpt-oss-120b.*`, `..\kestrel-runs\logs\distill.db`, `..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b\` | yes, 2026-11-02 backup |
 | Option c evidence: teacher selection, pass 1 collection, its dataset (evidence only), scratch DB | `..\kestrel-runs\evals\results\teacher-selection-5ec57a709a43\`, `...\collect-5cce69cdee15\`, `..\kestrel-runs\data\distill\d1.2-pass1\`, `%TEMP%\distill-d1.2-pass1.db` | yes, 2026-10-31 backup |
+| Student-alone runs F1-F3 (results, reports) and their traces | `..\kestrel-runs\evals\results\student-*`, `..\kestrel-runs\logs\bench.db` | yes, 2026-11-03 (the two safety JSON also pinned in git) |
 
-Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-02\` (6 files, 2.2 MB, option a collection and training set, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here.
+Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-02\` (6 files, 2.2 MB, option a collection and training set, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here. `C:\kestrel-backup\2026-11-03\` (7 files, 24.8 MB: the student-alone results and `bench.db`, `MANIFEST.txt`).

@@ -8,6 +8,22 @@ and `.gitattributes` stores them byte for byte (no line-ending conversion). Neve
 | File | Pass rate (95% CI) | Size | SHA-256 |
 |---|---|---|---|
 | `main-after-v21-x3.json` | 269/300 = 90% (85-94%, per task, n=100) | 652,776 bytes | `8948b434fdcf77d0f5deab051dfb40b96fe564a066695fd4930fa81f57dfbcbb` |
+| `student-safety-strict-x3.json` | system ASR 0/29, model ASR 5/29; benign every repeat 10/18 | 324,134 bytes | `61f35e664ae5087840125f5bbe09c16ef7eb12744456831be07e7ef208a54cc1` |
+| `student-safety-rubber-attacks.json` | system ASR 3/29, model ASR 4/29 | 73,002 bytes | `de1a273faff2cf439e2835f8a7ee47e5a8a1becd553819697c439818b698d8d4` |
+
+## student-safety-strict-x3.json and student-safety-rubber-attacks.json
+
+The student-alone safety runs of `docs/phase4-plan.md` 8.7 (`distill/EVAL.md` F2 and F3): the trained student
+`kestrel-student` (code `5b175f1`, GGUF `53052ecf…`) on local Ollama 0.40.13, no router, no teacher, no judge.
+Safety split s1.0, all 48 tasks with the strict user ×3, and the 30 attacks (29 + 1 policy probe) with the
+rubber-stamp user ×1; tiers v2.1 rules, `KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`,
+`KESTREL_REQUEST_TIMEOUT=300`, Groq and Gemini blocked in the window. Runs folder at `7ec2e84`, finished
+2026-11-03 02:43 and 02:52 UTC, 0 errored. Agent fingerprint `f2d6be4e907e`: the teacher's v2.1 runs'
+(`bb65063bad46`) with only provider, model and request timeout changed; all 48 task hashes identical.
+
+Reported alongside section 8, not part of the Phase 4 claim or gate. The reports written with them call them
+"SMOKE TEST" (the safety report labelled every Ollama run so); that label is wrong for these runs and is fixed
+on `bench/student-alone-label`. Comparison with the teacher: `evals/reports/student-safety-alone.md`.
 
 ## main-after-v21-x3.json
 
