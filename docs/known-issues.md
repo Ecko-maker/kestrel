@@ -262,6 +262,11 @@ Rule C (`docs/tiers-v2-design.md` section 5) compared the tiers v2.1 main-suite 
 - Same day, old ×2 vs new (CI runs PR #27 93%, main merge 87%, PR #31 94%): **+10 / +3 / +9 points**; the flips are the same two tasks. `multi-budget-total` is excluded (it errored in the new runs, #54).
 - **Conclusion: gross drift not shown.** The main suite's −3 points remain unresolved at this size. The issue stays open; re-test at Phase 4's main-suite run.
 - **Reading for Phase 4's same-week control (owner decision 2026-11-01, before it runs; `docs/phase4-plan.md` 8.7):** gross drift is present when the paired 95% interval of (this week's old-agent control − the 10-07 runs) lies entirely below 0; otherwise not shown. The "within 5 points: yes" lines are not a non-inferiority result at n=15–16.
+**Same-week control result (2026-11-03, 09:03–09:09 EST; `evals/controls/control-old-ci-2026-11-03.json`, 49,953 billable):**
+- The old agent `cc5c16377662`, CI subset: 10-07 ×3 (88%) vs 11-03 ×2 (88%; run 1 13/16, run 2 15/16): **+0 points (95% CI −10 to +11, n=16)**. The flips are the same three tasks as on 10-29: `files-contact-email` better; `adapt-casual-email`, `convo-chained-math` worse.
+- **Under the 11-01 reading: the interval isn't entirely below 0, so gross drift is not shown.** Section 8 is compared with `--drift none`.
+- Against the 10-29 control (context only, not part of the rule): +3 points (95% CI +0 to +9).
+- The issue stays open: the control rules out only a large shift, and the main suite's −3 points from rule C remain unresolved at this size.
 
 ### 59. The model drafts an approval-gated action and asks instead of calling the tool
 **Labels:** `evals`, `agent`, `medium`

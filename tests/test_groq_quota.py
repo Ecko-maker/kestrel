@@ -51,6 +51,28 @@ def test_local_billable_counts_recent_groq_calls_only(tmp_path: Path) -> None:
     assert quota.local_billable(db, now - timedelta(hours=24)) == (2, 1350)
 
 
+def test_judge_tokens_count_by_the_runs_trace_time(tmp_path: Path) -> None:
+    """11-03: the judge's calls aren't traced, so the traces alone gave 45,034 for a run whose summary said
+    49,953. Judge tokens in a results file count when the run's trace started in the window."""
+    now = datetime.now(UTC)
+    starts = {"t-new": (now - timedelta(hours=1)).timestamp(), "t-old": (now - timedelta(hours=30)).timestamp()}
+    rows = [
+        {"id": "a", "judge_tokens": 300, "trace_ids": ["t-new"]},
+        {"id": "b", "judge_tokens": 200, "trace_ids": ["t-old"]},  # outside the window
+        {"id": "c", "judge_tokens": 0, "trace_ids": ["t-new"]},  # not judged
+        {"id": "d", "judge_tokens": 100, "trace_ids": []},  # no trace: can't be placed
+    ]
+    groq = tmp_path / "run.json"
+    groq.write_text(json.dumps({"meta": {"judge": "groq/openai/gpt-oss-120b"}, "tasks": rows}), encoding="utf-8")
+    assert quota.judge_billable(groq, starts, now - timedelta(hours=24)) == (1, 300)
+    local = tmp_path / "local.json"  # a judge that isn't on Groq costs no Groq quota
+    local.write_text(json.dumps({"meta": {"judge": "ollama/x"}, "tasks": rows}), encoding="utf-8")
+    assert quota.judge_billable(local, starts, now - timedelta(hours=24)) == (0, 0)
+    none = tmp_path / "none.json"
+    none.write_text(json.dumps({"meta": {"judge": None}, "tasks": rows}), encoding="utf-8")
+    assert quota.judge_billable(none, starts, now - timedelta(hours=24)) == (0, 0)
+
+
 def test_the_margin_arithmetic() -> None:
     assert quota.free(135_442) == 49_558  # 200,000 - 135,442 - 15,000 (11-03 13:00 UTC)
     assert quota.free(0) == 185_000
