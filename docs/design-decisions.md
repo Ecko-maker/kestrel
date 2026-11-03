@@ -496,3 +496,22 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** run all 48 as pre-registered (~299k billable to re-measure the teacher under another fingerprint); skip the routed safety run (no evidence on the turns the student does answer); train the student with the fetch and MCP tools (a new collection and dataset).
 
 **Why:** spend Groq only where the routed system can differ from the teacher, and make the split a property of the task data, so it can't be chosen by looking at results.
+
+## D-pending-standalone-mcp-servers. Two read-only MCP servers outside the package: results and traces
+
+**Decision (owner, 2026-11-03; Phase 5's "2 MCP servers"):** `servers/kestrelbench_mcp` (the pinned KestrelBench results: runs, summaries with intervals, per-task results, paired comparisons, task definitions) and `servers/traces_mcp` (traces, stats and the approval audit log). Both are built on the official `mcp` SDK (`MCPServer`, 2.3).
+- **Location:** at the repo root, outside `src/kestrel/`. They aren't part of the agent, so changing them never moves the agent fingerprint or triggers the CI evals. They import `kestrel` from the repo's environment and run with `uv run --directory <repo> python -m servers.<name>`. They aren't in the wheel (`uv_build` packages `src/kestrel` only), so they have no console scripts.
+- **Security stance, tested** (`tests/test_mcp_servers.py`):
+  - read-only (SQLite `mode=ro`; every file byte-identical after every call);
+  - no network (every tool runs with sockets blocked);
+  - names, not paths (resolved with links followed inside an allowlisted folder; `../`, absolute paths, links and `.env` refused);
+  - untrusted content (answers, tool results, task fixtures with injection text) inside `<untrusted_data>`.
+- **Traces are metadata only by default.** Text, arguments, results, errors, approval arguments and reasons, rating notes and any span attribute not on an allowlist need `KESTREL_TRACES_MCP_CONTENT=on`, and are then redacted again. Judge scores are shown (owner, 2026-11-03).
+- `kestrel-mcp` (the agent's own safe tools, `src/kestrel/mcp_server.py`) is unchanged.
+
+**Alternatives:**
+- Inside `src/kestrel/` with console scripts: simpler to install, but every change would run the CI subset on Groq.
+- Separate packages, each with its own `pyproject.toml`: cleaner to publish, but more to maintain before anyone needs them outside this repo.
+- More agent tools over MCP: they would repeat `kestrel-mcp`, and the risky ones can't be offered without Kestrel's approval gate.
+
+**Why:** they expose what's distinctive about the project, measured results and inspectable runs, to any MCP client. The stance makes them safe to point at real data: nothing writes, nothing leaves the machine, and nothing private is shown unless asked for.
