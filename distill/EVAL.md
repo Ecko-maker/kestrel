@@ -333,6 +333,37 @@ Reported next to it, not part of the verdict (section 5): the student alone and 
 ×3 on local Ollama (`--provider ollama --model kestrel-student` / `kestrel-base`, `--judge none`, then
 rejudge at ~83k each with an approval line), and section 4's student-alone safety runs (no Groq).
 
+## 8. The report, in one command (no Groq)
+
+When steps 3-5 are finished, from this folder:
+
+```powershell
+uv run --no-sync python scripts/phase4_result.py `
+    --student-main ..\kestrel-runs\evals\results\<the student-alone main run>.json --student-db ..\kestrel-runs\logs\bench.db
+```
+
+It reads the runs folder's files by the names above, and the pinned references in git:
+- the routed main suite, the drift control and the 10-07 reference;
+- group S strict and rubber-stamp;
+- the teacher's v2.1 safety runs (group F);
+- the student-alone safety pins.
+
+It writes `evals/reports/phase4-result.md` and `evals/reports/phase4-cost-quality.svg`. The report holds:
+- section 8.5's verdict table, computed by the same code as steps 6-7 and cross-checked against `bench compare`'s
+  own outcome line;
+- the secondary metric ("not run" unless `--rejudged FILE` from 3b);
+- the drift reading, group F by the pre-route rule, and group S with the student alone alongside;
+- the cost table with escalation reasons;
+- the cost-vs-quality chart (teacher alone, routed, student alone).
+
+Without `--student-main` the chart leaves the student out and says so.
+
+**It writes nothing on incomplete inputs.** Instead it prints what's missing and exits 2:
+- a routed task with fewer than 5 runs done, or traces that don't price every call;
+- group S files that aren't 8.7's 29 / 18 tasks, or a drift control that isn't the old agent `cc5c16377662`;
+- a reference that doesn't match its pinned SHA-256;
+- a routed agent that differs from the teacher's beyond the router block (8.7, 11-03: the timeout stays at 60 s).
+
 ## Dry run of steps 6-7 (fake files, no Groq)
 
 ```powershell
@@ -343,3 +374,14 @@ Writes a fake teacher reference, two fake older references and three fake routed
 databases shaped like the real one), runs steps 6 and 7 on each, and prints the cost table and one
 outcome line per scenario: PASS, NOT SHOWN, FAIL, and PENDING when the safety and drift flags are left
 out. `tests/test_bench_cost.py` runs the same path.
+
+The step 8 report, end to end on fake files, one set per outcome:
+
+```powershell
+uv run --no-sync python scripts/phase4_dryrun.py --kit --out $env:TEMP\phase4-kit
+```
+
+The six scenarios are PASS; NOT SHOWN by quality and by drift; FAIL by quality and by safety; and an unfinished
+routed run, which the kit must refuse. They use fake drift, group S / F and student-alone files on the real
+safety task ids. Each prints its outcome line; the reports and charts are in the folder.
+`tests/test_phase4_result.py` runs the same path.
