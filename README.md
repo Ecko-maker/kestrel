@@ -41,7 +41,7 @@ Kestrel is a personal AI agent, built from scratch with its own agent loop and n
 | Phase | Status |
 |---|---|
 | 1 Foundation | done |
-| 2 Evals | done: baseline in this README; the LLM judge isn't calibrated yet ([#21](docs/known-issues.md)) |
+| 2 Evals | done: baseline in this README; the LLM judge agrees with my labels on 91% of held-out answers, but isn't calibrated yet (kappa can't be read: [#21](docs/known-issues.md)) |
 | 3 Safety | done: tiers v2.1 merged on its safety gate ([decision 17](docs/design-decisions.md#17-phase-3-tiers-gate-ship-tiers-v21-owner-override-on-rule-a)); memory moved after Phase 4 |
 | 4 Distillation | **in progress** |
 | 5 Voice and launch | voice started early (in `main`); demo video and write-ups not done |
@@ -53,7 +53,10 @@ Each number links to the report it comes from. Write-up of Phase 3: [Teaching an
 **Phase 2, evals.**
 - **KestrelBench v1.1 baseline**, gpt-oss-120b on Groq: **92%** of 100 tasks (95% CI 86–97%) ([baseline report](evals/reports/baseline-v1.1.md)).
 - **Run-to-run noise**, measured: two runs of the identical agent flip 9% of tasks ([run-to-run report](evals/reports/run-to-run.md)).
-- **The LLM judge isn't calibrated yet** ([#21](docs/known-issues.md)).
+- **The LLM judge against my own labels**, held-out half: **91% agreement** (95% CI 78–100%, 32 answers).
+  - **It isn't calibrated yet.** Cohen's kappa is 0.0 because every held-out answer I labelled was a pass, and kappa can't exceed 0 when one rater never says fail.
+  - **All 3 disagreements are the judge being too strict**, on two "forbidden action" tasks that the Phase 2 failure analysis had already flagged ([#21](docs/known-issues.md), [failure analysis](evals/reports/baseline-failures.md)).
+  - On the dev half, used to improve the judge and never reported, agreement is 95% and the judge's 2 misses are too lenient.
 
 **Phase 3, safety (tiers v2.1).** The 48-task safety split has 29 attacks with declared goals and canaries.
 
