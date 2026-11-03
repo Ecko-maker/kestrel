@@ -6,6 +6,11 @@ Groq's free tier allows 200,000 tokens a day for gpt-oss-120b; cached input does
 rule (CLAUDE.md) keeps a 15,000 margin: free = 200,000 - billable used in the last 24 h - 15,000. Used is:
 - local: every Groq llm_call span of the last 24 h in the trace databases (`logs/*.db` here and in the runs
   folder), input - cached + output;
+- local judge: the judge's calls aren't traced, so a run's `judge_tokens` (results files in `evals/results`
+  here and in the runs folder, judge on groq) count when the run's trace started in the window. Found
+  2026-11-03: the drift control's summary said 49,953 billable, the traces alone 45,034; the 4,919 between
+  them are its judge tokens. Re-judged files (`*.rejudged-*`) are listed, not counted: their judge ran later
+  than the traces they point to;
 - CI: every GitHub Actions run created in the last 24 h whose KestrelBench job graded tasks, read from the
   job log's "Pass rate ... (N billable)" line (a job that wasn't needed prints no such line). Needs `gh`.
 A CI run that can't be counted (still running, or a KestrelBench job that ran over 30 s without a readable
@@ -43,6 +48,36 @@ def local_billable(db: Path, since: datetime) -> tuple[int, int]:
         billable += tokens_in - cached + int(a.get("gen_ai.usage.output_tokens") or 0)
         calls += 1
     return calls, billable
+
+
+def trace_starts(db: Path) -> dict[str, float]:
+    """trace id -> start time, from one trace database (read-only); empty if it isn't one."""
+    con = sqlite3.connect(f"file:{db.resolve().as_posix()}?mode=ro", uri=True)
+    try:
+        return dict(con.execute("SELECT trace_id, start_time FROM traces").fetchall())
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        con.close()
+
+
+def judge_billable(results: Path, starts: dict[str, float], since: datetime) -> tuple[int, int]:
+    """(judged runs, judge tokens) in one results file whose judge is on groq, for runs whose first trace
+    started since a time. Judge prompts aren't cached, so their tokens are all billable."""
+    try:
+        data = json.loads(results.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return 0, 0
+    if not isinstance(data, dict) or not str((data.get("meta") or {}).get("judge") or "").startswith("groq"):
+        return 0, 0
+    runs = tokens = 0
+    for row in data.get("tasks") or []:
+        judged = int(row.get("judge_tokens") or 0)
+        ids = row.get("trace_ids") or []
+        if judged and ids and starts.get(ids[0], 0.0) >= since.timestamp():
+            runs += 1
+            tokens += judged
+    return runs, tokens
 
 
 def billable_from_log(log: str) -> int | None:
@@ -109,11 +144,26 @@ def main(argv: list[str] | None = None) -> int:
     since = now - timedelta(hours=24)
     print(f"Window: {since:%Y-%m-%d %H:%M} to {now:%Y-%m-%d %H:%M} UTC")
     used = 0
-    folders = [Path(__file__).resolve().parents[1] / "logs", args.runs / "logs"]
+    root = Path(__file__).resolve().parents[1]
+    folders = [root / "logs", args.runs / "logs"]
+    starts: dict[str, float] = {}
     for db in sorted({p.resolve() for f in folders if f.is_dir() for p in f.glob("*.db")}):
         calls, tokens = local_billable(db, since)
         if calls:
             print(f"  local {db}: {calls} Groq calls, {tokens:,} billable")
+        used += tokens
+        starts |= trace_starts(db)
+    result_dirs = [root / "evals" / "results", args.runs / "evals" / "results"]
+    for path in sorted({p.resolve() for d in result_dirs if d.is_dir() for p in d.glob("*.json")}):
+        if ".rejudged-" in path.name:
+            if path.stat().st_mtime >= since.timestamp():
+                print(f"  re-judged {path.name}: written in the window, its judge tokens NOT counted (check by hand)")
+            continue
+        if path.stat().st_mtime < since.timestamp():
+            continue  # unchanged since before the window: none of its runs can be in it
+        runs, tokens = judge_billable(path, starts, since)
+        if runs:
+            print(f"  judge {path.name}: {runs} judged runs, {tokens:,} billable")
         used += tokens
     counted, pending = ci_billable(since)
     for run_id, created, tokens in counted:

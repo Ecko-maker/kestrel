@@ -23,6 +23,8 @@ PINNED = {
     },
     "controls": {
         "control-old-ci-2026-10-29.json": "0c48e60decdfb3a368ba2736fec5bf810f1656a72d2b694d57018b9dec3d2b8c",
+        # the same-week drift control of docs/phase4-plan.md 8.3 (#58's reading pre-registered 2026-11-01)
+        "control-old-ci-2026-11-03.json": "5a587c8c37b3d921b1843959dfd502eb1c625671d0b83367c60f9530fbf83d20",
     },
 }
 
