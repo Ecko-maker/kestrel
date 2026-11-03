@@ -173,6 +173,12 @@ def test_the_student_answers_when_nothing_is_wrong() -> None:
         (call("add", "{not json"), "invalid_tool_call"),  # arguments that aren't JSON
         (answer(""), "empty_reply"),
         (answer("   "), "empty_reply"),
+        # a tool call left in the text (11-02: Ollama returned the student's calls as content)
+        (answer('<tool_call>\n{"name": "add", "arguments": {"a": 2, "b": 3}}\n</tool_call>'), "text_tool_call"),
+        (answer('Sure.\n{"name": "add", "arguments": {"a": 2, "b": 3}}'), "text_tool_call"),
+        (answer('{"type": "function", "function": {"name": "add", "parameters": {"a": 2}}}'), "text_tool_call"),
+        (answer('<|start|>assistant<|channel|>commentary to=functions.add<|message|>{"a": 2}'), "text_tool_call"),
+        (answer('<function=add>{"a": 2, "b": 3}</function>'), "text_tool_call"),
     ],
 )
 def test_quality_signals_hand_the_step_to_the_teacher(bad: dict, reason: str) -> None:
@@ -184,6 +190,33 @@ def test_quality_signals_hand_the_step_to_the_teacher(bad: dict, reason: str) ->
     assert bad not in t.requests[0] and bad not in agent.messages  # the malformed reply never enters the transcript
     (turn,) = router.take_turns()
     assert turn.category == QUALITY and turn.reason and turn.reason.startswith(reason)
+
+
+def test_a_real_tool_call_is_not_a_text_tool_call() -> None:
+    """The same call as a parsed tool call (with a short preamble) stays with the student."""
+    world = World()
+    agent, router, _s, t, _ = make(world, [call("add", {"a": 2, "b": 3}, content="Adding."), answer("5")], [])
+    assert agent.run("2+3?").text == "5" and world.ran == ["add"] and t.requests == []
+    (turn,) = router.take_turns()
+    assert not turn.escalated and turn.discarded == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "5",
+        '{"total": 5, "currency": "EUR"}',  # JSON, but not a call
+        "The set {1, 2, 3} has three elements; in Go, `{{ .Name }}` prints a field.",
+        'Pass {"name": "Ada"} to the form.',  # a "name" key without arguments
+        "Use <b>bold</b> or <code>x</code>.",
+    ],
+)
+def test_ordinary_answers_are_not_text_tool_calls(text: str) -> None:
+    world = World()
+    agent, router, _s, t, _ = make(world, [answer(text)], [])
+    assert agent.run("q").text == text and t.requests == []
+    (turn,) = router.take_turns()
+    assert not turn.escalated
 
 
 @pytest.mark.parametrize(

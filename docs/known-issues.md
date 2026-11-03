@@ -497,11 +497,13 @@ The first real student wrote well-formed calls (`<tool_call>\n{"name": "calculat
 - The 10-30 local routed run's `kestrel-qwen3-base-test` carried Qwen's own Jinja template, not this one, so it didn't show the problem.
 **Done when:** `main` has the fixed template and every served student and base model is created from it (`ollama show NAME --template` contains `{{- if .ToolCalls }}`).
 
-### KI-pending-router-text-tool-call. The router accepts a reply whose tool call stayed in the text
+### KI-pending-router-text-tool-call. The router accepted a reply whose tool call stayed in the text (fixed 2026-11-02)
 **Labels:** `distillation`, `router`, `medium`
-`Router.check()` (`src/kestrel/router.py`) escalates on an empty reply or a parsed tool call that fails validation. A reply whose call came back as content (as in KI-pending-ollama-tool-tag, or a student that writes a slightly wrong tag) has no `tool_calls` and non-empty content, so it is accepted as the final answer: no escalation, and the task fails as if the student had answered wrongly. With the fixed template this needs a malformed tag from the student, but nothing catches it.
-- Proposed: count content containing `<tool_call>` (or the template's tag) as `invalid_tool_call: tool call in the text`, before the answer is shown. A change to `src/kestrel/`, so its PR runs the CI subset on Groq. Not done without the owner's OK.
-**Done when:** the router escalates such replies (a scripted-model test), or the owner decides it isn't needed.
+`RoutedLLM.check()` (`src/kestrel/router.py`) escalated on an empty reply or a parsed tool call that failed validation. A reply whose call came back as content (as in KI-pending-ollama-tool-tag, or a student that writes a slightly wrong tag) had no `tool_calls` and non-empty content, so it was accepted as the final answer: no escalation, and the task would fail as if the student had answered wrongly.
+- Fixed (owner decision 2026-11-02, before any routed run): `text_tool_call()` finds a tool-call tag (`<tool_call>`, `<function_call>`, `<tool_use>`, `<function=`, `[TOOL_CALLS]`), a chat-template control token (`<|...|>`) or a call-shaped JSON object in the text; the reply is discarded and the teacher answers the step (`quality`, reason `text_tool_call: ...`). Recorded in `docs/phase4-plan.md` 8.7. Fingerprint unchanged (`35fac5ba6277`).
+- Tests: five text forms escalate and never enter the transcript; a parsed call (with a preamble) and ordinary answers with braces, JSON or HTML stay with the student. Without the fix the five fail.
+- Still possible: a call written in a form none of these patterns match (prose such as "I'll call add with 2 and 3") passes as an answer; it then fails the task's checks like any wrong answer.
+**Done when:** `main` has the fix.
 
 ---
 

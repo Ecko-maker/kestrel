@@ -17,10 +17,13 @@ Per turn (one user message):
   fingerprint (#76), or the estimated prompt exceeds CTX_MARGIN x STUDENT_CTX (estimate_tokens is
   approximate, #11, and Ollama silently cuts an over-long prompt). The whole turn goes to the teacher.
 - Escalation, checked on each student reply before the agent sees it. Quality: an invalid tool call
-  (unknown tool or arguments the registry rejects, checked with ToolRegistry.prepare, which runs nothing)
-  or an empty reply. Student health: the student's provider failed or timed out. The student's reply is
-  discarded, never added to the transcript, and the teacher answers the same step. The agent's step limit
-  is the third quality signal: Agent calls escalate("max_steps") and gives the teacher a fresh budget.
+  (unknown tool or arguments the registry rejects, checked with ToolRegistry.prepare, which runs nothing),
+  an empty reply, or a tool call left in the reply's text (a tool-call tag such as <tool_call>, a chat
+  control token, or a {"name": ..., "arguments": ...} object): the server didn't parse it into a call, and
+  it must not reach the user as the final answer (2026-11-02, before any routed run). Student health:
+  the student's provider failed or timed out. The student's reply is discarded, never added to the
+  transcript, and the teacher answers the same step. The agent's step limit is the last quality signal:
+  Agent calls escalate("max_steps") and gives the teacher a fresh budget.
 - Never on a refusal or a rejected approval: those reach the agent as ordinary replies and tool results.
 - Once escalated, the rest of the turn stays with the teacher; the next turn starts with the student.
 
@@ -33,6 +36,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -47,6 +51,34 @@ PRE_ROUTE, QUALITY, STUDENT_HEALTH = "pre_route", "quality", "student_health"
 ROUTED_PROVIDER = Provider(ROUTED, "", None, "student -> teacher")
 
 Validator = Callable[[str, Any], Any]  # ToolRegistry.prepare: raises ToolCallError, runs nothing
+
+# Tool-call markup that belongs in tool_calls, never in an answer: Qwen/Hermes tags, other models' call
+# tags, and chat-template control tokens (<|call|>, <|channel|>, ...; the dataset's harmony_leak filter).
+_TEXT_CALL_TAG = re.compile(
+    r"</?(?:tool_call|tool_calls|function_call|tool_use)\b[^>]*>|<function=|\[TOOL_CALLS\]|<\|[A-Za-z][A-Za-z0-9_]*\|>"
+)
+
+
+def text_tool_call(content: str) -> str | None:
+    """What makes a reply's text a tool call the server didn't parse, or None: a tool-call tag or control
+    token, or a JSON object shaped like a call ({"name": ..., "arguments"/"parameters": ...}, also inside
+    {"function": ...})."""
+    if m := _TEXT_CALL_TAG.search(content):
+        return f"tag {m.group(0)[:30]}"
+    decoder = json.JSONDecoder()
+    for start in (i for i, ch in enumerate(content) if ch == "{"):
+        try:
+            obj, _ = decoder.raw_decode(content, start)
+        except ValueError:
+            continue
+        for candidate in (obj, obj.get("function") if isinstance(obj, dict) else None):
+            if (
+                isinstance(candidate, dict)
+                and isinstance(candidate.get("name"), str)
+                and ("arguments" in candidate or "parameters" in candidate)
+            ):
+                return f"JSON call to {candidate['name'][:40]}"
+    return None
 
 
 class RouterSetupError(LLMError):
@@ -207,6 +239,8 @@ class RoutedLLM:
         calls = reply.get("tool_calls") or []
         if not calls and not (reply.get("content") or "").strip():
             return "empty_reply"
+        if found := text_tool_call(reply.get("content") or ""):
+            return f"text_tool_call: {found} in the reply text"
         for call in calls:
             fn = call.get("function") or {}
             if self._validate is not None:
