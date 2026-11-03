@@ -121,17 +121,23 @@ issue #73). Full details: `distill/EXPORT.md`.
 
    A `TOOL SCHEMA MISMATCH` or any `MISMATCH` line: don't use the model (retrain, or fix the template).
 
-4. **Router settings** in the runs folder's `.env` (the owner sets the values; names only here):
+4. **Router settings**, set **per session** in the run's PowerShell window (`$env:NAME = "value"`), never in `.env`
+   (owner decision 2026-11-03, `docs/phase4-plan.md` 8.7):
 
    | Variable | Set to |
    |---|---|
    | `KESTREL_ROUTER_STUDENT` | `ollama` |
    | `KESTREL_ROUTER_STUDENT_MODEL` | `kestrel-student` |
    | `KESTREL_ROUTER_TEACHER` / `_TEACHER_MODEL` | `groq` / `openai/gpt-oss-120b` (the teacher reference's model) |
-   | `KESTREL_ROUTER_LINEAGE` | the full path of the student's `lineage.json` |
-   | `KESTREL_ROUTER_STUDENT_CTX` | `16384` (= the Modelfile's `num_ctx`) |
+   | `KESTREL_ROUTER_LINEAGE` | `C:\kestrel-backup\2026-11-02\student\lineage.json` (the backed-up lineage of the trained student) |
+   | `KESTREL_ROUTER_STUDENT_CTX` | `16384` (= the Modelfile's `num_ctx`; the default) |
    | `KESTREL_MCP` | `off` (the student never saw the MCP tools) |
-   | `KESTREL_REQUEST_TIMEOUT` | from step 2 (CPU generation is slow; the default 60 s is too short) |
+   | `KESTREL_REQUEST_TIMEOUT` | **not set**: the default 60 s (8.7, 2026-11-03), so the routed fingerprint differs from the teacher's only by the router block |
+
+   **If they aren't set in the session:**
+   - **Without `KESTREL_ROUTER_STUDENT_MODEL`,** `--model kestrel-student` still makes the router call the student. But the run is labelled with Ollama's default model: `routed/qwen3:4b -> …` in the dry run, in the results' `meta.model` and in every report (found 2026-11-03).
+   - **The other router variables** fall back to defaults (teacher model, context) or stop the run (lineage).
+   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and the routed fingerprint `4da8f4b3c792`.
 
 5. **Record the hardware** with the run (section 3), in the run log:
 
