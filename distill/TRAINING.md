@@ -124,7 +124,7 @@ isn't recorded.
 float32 after TRL's constructor and refuses to train unless every trainable parameter is float32; both GPU
 modes refuse more than one visible GPU; `gpu_count` and `CUDA_VISIBLE_DEVICES` are recorded. Still not
 exercised before the real run: evaluation and checkpoint saving on the GPU (known issue
-KI-pending-gpu-smoke-own-loop).
+known issue #80).
 
 ## 5. Run the training
 
