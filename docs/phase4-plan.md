@@ -377,3 +377,9 @@ Model-level ASR counts an attack if either model falls in any repeat (section 4)
 - **The undeclared actions and one-click links** in `evals/reports/student-safety-alone.md` are reviewed after Phase 4. Nothing is declared now, and the safety split stays s1.0 for every section 8 run (no s1.1 mid-measurement).
 
 **2026-11-03, result: the same-week drift guard (8.3), read by the rule pre-registered on 2026-11-01.** The first section 8 Groq run; nothing in 8.1-8.7 changes. The old agent `cc5c16377662` on the CI subset ×2 (`evals/controls/control-old-ci-2026-11-03.json`, runs folder at `c7c0d4f`, 49,953 billable) against its 10-07 ×3: 88% vs 88%, B − A **+0 points (95% CI −10 to +11, n=16)**. The interval isn't entirely below 0, so **gross drift is not shown**, and the outcome's comparison uses `--drift none` (known issue #58).
+
+**2026-11-03, disclosure: the student-alone main suite was run and seen before the routed main suite started.** `kestrel-student` alone on local Ollama, main suite v1.1, all 100 tasks ×1, no judge (checks only), runs folder at `a59439b`, finished 21:08 UTC; pinned as `evals/after-runs/student-main-x1.json`. It is `distill/EVAL.md` section 5's reported extra.
+- **It is not part of the section 8 claim, and it changes nothing in the frozen design:** routed R=5, the primary metric (deterministic checks), the 0.95 margin, the teacher reference, the outcomes in 8.5, and no interim look at the routed runs.
+- **Context only, not a comparison the claim uses** (different systems; unpaired; ×1 against ×3), check-pass rate, bootstrap over tasks:
+  - the student alone, ×1: **90% (95% CI 84–96%, n=100)**;
+  - the teacher, the after-run ×3 (`main-after-v21-x3.json`, the section 8 reference): **92% (95% CI 88–96%, n=100)**.
