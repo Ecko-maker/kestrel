@@ -537,6 +537,15 @@ The routed main suite's first attempt (2026-11-04, runs folder at `a59439b`) sto
 - Unchanged: the agent, the grading and both fingerprints (default `35fac5ba6277`, routed `4da8f4b3c792`). Audit-log text outside ASCII is now stored as `\uXXXX` escapes (still valid JSON, read back unchanged). Tests: `tests/test_bench_odd_text.py`.
 **Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs).
 
+### KI-pending-bench-killed-run. A run whose process was killed lost everything (fixed 2026-11-04)
+**Labels:** `evals`, `bug`, `high`
+The routed main suite's second attempt (2026-11-04, runs folder at `46c54d8`) stopped at 17:38:40 EST after 20 Groq calls (~29k billable) and left no results file and a stale lock. Not a Kestrel crash: a Python exception or an ordinary Ctrl+C would have released the lock (and an exception in a task would have checkpointed). Ollama's log shows the client's connection closing 2.16 s into a request; Ollama itself kept running. No crash report, memory, power, sleep or Defender event; the Windows Terminal process running the window was gone and a new one started at 17:38:47. So the process was killed from outside, most likely by its window closing. The logs can't say who or what closed it.
+- **Open question:** both attempts ran the same 144 prompts in the same order, and this one died in `act-packing-list` repeat 2, the task right after attempt 1's crash in `act-haiku-file` repeat 2. That prompt had already run in repeat 1. 500 scripted runs through the real CLI and a real PowerShell pipeline showed no problem at that position, but they don't exercise the student or the real window. If a run dies there again, this is not a coincidence.
+- Why `46c54d8` didn't cover it: its checkpoint ran only when Python caught an exception. A killed process runs no more code, and `KeyboardInterrupt` isn't an `Exception`.
+- Fixed, with `--wait-for-quota` only (other runs keep their exact files): the results file is written before the first token is spent and recording the attempt (`meta.attempts`), then saved after every finished run, atomically (temp file + `os.replace`). A save that fails mid-run warns and the run goes on; one that fails at the start stops before any tokens. `RUN STOPPED: ...` is printed on a line of its own for any exception or Ctrl+C. The same command can't overwrite an existing results file; it points to `--resume`.
+- Tests: `tests/test_bench_killed_run.py` (a child process killed with `os._exit`, at the first call and after a finished run, then `--resume`). Agent, grading and both fingerprints unchanged (default `35fac5ba6277`, routed `4da8f4b3c792`).
+**Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs), and the routed run has passed `act-packing-list` repeat 2.
+
 ---
 
 ## Process

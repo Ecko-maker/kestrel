@@ -5,6 +5,7 @@ get confidence intervals too, without being rewritten.
 """
 
 import json
+import os
 import statistics
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -121,7 +122,9 @@ def write_results(
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     # backslashreplace: a lone surrogate from model text becomes the JSON escape \ud83d, not a crash at the end of a run
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8", errors="backslashreplace")
+    tmp = path.with_name(f"{path.name}.tmp")
+    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8", errors="backslashreplace")
+    os.replace(tmp, path)  # all or nothing: a process killed while saving leaves the last good file
     return data
 
 
