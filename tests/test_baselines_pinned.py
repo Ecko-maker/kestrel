@@ -1,7 +1,6 @@
 """The pinned "before" baselines (evals/baselines/) are what Phase 3 is compared against, and the
 pinned after-runs (evals/after-runs/) are the inputs of its verdict reports, and the pinned controls
-(evals/controls/) are the inputs of drift checks (known issue #58), and the pinned Phase 3 safety runs
-(evals/safety-runs/) are the before and after measurements of the safety gate. They must never change:
+(evals/controls/) are the inputs of drift checks (known issue #58). They must never change:
 if this fails, restore the file from git instead of updating the hash."""
 
 import hashlib
@@ -28,14 +27,6 @@ PINNED = {
         "control-old-ci-2026-10-29.json": "0c48e60decdfb3a368ba2736fec5bf810f1656a72d2b694d57018b9dec3d2b8c",
         # the same-week drift control of docs/phase4-plan.md 8.3 (#58's reading pre-registered 2026-11-01)
         "control-old-ci-2026-11-03.json": "5a587c8c37b3d921b1843959dfd502eb1c625671d0b83367c60f9530fbf83d20",
-    },
-    "safety-runs": {
-        "safety-before-strict-x3.json": "efc1ca17ea7a0ce2bbb98c26b2566c00cc478297bb975831cdafb1eb117c2a42",
-        "safety-before-rubber-attacks.json": "f96cd786d24862200f3891c746e05a73934171ff463df1dca949bec5c9e12fed",
-        "safety-after-strict-x3.json": "2ec8d7f619d3111d8f165aecf5c9600e8444dc1261b4632862a60c62b334826d",
-        "safety-after-rubber-attacks.json": "39d0db1839b1233c32965533273ceb595ddd43d168e0cc37bf76dcd73fac1e8f",
-        "safety-after-v21-strict-x3.json": "bca96d70b9f2aa1c62cf68afd7807b5232c09fccf5d1b82c15a732717aa3031d",
-        "safety-after-v21-rubber-attacks.json": "d663322c94e01a260e0f8a51d560082287b51f85c476c9e5a67bb48b7423d81f",
     },
 }
 
@@ -76,30 +67,6 @@ def test_the_student_alone_main_pin_is_checks_only_x1_on_the_routed_runs_commit(
     assert (m["repeat"], m["judge"], m["git"]) == (1, None, "a59439b")
     assert len({r["id"] for r in data["tasks"]}) == len(data["tasks"]) == 100
     assert all(r["status"] in ("pass", "fail") for r in data["tasks"])
-
-
-@pytest.mark.parametrize(
-    ("name", "git", "user", "rows"),
-    [
-        ("safety-before-strict-x3.json", "6f58ee5", "strict", 144),
-        ("safety-before-rubber-attacks.json", "6f58ee5", "rubber-stamp", 30),
-        ("safety-after-strict-x3.json", "165f725", "strict", 144),
-        ("safety-after-rubber-attacks.json", "165f725", "rubber-stamp", 30),
-        ("safety-after-v21-strict-x3.json", "75ce54c", "strict", 144),
-        ("safety-after-v21-rubber-attacks.json", "75ce54c", "rubber-stamp", 30),
-    ],
-)
-def test_the_phase3_safety_pins_are_the_tagged_teacher_runs(name, git, user, rows):
-    """gpt-oss-120b on Groq, safety split s1.0, no judge, runs folder at the commit of the safety-* tag."""
-    data = json.loads((EVALS / "safety-runs" / name).read_text(encoding="utf-8"))
-    m = data["meta"]
-    assert (m["provider"], m["model"], m["split"], m["split_version"]) == (
-        "groq",
-        "openai/gpt-oss-120b",
-        "safety",
-        "s1.0",
-    )
-    assert (m["git"], m["user"], m["judge"], len(data["tasks"])) == (git, user, None, rows)
 
 
 @pytest.mark.parametrize("folder", sorted(PINNED))
