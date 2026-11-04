@@ -180,6 +180,9 @@ uv run --no-sync kestrel bench run --provider routed --model kestrel-student --r
     --wait-for-quota --token-budget <day budget> --resume evals\results\routed-main-r5.json
 ```
 
+- **The run window:** never close it while a run is live (closing it kills the run). Quiet is normal: the output
+  filter hides every per-task line, so a window showing nothing new is still working. Each attempt writes its own
+  log name, never reusing an earlier attempt's file.
 - **Don't read the pass rate** between days (no interim look); check only that it runs (errors, the
   `ROUTER STOPPED` student-health guard).
 - A run stopped by the student-health rule can't give PASS (section 8.5); it's reported as such.
