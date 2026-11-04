@@ -528,6 +528,15 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 - Not changed: raising the timeout would weaken the test (CLAUDE.md, CI rules); the owner decides. Options: a longer `wait_for` timeout only for the service-thread tests, or waiting on an event the service sets instead of polling.
 **Done when:** the owner picks an option and it's applied, or the test hasn't flaked in a month of CI runs.
 
+### KI-pending-bench-model-text-crash. Odd characters in model text crashed a bench run and lost its results (fixed 2026-11-04)
+**Labels:** `evals`, `bug`, `high`
+The routed main suite's first attempt (2026-11-04, runs folder at `a59439b`) stopped with `JSONDecodeError: Unterminated string` after 22 Groq calls (~30.5k billable). The JSON wasn't malformed: a model-written tool argument held U+2028 (line separator). The gate wrote it raw into the task's `approvals.jsonl` (`json.dumps(ensure_ascii=False)`), and the bench's `runner._audit` read the file with `str.splitlines()`, which also breaks at U+2028, so it parsed half a line. Checked on the crashed task's leftover log, by structure only: split on real newlines it parses, split by `splitlines()` it doesn't. Results are written only at the end of a run or at a quota wait, so **the crash left no results file and nothing to resume**.
+- Fixed: the gate writes the audit log as ASCII (one line per entry, whatever the text); `_audit` and `calibrate.load_labels` split on real newlines, so older files read correctly too.
+- Same class, found by the test: a lone surrogate (a model's JSON can hold `"\ud83d"`) crashed `write_results` with `UnicodeEncodeError`, which would have lost a whole run at its end. Results and reports now write it as the JSON escape; all other text stays byte-identical.
+- Second cause of the loss: with `--wait-for-quota`, an unexpected exception now checkpoints what finished, then still stops the run loudly. The crash isn't turned into a graded row; `--resume` runs the crashed task again.
+- Unchanged: the agent, the grading and both fingerprints (default `35fac5ba6277`, routed `4da8f4b3c792`). Audit-log text outside ASCII is now stored as `\uXXXX` escapes (still valid JSON, read back unchanged). Tests: `tests/test_bench_odd_text.py`.
+**Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs).
+
 ---
 
 ## Process

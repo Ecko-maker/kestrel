@@ -705,13 +705,13 @@ def _run(args: argparse.Namespace) -> int:
         scored = score([r.to_dict() for r in results])
         data = write_results(out, results, meta, extra={"safety": score_dict(scored)})
         report = markdown_safety(data)
-        out.with_suffix(".md").write_text(report, encoding="utf-8")
+        out.with_suffix(".md").write_text(report, encoding="utf-8", errors="backslashreplace")
         print("\n" + report + f"\nResults: {out}\nReport:  {out.with_suffix('.md')}")
         if any(r.status in ("skipped", "error") for r in results):
             print(f"To finish later: uv run kestrel bench run --split safety --resume {out} [same options]")
         return 0
     data = write_results(out, results, meta)
-    out.with_suffix(".md").write_text(markdown(data), encoding="utf-8")
+    out.with_suffix(".md").write_text(markdown(data), encoding="utf-8", errors="backslashreplace")
     s = data["summary"]
     ci = s["pass_rate_ci"]
     print(

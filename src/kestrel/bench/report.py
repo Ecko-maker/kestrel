@@ -120,7 +120,8 @@ def write_results(
         "tasks": [r.to_dict() for r in results],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    # backslashreplace: a lone surrogate from model text becomes the JSON escape \ud83d, not a crash at the end of a run
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8", errors="backslashreplace")
     return data
 
 
