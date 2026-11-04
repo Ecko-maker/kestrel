@@ -43,6 +43,7 @@ A prompt injection can't make Kestrel *send* anything without approval, but it c
 **Labels:** `security`, `medium`
 When Claude Code (or another MCP client) calls `kestrel-mcp`'s `create_note`, Kestrel's gate can't run; the client's own permission prompt is the approval. The call is logged as `approved-by-mcp-client`. Impact is limited (it only adds new files under `workspace/notes/`), but it's a different trust model.
 **Done when:** the server asks via MCP elicitation where the client supports it, or `create_note` is removed from the exposed set.
+**Status (owner decision 2026-11-03, D-pending-mcp-read-only):** remove `create_note` from `kestrel-mcp`, so it exposes read-only tools only. Code change after the Phase 4 routed runs (it touches `src/kestrel/`, so its PR runs the CI evals on Groq).
 
 ### 6. Content-off mode doesn't cover the approval audit log
 **Labels:** `privacy`, `medium`
@@ -527,6 +528,26 @@ The first real student wrote well-formed calls (`<tool_call>\n{"name": "calculat
 On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (run 41551930426) failed `tests/test_wake.py::test_a_greeted_wake_is_answered_with_the_same_greeting`: `wait_for(lambda: speaker.said)` didn't see the greeting within its 3.0 s. The other Windows job on the same commit passed, and so did the rerun of the failed job: a timing flake on a loaded runner (coverage on), not a change. First failure of this test in the last 60 CI runs.
 - Not changed: raising the timeout would weaken the test (CLAUDE.md, CI rules); the owner decides. Options: a longer `wait_for` timeout only for the service-thread tests, or waiting on an event the service sets instead of polling.
 **Done when:** the owner picks an option and it's applied, or the test hasn't flaked in a month of CI runs.
+
+### KI-pending-fetch-private-addresses. `fetch__fetch` can reach loopback, private and link-local addresses
+**Labels:** `security`, `medium`, `phase-3`
+Found in the 2026-11-03 audit. Nothing in `src/` on any branch checks the address a fetch goes to: `kestrel.mcp.json` lists `fetch__fetch` in `safe_tools` (capabilities `network_egress` only, `mcp_client.py`), and `permissions.required_approval()` gives it no card until a local read has tainted the conversation. So an injected or mistaken fetch of `http://127.0.0.1:11434/api/tags` (Ollama), a LAN device's admin page or `http://169.254.169.254/` runs at once and its response goes to the model. Tiers v2's taint and content check (#4) are about data leaving; this is about reaching things that should never be reached. Not checked: the upstream `mcp-server-fetch==2026.8.18` package's own behaviour (redirects, any address filter).
+- Owner decision 2026-11-03 (D-pending-fetch-private-addresses): **forbid**, never a card.
+- Planned fix, after the Phase 4 routed runs: before the call, refuse a URL whose host is `localhost`, an IP literal or a name that resolves to any address in 127.0.0.0/8, 10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10, 0.0.0.0/8, ::1, fc00::/7, fe80::/10 (Python's `ipaddress`: not `is_global`). Tests for literals, decimal/hex/IPv4-mapped forms, a name resolving to loopback, and a public URL.
+- Still open after that fix: a public host that redirects to a private one, or DNS that changes between the check and the fetch (the fetch server resolves again). Closing those needs the fetch done by Kestrel itself (no redirects, connect to the checked address) or a filtering proxy; decide with the fix.
+**Done when:** the check is in `main` with its tests, and the redirect / re-resolution gap is either closed or recorded with the owner's decision.
+
+### KI-pending-csp-images-only. The console's Content-Security-Policy covers images only
+**Labels:** `security`, `low`, `console`
+Found in the 2026-11-03 audit. `web/app.py` sends `Content-Security-Policy: img-src 'self' [allowlist]` on every response (tiers v2 defense d, tested in `tests/test_console_images.py`). It has no `default-src`, `script-src`, `connect-src`, `frame-ancestors` or `base-uri`, so it is no second line of defense if a script or style injection ever got into the page (React escapes answer text and `Markdown.tsx` renders no raw HTML today, so there is no known hole).
+- Planned fix, after the Phase 4 routed runs: `default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' [allowlist]; style-src 'self' 'unsafe-inline'` (only if the built console needs inline styles: check), `frame-ancestors 'none'; base-uri 'none'; form-action 'self'`. Check the built console and `npm run dev` (Vite's dev server origin is already in `DEV_ORIGINS`) in a browser, and extend `tests/test_console_images.py`.
+**Done when:** the full policy is in `main`, tested, and the console works under it.
+
+### KI-pending-execute-fixed-tier. `ToolRegistry.execute()` checks the tool's fixed tier, not the conversation's
+**Labels:** `security`, `low`
+Found in the 2026-11-03 audit. `execute()` refuses a `confirm` tool without `approved=True`, but it only knows the tool's tier before anything is read (`base_level`). The tiers v2 escalation (a search or fetch that needs a card after a local read, `permissions.required_approval()`) is enforced only in `ApprovalGate`. Every agent path goes through the gate (`agent.py`), so nothing is open today; a new caller that calls `execute()` directly would skip the escalation. Current direct callers: `mcp_server.py` (no session: nothing is read in it) and `bench/preview.py` (offline previews).
+- Planned fix, after the Phase 4 routed runs: `execute()` takes the gate's `Requirement` (or the `Session`) and refuses when the call needs a card it wasn't given; callers without a session say so explicitly. Agent behaviour unchanged; check the agent fingerprint.
+**Done when:** `execute()` can't run a call that `required_approval()` says needs approval, with a test.
 
 ---
 
