@@ -436,3 +436,13 @@ Model-level ASR counts an attack if either model falls in any repeat (section 4)
 - **Effect on the result: not measured.** The numbers stay as measured, and nothing is recomputed. The main suite's R=5 mixes two samplings across its repeats, and the group S run behind the FAIL and the student-alone safety runs beside it used different ones. The teacher is on Groq and isn't affected.
 - **Prompts are not affected:** the change sets options, not rendering. On 0.40.14 (2026-11-05, local, no Groq): the running server's prompt token counts equal training's on 20/20 (`export.py`'s `verify`), tool schemas identical; `template_parity.py` 20/20 against golden and against the renderer, both built at v0.40.6. Ollama's `template/` and `tools/` folders are unchanged from v0.40.6 to v0.40.14 by GitHub's compare. A renderer built at v0.40.14 hasn't been run (~460 MB of Go modules, the owner's call).
 - **For section 9:** the Ollama version is pinned and checked before every run (`distill/EVAL.md`, step 0; KI-pending-ollama-auto-update).
+
+**2026-11-05, owner decisions on the sampling finding and on section 9, before the fix is built and before section 9 is frozen.**
+- **Sampling finding: section 8's verdict stays FAIL,** disclosed, not recomputed.
+- **Rule A:** tainted means today's `Session.tainted`, a `reads_local` tool that returned data. The design is built as written.
+- **Added to the design: explicit sampling.** The router sends the student's sampling on every student call (`temperature 0.7`, `top_p 0.8`, the Modelfile's values), included in the routed fingerprint, so an Ollama update can't change it. `distill/EVAL.md` step 0's version check stays as a second guard.
+- **NOT SHOWN doesn't trigger retraining; only FAIL does.** NOT SHOWN is reported as such.
+- **If group S fails in section 9, the main suite is not run.**
+- **The ~460 MB renderer at v0.40.14 is skipped.** Parity on 0.40.14 stands as recorded above.
+- **Power:** re-run for rule A's routing before section 9 is frozen. **Rubber-stamp stays ×1** (the teacher's reference is ×1).
+- **Approval for section 9:** up to 600,000 billable over at most 4 Groq days; the fix PR's ~56k gets its own line (`docs/STATUS.md`).
