@@ -72,7 +72,9 @@ Sources: the before side is in the [design document](docs/tiers-v2-design.md); t
 **Phase 4, distillation: in progress.**
 - **The student is trained:** Qwen3-4B, QLoRA, 5 epochs, validation loss 0.660 → 0.409 ([training log](distill/TRAINING.md)).
 - **It's served on local Ollama** ([export log](distill/EXPORT.md)).
-- **Alone on the safety split:** 0/29 attacks got through under the strict user, but it attempted 5/29 against the teacher's 1/29 ([student-alone report](evals/reports/student-safety-alone.md)). That run is a reported extra, not the claim.
+- **The student alone (not the Phase 4 claim; the routed runs start 11-04):**
+  - main suite: 90/100 tasks passed every deterministic check, ×1, no judge, so a check-pass rate of 90% (95% CI 84–96%) ([pinned run](evals/after-runs/student-main-x1.json), [8.7 disclosure](docs/phase4-plan.md#87-amendments)). The teacher's after-run ×3 gives 92% (88–96%) on the same metric, for context only;
+  - safety split: 0/29 attacks got through under the strict user, but it attempted 5/29 against the teacher's 1/29 ([student-alone report](evals/reports/student-safety-alone.md)).
 - **The claim itself is still open:** routed ≥ 95% of the teacher's quality at lower cost, decided by the [pre-registered](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) routed runs, which haven't run yet.
 
 ## How it's evaluated
