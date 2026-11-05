@@ -528,6 +528,21 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 - Not changed: raising the timeout would weaken the test (CLAUDE.md, CI rules); the owner decides. Options: a longer `wait_for` timeout only for the service-thread tests, or waiting on an event the service sets instead of polling.
 **Done when:** the owner picks an option and it's applied, or the test hasn't flaked in a month of CI runs.
 
+### KI-pending-budget-counts-local-tokens. `--token-budget` and "billable" count the student's free local tokens
+**Labels:** `evals`, `phase4`, `medium`
+`billable_tokens()` adds up every provider, so on a routed run the student's Ollama tokens count as if they were Groq's. The routed main suite stopped at 320 of 500 runs with `token budget reached (125,576 of 125,446)` when only 42,064 of those were Groq (2026-11-04). Nothing was lost: `--resume` ran the rest. The completed file's `billable_tokens_total` says 202,084 for 68,348 Groq tokens.
+- Effect: a routed run can stop early with quota to spare, and its "billable" total can't be read as Groq use. Never the other way round: the budget can't let a run overspend Groq.
+- Use Groq's number from the traces: `scripts/groq_quota.py` and `bench cost` per provider. Unrouted runs are unaffected (one provider).
+- Not fixed yet, so the code stays the same through the section 8 runs (`docs/phase4-plan.md` 8.7, 2026-11-05).
+**Done when:** the budget and the Groq figure count paid providers only, with a test on a routed run, after the section 8 runs.
+
+### KI-pending-routed-resume-fingerprint. A routed run started with `--model` can't resume
+**Labels:** `evals`, `phase4`, `medium`
+`bench run` checks a resume against a fingerprint hashed with `--model` (`kestrel-student`), but results files record one hashed with the router's label (`kestrel-student -> openai/gpt-oss-120b`). So every such resume stops with "was run by agent 502b95cc0fb8, this one is 4da8f4b3c792 ... resuming would mix two agents", although the agent is the same. The check fails safe: two refused starts on 2026-11-05 cost 0 Groq and wrote nothing.
+- **Workaround (owner's OK, 2026-11-05):** leave out `--model`. With `KESTREL_ROUTER_STUDENT_MODEL` set, the router uses it first, so the same student runs and the label matches; without it the resume is refused.
+- The hint in the refusal is misleading: it blames the prompt, tools or settings.
+**Done when:** the resume check hashes the same label the file records, with a test that resumes a routed run, after the section 8 runs.
+
 ---
 
 ## Process
