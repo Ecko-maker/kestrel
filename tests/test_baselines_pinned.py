@@ -23,6 +23,10 @@ PINNED = {
         "student-safety-rubber-attacks.json": "de1a273faff2cf439e2835f8a7ee47e5a8a1becd553819697c439818b698d8d4",
         # the student-alone main suite (distill/EVAL.md section 5's extra), context only, not the claim
         "student-main-x1.json": "781efe2c5fba544417de3ea275465a37ff0fc0a150ced06ad156083af618957b",
+        # section 8's routed runs (docs/phase4-plan.md 8.7, 11-05): the inputs of evals/reports/phase4-result.md
+        "routed-main-r5.json": "02af56169f68e55fef608c199a20c942e1824ca4afd45dbd2c345d608f786376",
+        "routed-safety-S-strict-x3.json": "f131edaa95989ea8ea7c47681414a88a464817874d261341a6c1b733ce212310",
+        "routed-safety-S-rubber-attacks.json": "f51274f6ff00c1166aaa77a9b1cc856a8f655794018ce9d03ba6f9550431c3c4",
     },
     "controls": {
         "control-old-ci-2026-10-29.json": "0c48e60decdfb3a368ba2736fec5bf810f1656a72d2b694d57018b9dec3d2b8c",
@@ -88,6 +92,45 @@ def test_the_student_alone_main_pin_is_checks_only_x1_on_the_routed_runs_commit(
     assert (m["repeat"], m["judge"], m["git"]) == (1, None, "a59439b")
     assert len({r["id"] for r in data["tasks"]}) == len(data["tasks"]) == 100
     assert all(r["status"] in ("pass", "fail") for r in data["tasks"])
+
+
+ROUTED_RUNS = [
+    # file, split, user, kinds, safety group, repeats, distinct tasks
+    ("routed-main-r5.json", "main", None, None, None, 5, 100),
+    ("routed-safety-S-strict-x3.json", "safety", "strict", "all", "S", 3, 29),
+    ("routed-safety-S-rubber-attacks.json", "safety", "rubber-stamp", "attack", "S", 1, 18),
+]
+
+
+@pytest.mark.parametrize(("name", "split", "user", "kinds", "group", "repeat", "tasks"), ROUTED_RUNS)
+def test_the_routed_pins_are_section_8s_runs(name, split, user, kinds, group, repeat, tasks):
+    """The routed system at bf1b68b, the one agent 502b95cc0fb8, no judge, the 60 s timeout (8.7), every run graded
+    and none missing."""
+    data = json.loads((EVALS / "after-runs" / name).read_text(encoding="utf-8"))
+    m = data["meta"]
+    assert (m["provider"], m["model"], m["git"]) == ("routed", "kestrel-student -> openai/gpt-oss-120b", "bf1b68b")
+    assert (m["agent"]["sha"], m["agent"]["request_timeout_s"], m["judge"]) == ("502b95cc0fb8", 60.0, None)
+    assert (m["split"], m.get("user"), m.get("kinds"), m.get("safety_group"), m["repeat"]) == (
+        split,
+        user,
+        kinds,
+        group,
+        repeat,
+    )
+    rows = data["tasks"]
+    assert len({r["id"] for r in rows}) == tasks
+    assert len({(r["id"], r["repeat"]) for r in rows}) == len(rows) == tasks * repeat
+    assert all(r["status"] in ("pass", "fail") for r in rows)
+    if group:  # 8.7: without the fetch stub, as tiers v2.1's after side
+        assert m["fetch_stub"] is False and m["answer_policy"]["image_policy"] == "allowlist"
+
+
+def test_the_routed_main_pin_records_its_two_segments():
+    """Stopped by its budget on 11-04, finished by --resume on 11-05 (docs/phase4-plan.md 8.7)."""
+    data = json.loads((EVALS / "after-runs" / "routed-main-r5.json").read_text(encoding="utf-8"))
+    attempts = data["meta"]["attempts"]
+    assert [a["started"][:10] for a in attempts] == ["2026-11-04", "2026-11-05"]
+    assert {a["git"] for a in attempts} == {"bf1b68b"}
 
 
 @pytest.mark.parametrize(
