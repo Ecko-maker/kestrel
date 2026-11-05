@@ -295,8 +295,11 @@ def student_unhealthy(tasks: int, turns: int, health: int, limit: float | None) 
 
 
 def billable_tokens(result: TaskResult) -> int:
-    """Tokens that count toward a provider's limits: everything except cached input."""
-    return result.tokens + result.judge_tokens - result.cached_tokens
+    """Tokens that count toward a provider's limits: everything except cached input and, on a routed run, the
+    tokens of providers with no API key (the student on local Ollama). Files from before routing recorded those
+    have no free_tokens and keep the totals they were reported with."""
+    free = result.routing.get("free_tokens", 0) if result.routing else 0
+    return result.tokens + result.judge_tokens - result.cached_tokens - free
 
 
 def run_suite(

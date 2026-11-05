@@ -1,6 +1,6 @@
 # Tainted turns go to the teacher: design (decision 9's fix)
 
-**Status: design only, for the owner's OK. Nothing is built.** Branch `phase4/tainted-to-teacher`. Written 2026-11-05, after section 8's FAIL (`docs/phase4-plan.md` 8.7): group S rubber-stamp system-level 1/17 (`atk-exfil-search-file`), where the rule requires 0.
+**Status: built on `phase4/tainted-to-teacher` (`src/kestrel/router.py`, `tests/test_router_taint.py`), rule A, on the owner's OK of 2026-11-05 with one addition: explicit sampling, below. Not merged.** Written 2026-11-05, after section 8's FAIL (`docs/phase4-plan.md` 8.7): group S rubber-stamp system-level 1/17 (`atk-exfil-search-file`), where the rule requires 0.
 
 ## The idea in one line
 
@@ -59,13 +59,17 @@ The teacher on the same attacks: 0 model-level, strict and rubber-stamp. **This 
 - **Nothing runs twice:** the router only chooses who writes the next reply. The approval gate and the tiers v2.1 rules are unchanged, and `RULES_VERSION` stays `tiers-v2.1`.
 - **Parallel calls in one reply:** a student reply asking for `read_file` and `web_search` together is safe, because the search's arguments were written before the file's content existed. The next reply is the teacher's.
 
+## Explicit sampling (owner's addition, 2026-11-05)
+
+The router sends `temperature 0.7` and `top_p 0.8`, the Modelfile's values, on **every student call**, so an Ollama update can't change them (8.7: 0.40.13 forced 1.0 when a client sent nothing, 0.40.14 doesn't). `RoutedLLM` sets them on the student's backends only: the teacher and every unrouted call still send none. Both values are `RouterConfig` settings, so they're in the routed fingerprint. A test keeps the defaults equal to `distill/export.py`'s `SAMPLING`. `distill/EVAL.md` step 0's version check stays as a second guard. `top_k 20` and `repeat_penalty 1` stay with the Modelfile: Ollama's change didn't touch them.
+
 ## The fingerprint
 
 | | Effect |
 |---|---|
 | Default (unrouted) `35fac5ba6277` | **unchanged**, with a test: the router block exists only for `provider == "routed"` |
-| Routed `502b95cc0fb8` | **changes.** Router code isn't in the fingerprint (8.7, 2026-11-02), so new behaviour must add a setting: `route_tainted: true` in `RouterConfig`, which `describe()` includes. Without that, section 9's runs would carry section 8's fingerprint and could resume its files |
-| Setting | `KESTREL_ROUTER_ROUTE_TAINTED`, default **on**. Off reproduces section 8's router, for tests and comparison only |
+| Routed `502b95cc0fb8` | **now `2ae99cffdbbc`**, printed by `--dry-run`. Router code isn't in the fingerprint (8.7, 2026-11-02), so new behaviour must add settings: `route_tainted`, `student_temperature` and `student_top_p` in `RouterConfig`, which `describe()` includes. Without that, section 9's runs would carry section 8's fingerprint and could resume its files. A test checks these are the only differences from section 8's recorded agent |
+| Settings | `KESTREL_ROUTER_ROUTE_TAINTED`, default **on**; off reproduces section 8's router, for tests and comparison only. `KESTREL_ROUTER_STUDENT_TEMPERATURE` and `_TOP_P`, default 0.7 and 0.8 |
 
 The new routed value is written into section 9 once the code exists, before section 9 is frozen.
 

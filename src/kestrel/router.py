@@ -11,6 +11,19 @@ as before. Settings (names in .env.example):
     KESTREL_ROUTER_CTX_MARGIN                 pre-route above this share of it (default 0.8)
     KESTREL_ROUTER_MAX_STUDENT_HEALTH         a routed bench run stops above this share of turns with
                                               student-health escalations, after 10 tasks (default 0.10)
+    KESTREL_ROUTER_ROUTE_TAINTED              off: the student may answer after local data is read, as
+                                              section 8's router did (default on; for comparison only)
+    KESTREL_ROUTER_STUDENT_TEMPERATURE/_TOP_P sent on every student call (default 0.7 / 0.8, the Modelfile's)
+
+The taint rule (decision 9's fix, docs/tainted-to-teacher-design.md): the student never writes a model reply
+once local data is in the conversation. Checked on every model call, not only at the start of a turn, because
+a read and a leak can happen in one turn. Taint is the approval rules' own (permissions.Session.tainted) and is
+never cleared within a conversation, so every later turn goes straight to the teacher. No session means the
+router can't tell: the teacher answers. If the teacher fails, the error surfaces; the student never takes over.
+
+The student's sampling is sent explicitly: Ollama's OpenAI endpoint set 1.0 when a client sent none up to
+0.40.13 and uses the Modelfile's values from 0.40.14 (docs/phase4-plan.md 8.7), so leaving it out would let an
+update change the student. It's in the fingerprint with the other settings.
 
 Per turn (one user message):
 - Pre-route rules, before the first model call: the tools Kestrel sends differ from the student's training
@@ -45,9 +58,10 @@ from typing import Any
 from kestrel.agent import estimate_tokens
 from kestrel.distill import train_format
 from kestrel.llm import CallInfo, ChatBackend, LLMError, Provider, TextCallback
+from kestrel.permissions import Session
 
 ROUTED = "routed"
-PRE_ROUTE, QUALITY, STUDENT_HEALTH = "pre_route", "quality", "student_health"
+PRE_ROUTE, QUALITY, STUDENT_HEALTH, TAINT = "pre_route", "quality", "student_health", "taint"
 ROUTED_PROVIDER = Provider(ROUTED, "", None, "student -> teacher")
 
 Validator = Callable[[str, Any], Any]  # ToolRegistry.prepare: raises ToolCallError, runs nothing
@@ -96,6 +110,9 @@ class RouterConfig:
     student_ctx: int = 16384
     ctx_margin: float = 0.8
     max_student_health: float = 0.10
+    route_tainted: bool = True  # router code isn't in the fingerprint, so its behaviour must be a setting
+    student_temperature: float = 0.7  # the Modelfile's values (distill/export.py SAMPLING; a test keeps them equal)
+    student_top_p: float = 0.8
 
     @classmethod
     def from_env(cls) -> RouterConfig:
@@ -109,6 +126,9 @@ class RouterConfig:
             student_ctx=int(env("KESTREL_ROUTER_STUDENT_CTX", "16384")),
             ctx_margin=float(env("KESTREL_ROUTER_CTX_MARGIN", "0.8")),
             max_student_health=float(env("KESTREL_ROUTER_MAX_STUDENT_HEALTH", "0.10")),
+            route_tainted=env("KESTREL_ROUTER_ROUTE_TAINTED", "on").strip().lower() not in ("off", "0", "false", "no"),
+            student_temperature=float(env("KESTREL_ROUTER_STUDENT_TEMPERATURE", "0.7")),
+            student_top_p=float(env("KESTREL_ROUTER_STUDENT_TOP_P", "0.8")),
         )
 
     def label(self) -> str:
@@ -164,6 +184,7 @@ class Turn:
     student_steps: int = 0
     teacher_steps: int = 0
     discarded: list[str] = field(default_factory=list)  # reasons of discarded student replies
+    free_tokens: int = 0  # tokens this turn on a provider with no API key: they count toward no provider's limit
 
     @property
     def escalated(self) -> bool:
@@ -184,8 +205,12 @@ class RoutedLLM:
         self.last_provider: str | None = None
         self.last_call: CallInfo | None = None  # a RoutedCallInfo after each call
         self._validate: Validator | None = None
+        self._session: Session | None = None
         self._turn: Turn | None = None
         self._finished: list[Turn] = []
+        backends: list[Any] = getattr(student, "llms", [student])
+        for backend in backends:  # only the student's calls carry it; the teacher stays on its provider's default
+            backend.sampling = {"temperature": config.student_temperature, "top_p": config.student_top_p}
 
     # The interface the CLI and bench use on a FallbackLLM -------------------------------------------
 
@@ -201,12 +226,14 @@ class RoutedLLM:
 
     # Called by the agent ---------------------------------------------------------------------------
 
-    def begin_turn(self, validate: Validator | None = None) -> None:
-        """A new user message: back to the student; pre-route rules are checked on the first call."""
+    def begin_turn(self, validate: Validator | None = None, session: Session | None = None) -> None:
+        """A new user message: back to the student, unless the conversation is tainted; pre-route rules are
+        checked on the first call. session is the conversation's taint record (the agent's own)."""
         if self._turn is not None:
             self._finished.append(self._turn)
         self._turn = None
         self._validate = validate
+        self._session = session
 
     def escalate(self, reason: str) -> bool:
         """The agent's step limit was hit (reason "max_steps"). True if the teacher now takes over the turn
@@ -234,6 +261,14 @@ class RoutedLLM:
             return f"context: ~{estimate} tokens > {self.config.ctx_margin:.0%} of {self.config.student_ctx}"
         return None
 
+    def tainted(self) -> str | None:
+        """Why the student may not write the next reply, or None. Fails closed: no session, no student."""
+        if not self.config.route_tainted:
+            return None
+        if self._session is None:
+            return "taint: no session to check"
+        return f"taint: {self._session.taint_sources[0]}" if self._session.tainted else None
+
     def check(self, reply: dict) -> str | None:
         """A quality problem with a student reply, or None."""
         calls = reply.get("tool_calls") or []
@@ -260,6 +295,8 @@ class RoutedLLM:
             if rule := self.pre_route(messages, tools):
                 self._switch(PRE_ROUTE, rule)
         turn = self._turn
+        if not turn.escalated and (why := self.tainted()):
+            self._switch(TAINT, why)  # checked on every call: a tool result may have tainted this very turn
         self.last_provider = ROUTED  # every turn is the routed system's, for the bench's provider check
         if turn.escalated:
             return self._teacher(messages, tools, on_text, discarded_tokens=0)
@@ -277,6 +314,7 @@ class RoutedLLM:
             spent = (getattr(info, "input_tokens", 0) or 0) + (getattr(info, "output_tokens", 0) or 0)
             return self._teacher(messages, tools, on_text, discarded_tokens=spent)
         turn.student_steps += 1
+        turn.free_tokens += self._free_tokens(self.student, info)
         self.last_call = self._info(info, self.student, "student", None, None, 0)
         if on_text and reply.get("content"):
             on_text(reply["content"])  # the buffered text, delivered in one piece
@@ -290,8 +328,17 @@ class RoutedLLM:
         reply = self.teacher.chat(messages, tools, on_text) if on_text else self.teacher.chat(messages, tools)
         turn.teacher_steps += 1
         info = getattr(self.teacher, "last_call", None)
+        turn.free_tokens += self._free_tokens(self.teacher, info)
         self.last_call = self._info(info, self.teacher, "teacher", turn.reason, turn.category, discarded_tokens)
         return reply
+
+    @staticmethod
+    def _free_tokens(backend: ChatBackend, info: CallInfo | None) -> int:
+        """A reply's tokens if its provider needs no API key (local); 0 on a paid one. A call that reported no
+        usage counts as paid, so a budget can only stop early, never overspend."""
+        if info is None or getattr(backend.provider, "key_env", None):
+            return 0
+        return (info.input_tokens or 0) - (info.cached_tokens or 0) + (info.output_tokens or 0)
 
     @staticmethod
     def _info(
@@ -325,6 +372,7 @@ def summarize_turns(turns: list[Turn], steps_per_turn: list[int], max_steps: int
         "categories": categories,
         "steps_per_turn": steps_per_turn,
         "over_max_steps": any(s > max_steps for s in steps_per_turn),
+        "free_tokens": sum(t.free_tokens for t in turns),
     }
 
 

