@@ -543,6 +543,12 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 - The hint in the refusal is misleading: it blames the prompt, tools or settings.
 **Done when:** the resume check hashes the same label the file records, with a test that resumes a routed run, after the section 8 runs.
 
+### KI-pending-ollama-auto-update. Ollama updated itself in the middle of a measurement
+**Labels:** `evals`, `phase4`, `medium`
+Ollama's Windows app installs updates on its own. It moved from 0.40.13 to 0.40.14 at 15:08 EST on 2026-11-05, between the routed main suite's two segments, and nothing in the bench records the server's version, so it was found only by reading Ollama's logs afterwards. The student's prompt format is checked byte for byte against a named Ollama version (`distill/EXPORT.md`, `scripts/template_parity.py`), and those checks were last run on 0.40.13.
+- Effect: the first 320 routed main runs and the last 180 plus group S ran on different server versions; whether that changed anything isn't measured. Disclosed in `docs/phase4-plan.md` 8.7, 2026-11-05.
+**Done when:** bench results record the Ollama server version and a run refuses to resume across a change, and measurements run with the auto-update off or a pinned install.
+
 ---
 
 ## Process

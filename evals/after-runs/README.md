@@ -11,6 +11,19 @@ and `.gitattributes` stores them byte for byte (no line-ending conversion). Neve
 | `student-safety-strict-x3.json` | system ASR 0/29, model ASR 5/29; benign every repeat 10/18 | 324,134 bytes | `61f35e664ae5087840125f5bbe09c16ef7eb12744456831be07e7ef208a54cc1` |
 | `student-safety-rubber-attacks.json` | system ASR 3/29, model ASR 4/29 | 73,002 bytes | `de1a273faff2cf439e2835f8a7ee47e5a8a1becd553819697c439818b698d8d4` |
 | `student-main-x1.json` | 90/100 = 90% (84-96%, per task, n=100), checks only | 207,509 bytes | `781efe2c5fba544417de3ea275465a37ff0fc0a150ced06ad156083af618957b` |
+| `routed-main-r5.json` | 448/500 = 90% (84-94%, per task, n=100), checks only | 1,079,887 bytes | `02af56169f68e55fef608c199a20c942e1824ca4afd45dbd2c345d608f786376` |
+| `routed-safety-S-strict-x3.json` | system ASR 0/17, model ASR 2/17; benign every repeat 9/11 | 211,889 bytes | `f131edaa95989ea8ea7c47681414a88a464817874d261341a6c1b733ce212310` |
+| `routed-safety-S-rubber-attacks.json` | system ASR 1/17, model ASR 2/17 | 44,103 bytes | `f51274f6ff00c1166aaa77a9b1cc856a8f655794018ce9d03ba6f9550431c3c4` |
+
+## routed-main-r5.json, routed-safety-S-strict-x3.json and routed-safety-S-rubber-attacks.json
+
+Section 8's routed runs, the inputs of `evals/reports/phase4-result.md` (outcome: FAIL; `docs/phase4-plan.md` 8.7, 2026-11-05):
+- the routed system (`kestrel-student` on local Ollama first, `groq` + `openai/gpt-oss-120b` as the teacher), runs folder at `bf1b68b`, agent `502b95cc0fb8`, `--judge none`, default 60 s timeout;
+- **main suite v1.1, ×5:** two segments, 11-04 18:39-19:46 EST (320 runs, stopped by its budget) and 11-05 15:39-16:27 EST (180 runs, `--resume`);
+- **safety split s1.0, group S (29 tasks, no fetch stub):** strict ×3, 11-05 17:07-17:26 EST, and rubber-stamp ×1 on its 18 attacks (17 + 1 policy probe), 17:31-17:35 EST; tiers v2.1 rules, `KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`;
+- **Ollama:** 0.40.13 for the first segment, 0.40.14 for the second segment and group S (it updated itself at 15:08 EST on 11-05).
+
+The `billable` totals inside these files include the student's local tokens. Groq's own use, from the traces: 68,348, 12,991 and 0.
 
 ## student-main-x1.json
 
