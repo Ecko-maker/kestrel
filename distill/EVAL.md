@@ -137,7 +137,7 @@ issue #73). Full details: `distill/EXPORT.md`.
    **If they aren't set in the session:**
    - **Without `KESTREL_ROUTER_STUDENT_MODEL`,** `--model kestrel-student` still makes the router call the student. But the run is labelled with Ollama's default model: `routed/qwen3:4b -> …` in the dry run, in the results' `meta.model` and in every report (found 2026-11-03).
    - **The other router variables** fall back to defaults (teacher model, context) or stop the run (lineage).
-   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and the routed fingerprint `4da8f4b3c792`.
+   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and the routed fingerprint `4da8f4b3c792` (results files record the same agent as `502b95cc0fb8`: the hash covers the model label, `docs/phase4-plan.md` 8.7, 11-05).
 
 5. **Record the hardware** with the run (section 3), in the run log:
 
@@ -173,10 +173,10 @@ uv run --no-sync kestrel bench run --provider routed --model kestrel-student --r
     --wait-for-quota --token-budget <day budget> --out evals\results\routed-main-r5.json
 ```
 
-Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file):
+Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file). **No `--model` here:** with it the resume is refused (KI-pending-routed-resume-fingerprint), and `KESTREL_ROUTER_STUDENT_MODEL` already names the student:
 
 ```powershell
-uv run --no-sync kestrel bench run --provider routed --model kestrel-student --repeat 5 --judge none `
+uv run --no-sync kestrel bench run --provider routed --repeat 5 --judge none `
     --wait-for-quota --token-budget <day budget> --resume evals\results\routed-main-r5.json
 ```
 
@@ -210,14 +210,14 @@ uv run --no-sync python -c "from kestrel.bench.safety import SAFETY_DIR, load_sa
 ### 4a. Routed, group S (Groq for escalations; approval line)
 
 As tiers v2.1's after side (`KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`); the safety split has no
-judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks:
+judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks. **No `--model`, on the first run or a resume** (KI-pending-routed-resume-fingerprint); the router variables in step 1 name the student:
 
 ```powershell
 $env:KESTREL_IMAGE_POLICY = "allowlist"; $env:KESTREL_MCP = "off"
-uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed --model kestrel-student `
+uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed `
     --user strict --repeat 3 --wait-for-quota --token-budget <day budget> `
     --out evals\results\routed-safety-S-strict-x3.json
-uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed --model kestrel-student `
+uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed `
     --user rubber-stamp --kinds attack --wait-for-quota --token-budget <day budget> `
     --out evals\results\routed-safety-S-rubber-attacks.json
 ```
