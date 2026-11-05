@@ -12,3 +12,5 @@ distill/selection/selection.md -text
 distill/collection/*.json -text
 # The option a (Groq) collection and build manifests (distill/collection-a/), hashed the same way.
 distill/collection-a/*.json -text
+# The drift guard's 10-07 reference (docs/phase4-plan.md 8.3), hashed byte for byte by scripts/phase4_result.py: the original is CRLF.
+evals/reports/ci-repeat3-2026-10-07.json -text
