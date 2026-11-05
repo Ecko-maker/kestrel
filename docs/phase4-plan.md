@@ -415,3 +415,24 @@ Model-level ASR counts an attack if either model falls in any repeat (section 4)
   - **Ollama updated itself from 0.40.13 to 0.40.14 at 15:08 EST on 11-05**, found while writing this entry (`%LOCALAPPDATA%\Ollama\app.log`, `upgrade.log`). So the main suite's first 320 runs ran on 0.40.13, and its last 180 runs and all of group S on 0.40.14. The served model is the same (`kestrel-student`, digest `70d3e7137a2a`). The template parity checks were last run on 0.40.13 and aren't repeated here (KI-pending-ollama-auto-update). The results are reported as measured.
   - **Group S ran blind:** steps 6 and 7 were held, and nothing about the main suite's score was read before they ran. Claude read neither group S's nor the main suite's outcomes before the owner asked for this verdict, and read no run's own log at any point.
   - **Caveat from the 11-01 amendment stands:** the teacher's reference run had the fetch stub on group S tasks; the routed run doesn't.
+
+**2026-11-05, owner decisions after the FAIL.** No change to section 8.
+- **The verdict stands as FAIL.**
+- **Next: decision 9's fix** (route tainted turns to the teacher), **then a NEW pre-registered measurement** (section 9): routed safety group S strict ×3 + rubber-stamp, and the routed main suite R=5 again, with the same metric and margin, written and frozen before any run. **Retraining only if that fails.**
+- **Secondary metric (`rejudge`): deferred** to a quiet Groq day with its own approval line; until then reported as **"not run yet"**.
+- Design and section 9's draft: `docs/tainted-to-teacher-design.md`, `docs/phase4-section9-proposal.md` on `phase4/tainted-to-teacher`, neither approved nor frozen. Design decision D-pending-after-section8.
+
+**2026-11-05, correction to the verdict entry's Ollama disclosure: the update changed the student's sampling.** Found after the owner's decisions above were made, from Ollama's source, reading the diff of v0.40.13 to v0.40.14 (`openai/openai.go`, `FromChatRequest`). The verdict entry said only that the version changed.
+- **What changed:** up to 0.40.13, a chat request through the OpenAI-compatible endpoint with no `temperature` or `top_p` had them set to 1.0. From 0.40.14 they are left unset, so the Modelfile's values apply. Kestrel sends neither (`meta.agent.sampling`), and `kestrel-student`'s Modelfile sets `temperature 0.7`, `top_p 0.8`.
+- **So, by that source (not measured directly; requests' options aren't logged):**
+
+| Runs | Ollama | Student's sampling |
+|---|---|---|
+| Routed main suite, first 320 runs | 0.40.13 | 1.0 / 1.0 |
+| Routed main suite, last 180 runs (repeat 4 from `files-top-priority`, repeat 5) | 0.40.14 | 0.7 / 0.8 |
+| Routed group S, strict ×3 and rubber-stamp ×1 | 0.40.14 | 0.7 / 0.8 |
+| Student-alone runs (F1-F3, `student-main-x1.json`) | 0.40.13 | 1.0 / 1.0 |
+
+- **Effect on the result: not measured.** The numbers stay as measured, and nothing is recomputed. The main suite's R=5 mixes two samplings across its repeats, and the group S run behind the FAIL and the student-alone safety runs beside it used different ones. The teacher is on Groq and isn't affected.
+- **Prompts are not affected:** the change sets options, not rendering. On 0.40.14 (2026-11-05, local, no Groq): the running server's prompt token counts equal training's on 20/20 (`export.py`'s `verify`), tool schemas identical; `template_parity.py` 20/20 against golden and against the renderer, both built at v0.40.6. Ollama's `template/` and `tools/` folders are unchanged from v0.40.6 to v0.40.14 by GitHub's compare. A renderer built at v0.40.14 hasn't been run (~460 MB of Go modules, the owner's call).
+- **For section 9:** the Ollama version is pinned and checked before every run (`distill/EVAL.md`, step 0; KI-pending-ollama-auto-update).

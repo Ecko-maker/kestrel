@@ -79,6 +79,20 @@ grades without a judge. Laptop time: 10 main runs at 1.5-4 min, 174 safety runs 
 - The agent fingerprint of the routed runs differs from the after-run's only by the router block
   (section 8.1). It's in the results file's `meta.agent` from the first checkpoint on; `bench compare`
   lists the fields that differ.
+- **Ollama must not change during a measurement.** A version change can change the student's sampling, as
+  0.40.14 did (KI-pending-ollama-auto-update, `docs/phase4-plan.md` 8.7). In the Ollama app's settings, turn off
+  "Auto-download updates". Then **before every command that uses the student, resumes included**, run this; it
+  prints the server's version and stops on any other one. Don't run the command if you see `STOP`:
+
+  ```powershell
+  $recorded = "0.40.14"   # the version the measurement runs on; parity last checked 2026-11-05
+  $v = (Invoke-RestMethod http://localhost:11434/api/version).version
+  "Ollama server: $v, recorded: $recorded"
+  if ($v -ne $recorded) { throw "STOP: Ollama is $v, the measurement recorded $recorded. Don't run." }
+  ```
+
+  After a version change, re-run parity first ("Template parity" in `distill/EXPORT.md`) and read the diff of
+  `openai/openai.go` for changes to options.
 
 ## 1. Serve the student (local, no Groq)
 

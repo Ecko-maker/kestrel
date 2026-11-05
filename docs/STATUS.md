@@ -4,13 +4,19 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-05 evening, from the section 8 verdict session (log below).
+2026-11-05 night, from the after-section-8 session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT) `phase4/kaggle-teacher` + `phase4/student-eval` (PR #50, `43d5522`, 2026-11-02 19:55 UTC) and `phase4/export-readiness` (PR #53, `2cb2a4b`, 2026-11-03 00:55 UTC: the first trained student's export path, the Ollama tool-call tag fix, the router's `text_tool_call` escalation). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running. **Section 8's outcome, applied as frozen: FAIL.** The Phase 4 gate is not passed. Report: `evals/reports/phase4-result.md`.
 
-**The single next step:** the owner's decision on what follows section 8.5's FAIL: "retrain (no ship)"; "a safety failure first gets decision 9's fix (route tainted turns to the teacher) and a new pre-registered safety measurement". Open with it: the secondary metric (8.2 says "reported always"; not run, `rejudge` ~137.5k needs an approval line).
+**The single next step:** the owner's OK on the design of decision 9's fix (`docs/tainted-to-teacher-design.md` on `phase4/tainted-to-teacher`, no code yet), rule A or B; then build it and freeze section 9 before any run (`docs/phase4-section9-proposal.md`, a draft). Secondary metric: "not run yet".
+
+## 2026-11-05 night (after-section-8 session; no Groq from the session)
+
+1. **Owner decisions (8.7, D-pending-after-section8):** the FAIL stands; next decision 9's fix, then a new pre-registered measurement (section 9); retraining only if that fails; `rejudge` deferred. **Correction found after them:** Ollama 0.40.14 changed the student's sampling, not just the version: 1.0 / 1.0 for the first 320 routed runs and the student-alone runs, 0.7 / 0.8 for the last 180 and group S, from Ollama's source, not measured (8.7, KI-pending-ollama-auto-update).
+2. **Parity on 0.40.14:** 20/20 live on the running server; renderer and golden 20/20, both at v0.40.6; a v0.40.14 renderer not built (~460 MB, owner's call). `distill/EVAL.md` step 0 now stops a run on any Ollama version but the recorded one. The owner turns off "Auto-download updates".
+3. **`phase4/integration` fixed at the root:** the drift reference's original CRLF bytes stored with `-text` (`9ad3742`), pin and section 8 text unchanged. **`phase4/tainted-to-teacher`** (`97f14b1`, pushed, no PR): design and section 9 draft, no code.
 
 ## 2026-11-05 evening (section 8 verdict session; no Groq from the session)
 

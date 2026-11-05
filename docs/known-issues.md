@@ -546,7 +546,10 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 ### KI-pending-ollama-auto-update. Ollama updated itself in the middle of a measurement
 **Labels:** `evals`, `phase4`, `medium`
 Ollama's Windows app installs updates on its own. It moved from 0.40.13 to 0.40.14 at 15:08 EST on 2026-11-05, between the routed main suite's two segments, and nothing in the bench records the server's version, so it was found only by reading Ollama's logs afterwards. The student's prompt format is checked byte for byte against a named Ollama version (`distill/EXPORT.md`, `scripts/template_parity.py`), and those checks were last run on 0.40.13.
-- Effect: the first 320 routed main runs and the last 180 plus group S ran on different server versions; whether that changed anything isn't measured. Disclosed in `docs/phase4-plan.md` 8.7, 2026-11-05.
+- Effect: the first 320 routed main runs and the last 180 plus group S ran on different server versions, and **the version changed the student's sampling**: from 0.40.14, Ollama's OpenAI-compatible chat endpoint no longer sets `temperature` and `top_p` to 1.0 when the client sends none, so the Modelfile's 0.7 and 0.8 apply. Read from Ollama's source, not measured. Disclosed in `docs/phase4-plan.md` 8.7, 2026-11-05.
+- Prompts aren't affected: 20/20 on the running 0.40.14 server, 2026-11-05 (`distill/EXPORT.md`).
+- Stopping it: turn off "Auto-download updates" in the Ollama app's settings; the pre-run check in `distill/EVAL.md` step 0 stops a run on any other version.
+- Kestrel still sends no sampling settings, so what the student samples at depends on the Ollama version. The fingerprint's "provider default" doesn't record which.
 **Done when:** bench results record the Ollama server version and a run refuses to resume across a change, and measurements run with the auto-update off or a pinned install.
 
 ---

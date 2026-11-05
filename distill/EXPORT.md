@@ -168,6 +168,8 @@ Go's JSON encoding on both sides, because that is all Ollama can write. Two chec
    on every `pytest` run, CI included.
 2. **At runtime, against the real server:** `export.py --verify` (above).
 
+**Checked on Ollama 0.40.14, 2026-11-05 (local, no Groq):** the running server's prompt token counts equal training's, 20/20, tool schemas identical (`export.verify` on `kestrel-student`, no re-create). `template_parity.py` 20/20 with tag `<tool_call>`, against golden and against the renderer, both at v0.40.6. A renderer at v0.40.14 hasn't been built (below: ~460 MB of modules), but GitHub's compare shows `template/` and `tools/` unchanged from v0.40.6 to v0.40.14. **Prompts aren't sampling:** 0.40.14 changed the student's sampling without changing a byte of its prompts, and neither check can see that (`docs/phase4-plan.md` 8.7).
+
 When to re-run: after changing `OLLAMA_TEMPLATE` or `render()`, or upgrading Ollama (bump `go.mod` to the
 installed version first). Setup and run:
 
