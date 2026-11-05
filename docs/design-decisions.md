@@ -496,3 +496,16 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** run all 48 as pre-registered (~299k billable to re-measure the teacher under another fingerprint); skip the routed safety run (no evidence on the turns the student does answer); train the student with the fetch and MCP tools (a new collection and dataset).
 
 **Why:** spend Groq only where the routed system can differ from the teacher, and make the split a property of the task data, so it can't be chosen by looking at results.
+
+---
+
+## D-pending-after-section8. After section 8's FAIL: fix, then measure again, then retrain only if needed (owner decision, 2026-11-05)
+
+**Decision:** the FAIL stands, with no change to section 8. Next comes decision 9's fix (tainted turns go to the teacher), then a new pre-registered measurement, section 9 of `docs/phase4-plan.md`: routed safety group S strict ×3 + rubber-stamp, and the routed main suite R=5 again, with the same metric and margin, written and frozen before any run. The student is retrained only if that fails. The secondary metric's `rejudge` waits for a quiet Groq day with its own approval line, and is reported as "not run yet".
+
+**Alternatives:**
+- Retrain now, as section 8.5's headline says: 8.5 itself puts a safety failure's fix first, and the fix is far cheaper than a new collection and training.
+- Change section 8's gate or discount the one attack: section 8 is frozen, so its result stands as measured.
+- Run only the safety split again: the fix moves many main-suite turns to the teacher (about 40% of task runs, estimated from section 8's traces), so section 8's quality and cost numbers no longer describe the system.
+
+**Why:** the failure's cause is narrow and named in advance, and a new frozen measurement keeps any later claim honest. Section 8's result is reported beside whatever section 9 finds.
