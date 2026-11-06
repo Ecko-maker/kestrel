@@ -53,6 +53,7 @@ class Endpointer:
     """Fed one loudness value per 0.1 s chunk; says when the spoken request is over."""
 
     floor: float
+    start_timeout_s: float = START_TIMEOUT_S  # the follow-up window waits its own length (wake/closings.py)
     chunks: int = 0
     speech_chunks: int = 0
     quiet_chunks: int = 0
@@ -69,7 +70,7 @@ class Endpointer:
         elif self.started:
             self.quiet_chunks += 1
         if not self.started:
-            self.state = "no_speech" if self.chunks * CHUNK_S >= START_TIMEOUT_S else "waiting"
+            self.state = "no_speech" if self.chunks * CHUNK_S >= self.start_timeout_s else "waiting"
         elif self.quiet_chunks * CHUNK_S >= END_SILENCE_S:
             self.state = "done"
         elif self.chunks * CHUNK_S >= MAX_REQUEST_S:

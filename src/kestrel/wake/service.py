@@ -29,6 +29,14 @@ from pathlib import Path
 from typing import Any
 
 from kestrel.wake.audio import AudioSource
+from kestrel.wake.closings import (
+    DEFAULT_CLOSING_THRESHOLD,
+    DEFAULT_FOLLOWUP_S,
+    ClosingListener,
+    FollowupWindow,
+    WindowEnd,
+    closing_reply,
+)
 from kestrel.wake.detector import Detector
 from kestrel.wake.greeting import clean_name, greeting
 from kestrel.wake.power import Decision, Power, decide
@@ -117,6 +125,8 @@ class WakeSettings:
     # 31 recorded requests it was worse, 17.62% vs 14.18% normalised WER). Names: KESTREL_TALK_VOCAB_FILE.
     talk_prompt: str = ""
     send_countdown_s: float = SEND_COUNTDOWN_S  # fixed; a field so tests can shorten it
+    followup_seconds: float = DEFAULT_FOLLOWUP_S  # KESTREL_TALK_FOLLOWUP_SECONDS; 0 turns the window off
+    closing_threshold: float = DEFAULT_CLOSING_THRESHOLD  # KESTREL_TALK_CLOSING_THRESHOLD
 
     @classmethod
     def from_env(cls) -> WakeSettings:
@@ -133,6 +143,8 @@ class WakeSettings:
             talk_model=os.getenv("KESTREL_TALK_MODEL", DEFAULT_TALK_MODEL),
             min_confidence=float(os.getenv("KESTREL_TALK_MIN_CONFIDENCE", DEFAULT_MIN_CONFIDENCE)),
             talk_prompt=talk_prompt(read_vocab(vocab_file())) if _flag("KESTREL_TALK_HINT", "off") else "",
+            followup_seconds=max(0.0, min(30.0, float(os.getenv("KESTREL_TALK_FOLLOWUP_SECONDS", DEFAULT_FOLLOWUP_S)))),
+            closing_threshold=float(os.getenv("KESTREL_TALK_CLOSING_THRESHOLD", DEFAULT_CLOSING_THRESHOLD)),
         )
 
 
@@ -154,6 +166,7 @@ class WakeService:
         wall: Callable[[], float] = time.time,
         make_transcriber: Callable[[], Transcriber] | None = None,
         make_cancel: Callable[[], Detector] | None = None,
+        make_closing: Callable[[], ClosingListener] | None = None,
     ):
         self.settings = settings
         self.make_transcriber = make_transcriber  # None: a wake only greets
@@ -173,6 +186,7 @@ class WakeService:
         self.on_pending: Callable[[str, str, float], bool] = lambda request_id, text, seconds: True
         self.on_cancelled: Callable[[str, str, str], None] = lambda request_id, text, by: None
         self.make_cancel = make_cancel  # None: no spoken "cancel" (Esc and the button still work)
+        self.make_closing = make_closing  # None: no local closings; the window's speech all goes to Whisper
         self.schedule: Callable[[float, Callable[[], object]], None] = _later
         self.greeting = greeting(settings.user_name)
         self._enabled = settings.enabled
@@ -190,6 +204,9 @@ class WakeService:
         self._last_wake: float | None = None
         self._pending: tuple[str, str] | None = None  # (id, text) during the send countdown
         self._cancel_detector: Detector | None = None  # listens for "cancel" during the countdown only
+        self._followup_due = False  # a spoken answer is playing: the window opens when it ends
+        self._window: FollowupWindow | None = None  # the follow-up window, while it is open
+        self._closings = 0  # closings answered, to alternate the replies
         self._pending_lock = threading.Lock()
         self._changed = threading.Event()
         self._stopping = threading.Event()
@@ -304,11 +321,14 @@ class WakeService:
                     level = loudness(chunk)
                     self._hear_cancel(chunk)
                     woke = detector.feed(chunk) is not None and self.on_wake(getattr(detector, "greeting", None))
-                    if self._recording is not None and not woke:
+                    if self._window is not None and not woke:
+                        self._hear_followup(chunk, level)
+                    elif self._recording is not None and not woke:
                         self._record(chunk, level)
                     elif self._recording is None:
                         self._noise.update(level)
                     self._send_level(level)
+                    self._open_followup_if_due()
                 elif self.clock() - heard > STALL_S:  # the device went away or stopped delivering
                     self.reopened += 1
                     break
@@ -321,6 +341,7 @@ class WakeService:
         finally:
             source.close()
             self._release()
+            self._end_followup()  # no microphone, no window
         self._changed.clear()
 
     def _release(self) -> None:
@@ -339,6 +360,8 @@ class WakeService:
         """The console reported typing, or a message was sent: stop listening, drop any recording."""
         self._attend_until = None
         self._recording = self._endpoint = None
+        self._followup_due = False
+        self._window = None
 
     def _send_level(self, level: float) -> None:
         """While Listening only: one number, 0-1, for the console's level ring. Never the audio."""
@@ -395,6 +418,60 @@ class WakeService:
             self.say(CHECK_ON_SCREEN)
         else:
             self._hold_request(verdict.text)
+
+    # --- the follow-up window ------------------------------------------------------------------------
+
+    def say_answer(self, text: str) -> None:
+        """The answer to a spoken request. Only this opens the window: never a typed question, an
+        approval sentence, or the "Speak answers: off" path, which doesn't speak at all."""
+        self.say(text)
+        self._followup_due = self.make_transcriber is not None and self.settings.followup_seconds > 0
+
+    def _open_followup_if_due(self) -> None:
+        """When the answer has finished playing. Not while another request is being heard or sent."""
+        if not self._followup_due or self.speaker.busy():
+            return
+        self._followup_due = False
+        if self._recording is not None or self._window is not None or self.pending() is not None:
+            return
+        listener = None
+        if self.make_closing is not None:
+            try:
+                listener = self.make_closing()
+            except Exception:  # no closings this time; the window's speech still reaches Whisper
+                listener = None
+        self._window = FollowupWindow(self.settings.followup_seconds, self._noise.value, listener)
+        self._level = 0.0
+        self._attend_until = self.clock() + self._window.longest_s
+        self.emit({"type": "wake_followup", "listen_seconds": self._window.longest_s})
+
+    def _hear_followup(self, chunk: bytes, level: float) -> None:
+        window = self._window
+        if window is None or self.speaker.busy():
+            return
+        end = window.feed(chunk, level)
+        if end is not None:
+            self._window = None
+            self._attend_until = None
+            self._after_followup(end)
+
+    def _after_followup(self, end: WindowEnd) -> None:
+        path = end.path(self.settings.closing_threshold)
+        self.emit({"type": "wake_end", "reason": path})
+        if path == "closing" and end.phrase is not None:  # no model, no chat message, no tool
+            self.say(closing_reply(end.phrase, self.settings.user_name, self._closings))
+            self._closings += 1
+        elif path == "speech":
+            threading.Thread(
+                target=self._transcribe, args=(end.audio, end.speech_s), name="kestrel-stt", daemon=True
+            ).start()
+
+    def _end_followup(self) -> None:
+        self._followup_due = False
+        if self._window is not None:
+            self._window = None
+            self._attend_until = None
+            self.emit({"type": "wake_end", "reason": "closed"})
 
     # --- the send countdown ------------------------------------------------------------------------
 
@@ -459,6 +536,8 @@ class WakeService:
             return False
         self._last_wake = now
         self.speaker.stop()  # barge-in: "Kestrel" while it speaks stops the speech
+        self._followup_due = False  # the wake takes over: its own request, no follow-up window
+        self._window = None
         at = self.wall()
         self.record_wake(at)
         self.power.wake_display()

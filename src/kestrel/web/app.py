@@ -296,7 +296,7 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
             elif voice["speak"] and kind == "approval_required":
                 wake.say(APPROVAL_SENTENCE)  # type: ignore[union-attr]
             elif voice["speak"] and kind == "answer":
-                wake.say(spoken_answer(str(event.get("text") or "")))  # type: ignore[union-attr]
+                wake.say_answer(spoken_answer(str(event.get("text") or "")))  # type: ignore[union-attr]
 
         clients.add(emit)
         active.append(emit)
