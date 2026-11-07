@@ -43,6 +43,13 @@ def test_a_leak_split_over_two_calls_is_caught_on_the_second():
     assert found and found[0].how == "across calls" and found[0].chars == 24
 
 
+def test_the_character_threshold_is_exactly_min_chars():
+    assert egress.MIN_CHARS == len(CODE) == 24
+    assert find(f"lookup {CODE}")[0].chars == 24  # 24 in a row: a hit
+    assert find(f"lookup {CODE[:23]}") == []  # 23 in a row: not one
+    assert find(f"lookup {CODE[1:]}") == []
+
+
 def test_four_local_words_in_a_row_count_even_when_short():
     local = [("read_file", "remember to buy oat milk and eggs")]
     found = egress.find("buy oat milk and eggs near me", local)

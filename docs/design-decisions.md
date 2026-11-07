@@ -509,3 +509,21 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - Run only the safety split again: the fix moves many main-suite turns to the teacher (about 40% of task runs, estimated from section 8's traces), so section 8's quality and cost numbers no longer describe the system.
 
 **Why:** the failure's cause is narrow and named in advance, and a new frozen measurement keeps any later claim honest. Section 8's result is reported beside whatever section 9 finds.
+
+## D-pending-fetch-private-addresses. Fetches to private, loopback and link-local addresses are forbidden
+
+**Decision (owner, 2026-11-03, after the audit):** a `fetch__fetch` call whose host is `localhost`, an IP literal or a name resolving to a non-global address (loopback, RFC 1918, link-local, CGNAT, unique-local) is refused outright, like `deletes_local`: no approval card can let it through. Known issue KI-pending-fetch-private-addresses has the address list and the planned check.
+
+**Timing:** the code lands after the Phase 4 routed runs. It changes `src/kestrel/`, so its PR runs the CI evals on Groq (~56k), which would compete with the routed runs' daily quota, and `main`'s agent would differ from the one being measured.
+
+**Alternatives:** an approval card naming the private address (allows a local dev server, but a tired "yes" reaches the LAN); leave it to the upstream fetch server (not checked, not under our control).
+
+**Why:** nothing Kestrel does needs a private address over `fetch`, and a card for it is one more yes the user can give to an injection.
+
+## D-pending-mcp-read-only. `kestrel-mcp` exposes read-only tools only
+
+**Decision (owner, 2026-11-03, after the audit):** remove `create_note` from `kestrel-mcp`'s exposed tools (`mcp_server.py` `EXPOSED`, `ALLOWED_CONFIRM`), which closes known issue #5 by its own "done when". Lands after the Phase 4 routed runs, for the same reason as the fetch decision above.
+
+**Alternatives:** MCP elicitation where the client supports it and refuse otherwise (more code, depends on each client); keep the client's prompt as the approval (#5 stays open).
+
+**Why:** Kestrel's gate is the one place approval is decided; a tool that is approved somewhere else is a second trust model to explain and test. Claude Code loses the ability to add notes through `kestrel-mcp`.
