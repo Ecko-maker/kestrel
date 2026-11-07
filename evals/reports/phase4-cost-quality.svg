@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380" width="640" height="380" role="img" aria-labelledby="t d">
+<style>
+:root{--bg:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a}
+@media (prefers-color-scheme:dark){:root{--bg:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;--s1:#3987e5;--s2:#d95926;--s3:#199e70}}
+text{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;fill:var(--ink2);font-size:12px}
+.title{fill:var(--ink);font-size:15px;font-weight:600}.lab{fill:var(--ink);font-size:12px}
+</style>
+<rect width="640" height="380" fill="var(--bg)"/>
+<title id="t">Phase 4: cost vs quality</title>
+<desc id="d">List-price cost per 1,000 tasks against the deterministic-check pass rate, with 95% intervals.</desc>
+<text class="title" x="72" y="24">Cost vs quality</text>
+<line x1="72" x2="480" y1="324.0" y2="324.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="64" y="328.0" text-anchor="end">50%</text>
+<line x1="72" x2="480" y1="268.8" y2="268.8" stroke="var(--grid)" stroke-width="1"/>
+<text x="64" y="272.8" text-anchor="end">60%</text>
+<line x1="72" x2="480" y1="213.6" y2="213.6" stroke="var(--grid)" stroke-width="1"/>
+<text x="64" y="217.6" text-anchor="end">70%</text>
+<line x1="72" x2="480" y1="158.4" y2="158.4" stroke="var(--grid)" stroke-width="1"/>
+<text x="64" y="162.4" text-anchor="end">80%</text>
+<line x1="72" x2="480" y1="103.2" y2="103.2" stroke="var(--grid)" stroke-width="1"/>
+<text x="64" y="107.2" text-anchor="end">90%</text>
+<line x1="72" x2="480" y1="48.0" y2="48.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="64" y="52.0" text-anchor="end">100%</text>
+<text x="72.0" y="342" text-anchor="middle">$0.00</text>
+<text x="174.0" y="342" text-anchor="middle">$0.20</text>
+<text x="276.0" y="342" text-anchor="middle">$0.40</text>
+<text x="378.0" y="342" text-anchor="middle">$0.60</text>
+<text x="480.0" y="342" text-anchor="middle">$0.80</text>
+<line x1="72" x2="480" y1="324" y2="324" stroke="var(--axis)" stroke-width="1"/>
+<text x="276.0" y="368" text-anchor="middle">List-price cost per 1,000 tasks (USD)</text>
+<text x="16" y="186.0" text-anchor="middle" transform="rotate(-90 16 186.0)">Check-pass rate (95% CI)</text>
+<g><title>Teacher alone: $0.574 per 1,000 tasks; 92% (95% CI 88–96%, n=100)</title>
+<line x1="364.8" x2="364.8" y1="114.2" y2="70.1" stroke="var(--s1)" stroke-width="2" stroke-linecap="round"/>
+<circle cx="364.8" cy="90.3" r="6" fill="var(--s1)" stroke="var(--bg)" stroke-width="2"/>
+<text class="lab" x="376.8" y="94.3">Teacher alone 92%</text></g>
+<g><title>Routed: $0.030 per 1,000 tasks; 90% (95% CI 84–94%, n=100)</title>
+<line x1="87.2" x2="87.2" y1="137.4" y2="78.9" stroke="var(--s2)" stroke-width="2" stroke-linecap="round"/>
+<rect x="81.7" y="99.9" width="11" height="11" rx="2" fill="var(--s2)" stroke="var(--bg)" stroke-width="2"/>
+<text class="lab" x="99.2" y="109.4">Routed 90%</text></g>
+<g><title>Student alone: $0.000 per 1,000 tasks; 90% (95% CI 84–96%, n=100)</title>
+<line x1="72.0" x2="72.0" y1="136.3" y2="70.1" stroke="var(--s3)" stroke-width="2" stroke-linecap="round"/>
+<path d="M72.0 96.2 L79.0 103.2 L72.0 110.2 L65.0 103.2 Z" fill="var(--s3)" stroke="var(--bg)" stroke-width="2"/>
+<text class="lab" x="84.0" y="107.2">Student alone 90%</text></g>
+</svg>

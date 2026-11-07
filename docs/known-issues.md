@@ -529,6 +529,30 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 - Not changed: raising the timeout would weaken the test (CLAUDE.md, CI rules); the owner decides. Options: a longer `wait_for` timeout only for the service-thread tests, or waiting on an event the service sets instead of polling.
 **Done when:** the owner picks an option and it's applied, or the test hasn't flaked in a month of CI runs.
 
+### KI-pending-budget-counts-local-tokens. `--token-budget` and "billable" count the student's free local tokens
+**Labels:** `evals`, `phase4`, `medium`
+`billable_tokens()` adds up every provider, so on a routed run the student's Ollama tokens count as if they were Groq's. The routed main suite stopped at 320 of 500 runs with `token budget reached (125,576 of 125,446)` when only 42,064 of those were Groq (2026-11-04). Nothing was lost: `--resume` ran the rest. The completed file's `billable_tokens_total` says 202,084 for 68,348 Groq tokens.
+- Effect: a routed run can stop early with quota to spare, and its "billable" total can't be read as Groq use. Never the other way round: the budget can't let a run overspend Groq.
+- Use Groq's number from the traces: `scripts/groq_quota.py` and `bench cost` per provider. Unrouted runs are unaffected (one provider).
+- Not fixed yet, so the code stays the same through the section 8 runs (`docs/phase4-plan.md` 8.7, 2026-11-05).
+**Done when:** the budget and the Groq figure count paid providers only, with a test on a routed run, after the section 8 runs.
+
+### KI-pending-routed-resume-fingerprint. A routed run started with `--model` can't resume
+**Labels:** `evals`, `phase4`, `medium`
+`bench run` checks a resume against a fingerprint hashed with `--model` (`kestrel-student`), but results files record one hashed with the router's label (`kestrel-student -> openai/gpt-oss-120b`). So every such resume stops with "was run by agent 502b95cc0fb8, this one is 4da8f4b3c792 ... resuming would mix two agents", although the agent is the same. The check fails safe: two refused starts on 2026-11-05 cost 0 Groq and wrote nothing.
+- **Workaround (owner's OK, 2026-11-05):** leave out `--model`. With `KESTREL_ROUTER_STUDENT_MODEL` set, the router uses it first, so the same student runs and the label matches; without it the resume is refused.
+- The hint in the refusal is misleading: it blames the prompt, tools or settings.
+**Done when:** the resume check hashes the same label the file records, with a test that resumes a routed run, after the section 8 runs.
+
+### KI-pending-ollama-auto-update. Ollama updated itself in the middle of a measurement
+**Labels:** `evals`, `phase4`, `medium`
+Ollama's Windows app installs updates on its own. It moved from 0.40.13 to 0.40.14 at 15:08 EST on 2026-11-05, between the routed main suite's two segments, and nothing in the bench records the server's version, so it was found only by reading Ollama's logs afterwards. The student's prompt format is checked byte for byte against a named Ollama version (`distill/EXPORT.md`, `scripts/template_parity.py`), and those checks were last run on 0.40.13.
+- Effect: the first 320 routed main runs and the last 180 plus group S ran on different server versions, and **the version changed the student's sampling**: from 0.40.14, Ollama's OpenAI-compatible chat endpoint no longer sets `temperature` and `top_p` to 1.0 when the client sends none, so the Modelfile's 0.7 and 0.8 apply. Read from Ollama's source, not measured. Disclosed in `docs/phase4-plan.md` 8.7, 2026-11-05.
+- Prompts aren't affected: 20/20 on the running 0.40.14 server, 2026-11-05 (`distill/EXPORT.md`).
+- Stopping it: turn off "Auto-download updates" in the Ollama app's settings; the pre-run check in `distill/EVAL.md` step 0 stops a run on any other version.
+- Kestrel still sends no sampling settings, so what the student samples at depends on the Ollama version. The fingerprint's "provider default" doesn't record which.
+**Done when:** bench results record the Ollama server version and a run refuses to resume across a change, and measurements run with the auto-update off or a pinned install.
+
 ### KI-pending-fetch-private-addresses. `fetch__fetch` can reach loopback, private and link-local addresses
 **Labels:** `security`, `medium`, `phase-3`
 Found in the 2026-11-03 audit. Nothing in `src/` on any branch checks the address a fetch goes to: `kestrel.mcp.json` lists `fetch__fetch` in `safe_tools` (capabilities `network_egress` only, `mcp_client.py`), and `permissions.required_approval()` gives it no card until a local read has tainted the conversation. So an injected or mistaken fetch of `http://127.0.0.1:11434/api/tags` (Ollama), a LAN device's admin page or `http://169.254.169.254/` runs at once and its response goes to the model. Tiers v2's taint and content check (#4) are about data leaving; this is about reaching things that should never be reached. Not checked: the upstream `mcp-server-fetch==2026.8.18` package's own behaviour (redirects, any address filter).

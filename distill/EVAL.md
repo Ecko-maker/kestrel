@@ -79,6 +79,20 @@ grades without a judge. Laptop time: 10 main runs at 1.5-4 min, 174 safety runs 
 - The agent fingerprint of the routed runs differs from the after-run's only by the router block
   (section 8.1). It's in the results file's `meta.agent` from the first checkpoint on; `bench compare`
   lists the fields that differ.
+- **Ollama must not change during a measurement.** A version change can change the student's sampling, as
+  0.40.14 did (KI-pending-ollama-auto-update, `docs/phase4-plan.md` 8.7). In the Ollama app's settings, turn off
+  "Auto-download updates". Then **before every command that uses the student, resumes included**, run this; it
+  prints the server's version and stops on any other one. Don't run the command if you see `STOP`:
+
+  ```powershell
+  $recorded = "0.40.14"   # the version the measurement runs on; parity last checked 2026-11-05
+  $v = (Invoke-RestMethod http://localhost:11434/api/version).version
+  "Ollama server: $v, recorded: $recorded"
+  if ($v -ne $recorded) { throw "STOP: Ollama is $v, the measurement recorded $recorded. Don't run." }
+  ```
+
+  After a version change, re-run parity first ("Template parity" in `distill/EXPORT.md`) and read the diff of
+  `openai/openai.go` for changes to options.
 
 ## 1. Serve the student (local, no Groq)
 
@@ -137,7 +151,7 @@ issue #73). Full details: `distill/EXPORT.md`.
    **If they aren't set in the session:**
    - **Without `KESTREL_ROUTER_STUDENT_MODEL`,** `--model kestrel-student` still makes the router call the student. But the run is labelled with Ollama's default model: `routed/qwen3:4b -> …` in the dry run, in the results' `meta.model` and in every report (found 2026-11-03).
    - **The other router variables** fall back to defaults (teacher model, context) or stop the run (lineage).
-   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and the routed fingerprint `4da8f4b3c792`.
+   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and the routed fingerprint `4da8f4b3c792` (results files record the same agent as `502b95cc0fb8`: the hash covers the model label, `docs/phase4-plan.md` 8.7, 11-05).
 
 5. **Record the hardware** with the run (section 3), in the run log:
 
@@ -173,13 +187,16 @@ uv run --no-sync kestrel bench run --provider routed --model kestrel-student --r
     --wait-for-quota --token-budget <day budget> --out evals\results\routed-main-r5.json
 ```
 
-Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file):
+Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file). **No `--model` here:** with it the resume is refused (KI-pending-routed-resume-fingerprint), and `KESTREL_ROUTER_STUDENT_MODEL` already names the student:
 
 ```powershell
-uv run --no-sync kestrel bench run --provider routed --model kestrel-student --repeat 5 --judge none `
+uv run --no-sync kestrel bench run --provider routed --repeat 5 --judge none `
     --wait-for-quota --token-budget <day budget> --resume evals\results\routed-main-r5.json
 ```
 
+- **The run window:** never close it while a run is live (closing it kills the run). Quiet is normal: the output
+  filter hides every per-task line, so a window showing nothing new is still working. Each attempt writes its own
+  log name, never reusing an earlier attempt's file.
 - **Don't read the pass rate** between days (no interim look); check only that it runs (errors, the
   `ROUTER STOPPED` student-health guard).
 - A run stopped by the student-health rule can't give PASS (section 8.5); it's reported as such.
@@ -207,14 +224,14 @@ uv run --no-sync python -c "from kestrel.bench.safety import SAFETY_DIR, load_sa
 ### 4a. Routed, group S (Groq for escalations; approval line)
 
 As tiers v2.1's after side (`KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`); the safety split has no
-judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks:
+judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks. **No `--model`, on the first run or a resume** (KI-pending-routed-resume-fingerprint); the router variables in step 1 name the student:
 
 ```powershell
 $env:KESTREL_IMAGE_POLICY = "allowlist"; $env:KESTREL_MCP = "off"
-uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed --model kestrel-student `
+uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed `
     --user strict --repeat 3 --wait-for-quota --token-budget <day budget> `
     --out evals\results\routed-safety-S-strict-x3.json
-uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed --model kestrel-student `
+uv run --no-sync kestrel bench run --split safety --safety-group S --provider routed `
     --user rubber-stamp --kinds attack --wait-for-quota --token-budget <day budget> `
     --out evals\results\routed-safety-S-rubber-attacks.json
 ```

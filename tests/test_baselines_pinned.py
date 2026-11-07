@@ -1,6 +1,7 @@
 """The pinned "before" baselines (evals/baselines/) are what Phase 3 is compared against, and the
 pinned after-runs (evals/after-runs/) are the inputs of its verdict reports, and the pinned controls
-(evals/controls/) are the inputs of drift checks (known issue #58). They must never change:
+(evals/controls/) are the inputs of drift checks (known issue #58), and the pinned Phase 3 evidence
+(evals/after-runs/phase3/) is the safety gate's before and after runs. They must never change:
 if this fails, restore the file from git instead of updating the hash."""
 
 import hashlib
@@ -22,11 +23,35 @@ PINNED = {
         "student-safety-rubber-attacks.json": "de1a273faff2cf439e2835f8a7ee47e5a8a1becd553819697c439818b698d8d4",
         # the student-alone main suite (distill/EVAL.md section 5's extra), context only, not the claim
         "student-main-x1.json": "781efe2c5fba544417de3ea275465a37ff0fc0a150ced06ad156083af618957b",
+        # section 8's routed runs (docs/phase4-plan.md 8.7, 11-05): the inputs of evals/reports/phase4-result.md
+        "routed-main-r5.json": "02af56169f68e55fef608c199a20c942e1824ca4afd45dbd2c345d608f786376",
+        "routed-safety-S-strict-x3.json": "f131edaa95989ea8ea7c47681414a88a464817874d261341a6c1b733ce212310",
+        "routed-safety-S-rubber-attacks.json": "f51274f6ff00c1166aaa77a9b1cc856a8f655794018ce9d03ba6f9550431c3c4",
     },
     "controls": {
         "control-old-ci-2026-10-29.json": "0c48e60decdfb3a368ba2736fec5bf810f1656a72d2b694d57018b9dec3d2b8c",
         # the same-week drift control of docs/phase4-plan.md 8.3 (#58's reading pre-registered 2026-11-01)
         "control-old-ci-2026-11-03.json": "5a587c8c37b3d921b1843959dfd502eb1c625671d0b83367c60f9530fbf83d20",
+    },
+    # Phase 3's safety runs and the tiers v2 main-suite after-run, each with its report
+    "after-runs/phase3": {
+        "safety-before-smoke.json": "beba90a97ed0a4ae77cfc8f069667f0917b742bd5cdd9814aff2021ed09f7b0a",
+        "safety-before-smoke.md": "c7908a41f55aee01fe10e62072124b6c12783baa8746eeb861200e8bd5995e94",
+        # redacted copy: one model-written email address (README); the original is efc1ca17...
+        "safety-before-strict-x3.json": "f0d5c2a3efe695988ee2724a3d42a9090d98bdd3962e2b907d5deff5c4f1d2db",
+        "safety-before-strict-x3.md": "248b5ecf79179d9fac42610aad7964a6d6b88440a0402bb8c7b1addd072637c5",
+        "safety-before-rubber-attacks.json": "f96cd786d24862200f3891c746e05a73934171ff463df1dca949bec5c9e12fed",
+        "safety-before-rubber-attacks.md": "eb9f1742aa74967dc1892f97e9a4dd4183be7c63872cd10cc7a02dbe56225e6c",
+        "safety-after-strict-x3.json": "2ec8d7f619d3111d8f165aecf5c9600e8444dc1261b4632862a60c62b334826d",
+        "safety-after-strict-x3.md": "4ec8ef80385347e6d64f25f862af304a89eda6c2c27d6aa33042f67313c24c25",
+        "safety-after-rubber-attacks.json": "39d0db1839b1233c32965533273ceb595ddd43d168e0cc37bf76dcd73fac1e8f",
+        "safety-after-rubber-attacks.md": "9e61fe1371f8400f16af471b580de783942b4cd09f61c9be822e0d63934f8214",
+        "safety-after-v21-strict-x3.json": "bca96d70b9f2aa1c62cf68afd7807b5232c09fccf5d1b82c15a732717aa3031d",
+        "safety-after-v21-strict-x3.md": "7310a3bb9e644bc447342d4efbc56dc3d6af867d7717009e56b817c940e83356",
+        "safety-after-v21-rubber-attacks.json": "d663322c94e01a260e0f8a51d560082287b51f85c476c9e5a67bb48b7423d81f",
+        "safety-after-v21-rubber-attacks.md": "a2c2da1c89a9c4ea4524c83e4df37b2d275053c69ee7d70b444b50ea4c3d83be",
+        "main-after-v1.1.json": "8cb09a90aae510b9295c49ef3704c7edecdc6b812dac74c866e10979e2eb818a",
+        "main-after-v1.1.md": "3b2435a6bde94960a307f8d2b749a081f296e3baa7e1948ebcd9e6109cb7412a",
     },
 }
 
@@ -67,6 +92,80 @@ def test_the_student_alone_main_pin_is_checks_only_x1_on_the_routed_runs_commit(
     assert (m["repeat"], m["judge"], m["git"]) == (1, None, "a59439b")
     assert len({r["id"] for r in data["tasks"]}) == len(data["tasks"]) == 100
     assert all(r["status"] in ("pass", "fail") for r in data["tasks"])
+
+
+ROUTED_RUNS = [
+    # file, split, user, kinds, safety group, repeats, distinct tasks
+    ("routed-main-r5.json", "main", None, None, None, 5, 100),
+    ("routed-safety-S-strict-x3.json", "safety", "strict", "all", "S", 3, 29),
+    ("routed-safety-S-rubber-attacks.json", "safety", "rubber-stamp", "attack", "S", 1, 18),
+]
+
+
+@pytest.mark.parametrize(("name", "split", "user", "kinds", "group", "repeat", "tasks"), ROUTED_RUNS)
+def test_the_routed_pins_are_section_8s_runs(name, split, user, kinds, group, repeat, tasks):
+    """The routed system at bf1b68b, the one agent 502b95cc0fb8, no judge, the 60 s timeout (8.7), every run graded
+    and none missing."""
+    data = json.loads((EVALS / "after-runs" / name).read_text(encoding="utf-8"))
+    m = data["meta"]
+    assert (m["provider"], m["model"], m["git"]) == ("routed", "kestrel-student -> openai/gpt-oss-120b", "bf1b68b")
+    assert (m["agent"]["sha"], m["agent"]["request_timeout_s"], m["judge"]) == ("502b95cc0fb8", 60.0, None)
+    assert (m["split"], m.get("user"), m.get("kinds"), m.get("safety_group"), m["repeat"]) == (
+        split,
+        user,
+        kinds,
+        group,
+        repeat,
+    )
+    rows = data["tasks"]
+    assert len({r["id"] for r in rows}) == tasks
+    assert len({(r["id"], r["repeat"]) for r in rows}) == len(rows) == tasks * repeat
+    assert all(r["status"] in ("pass", "fail") for r in rows)
+    if group:  # 8.7: without the fetch stub, as tiers v2.1's after side
+        assert m["fetch_stub"] is False and m["answer_policy"]["image_policy"] == "allowlist"
+
+
+def test_the_routed_main_pin_records_its_two_segments():
+    """Stopped by its budget on 11-04, finished by --resume on 11-05 (docs/phase4-plan.md 8.7)."""
+    data = json.loads((EVALS / "after-runs" / "routed-main-r5.json").read_text(encoding="utf-8"))
+    attempts = data["meta"]["attempts"]
+    assert [a["started"][:10] for a in attempts] == ["2026-11-04", "2026-11-05"]
+    assert {a["git"] for a in attempts} == {"bf1b68b"}
+
+
+@pytest.mark.parametrize(
+    ("name", "git", "split", "user", "rows"),
+    [
+        ("safety-before-smoke.json", "6f58ee5", "safety", "strict", 5),
+        ("safety-before-strict-x3.json", "6f58ee5", "safety", "strict", 144),
+        ("safety-before-rubber-attacks.json", "6f58ee5", "safety", "rubber-stamp", 30),
+        ("safety-after-strict-x3.json", "165f725", "safety", "strict", 144),
+        ("safety-after-rubber-attacks.json", "165f725", "safety", "rubber-stamp", 30),
+        ("safety-after-v21-strict-x3.json", "75ce54c", "safety", "strict", 144),
+        ("safety-after-v21-rubber-attacks.json", "75ce54c", "safety", "rubber-stamp", 30),
+        ("main-after-v1.1.json", "165f725", "main", None, 100),
+    ],
+)
+def test_the_phase3_pins_are_the_teacher_runs_at_their_tags(name, git, split, user, rows):
+    """gpt-oss-120b on Groq, runs folder at the commit of the safety-before / safety-after / safety-after-v2.1 tag."""
+    data = json.loads((EVALS / "after-runs" / "phase3" / name).read_text(encoding="utf-8"))
+    m = data["meta"]
+    assert (m["provider"], m["model"], m["git"], m["split"], m["user"]) == (
+        "groq",
+        "openai/gpt-oss-120b",
+        git,
+        split,
+        user,
+    )
+    assert len(data["tasks"]) == rows
+
+
+def test_the_redacted_phase3_copy_changes_one_answer_only():
+    text = (EVALS / "after-runs" / "phase3" / "safety-before-strict-x3.json").read_text(encoding="utf-8")
+    assert text.count("[redacted-email]") == 1
+    row = next(r for r in json.loads(text)["tasks"] if "[redacted-email]" in json.dumps(r))
+    assert (row["id"], row["repeat"], row["status"]) == ("owner-4", 2, "pass")
+    assert "[redacted-email]" in row["answer"]
 
 
 @pytest.mark.parametrize("folder", sorted(PINNED))
