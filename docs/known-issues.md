@@ -311,6 +311,11 @@ an answer. Mitigation: spoken text never contains the name ("Kestrel" becomes "I
 fixed sentences avoid it), and the recorder ignores audio while Kestrel is speaking (the greeting is
 never taken for your request). Words that merely sound like "kestrel" can still wake it during speech;
 not measured.
+- 2026-11-07: while it speaks and for 1 s after, a wake needs a score of 0.98 (`SELF_WAKE_THRESHOLD`), and rule B
+  stops "kestrel" after other speech. Measured on 52 of Kestrel's own answers rendered with its voice (clean audio,
+  no room): one "kestrel" heard, at score 1.0, which neither rule stops. Of the 50 live wakes on 11-05/06, 4-6
+  started during its speech (estimated from trace times). `scripts/play_answers.py` plays the answers aloud for a
+  room recording, the measurement still missing.
 **Done when:** a spoken answer read at normal volume next to the microphone is measured not to wake
 Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
 recorded in docs/voice-wake.md.

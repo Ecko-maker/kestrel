@@ -509,3 +509,11 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 - Run only the safety split again: the fix moves many main-suite turns to the teacher (about 40% of task runs, estimated from section 8's traces), so section 8's quality and cost numbers no longer describe the system.
 
 **Why:** the failure's cause is narrow and named in advance, and a new frozen measurement keeps any later claim honest. Section 8's result is reported beside whatever section 9 finds.
+
+## D-pending-wake-rule-b. Rule B for the wake word, a stricter wake while Kestrel speaks, and one Speaker switch (owner, 2026-11-07)
+
+**Decision:** "kestrel" wakes Kestrel only with nothing but known greetings before it in the utterance (rule B), replacing "kestrel anywhere". While Kestrel speaks and for 1 s after, a wake needs a score of 0.98. The console's Speaker switch is one setting the server holds for every console and applies at once; off silences everything Kestrel says.
+
+**Alternatives:** a higher threshold everywhere (measured: no help, the false wakes scored like real ones); no wakes at all while speaking (loses saying "Kestrel" to interrupt); speaker verification (later, if these aren't enough).
+
+**Why:** 32 of 50 live wakes on 11-05/06 had no answer before them, and rule B took the podcast hour from 2 false wakes to 0 without losing a clip. The switch did nothing until the next spoken request, so it couldn't stop a greeting or an answer already playing.

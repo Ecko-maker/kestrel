@@ -8,7 +8,8 @@
     GET  /api/wake                    the wake word's status (docs/voice-wake.md)
     POST /api/wake                    {"enabled": true|false}: the console's listening toggle
     WS   /ws                          chat: the browser sends messages, approval answers and
-                                      voice_cancel (a spoken request's send countdown); the
+                                      voice_cancel (a spoken request's send countdown), speaker
+                                      (the Speaker switch, for every console); the
                                       server streams the agent's events back
 
 Security: the server only listens on 127.0.0.1. Every request needs the access token
@@ -342,6 +343,8 @@ def create_app(make_agent: AgentFactory, tracer: Tracer, config: WebConfig, wake
                     # in its countdown; it never touches an approval (those need approval_response).
                     by = "esc" if message.get("by") == "esc" else "button"
                     wake.cancel(str(message.get("id", "")), by)
+                elif kind == "speaker" and wake is not None:
+                    broadcast(wake.set_speaker(message.get("on") is not False))  # on connect and on every flip
                 elif kind == "approval_response":
                     approver.resolve(str(message.get("approval_id")), message)
         except WebSocketDisconnect, RuntimeError:

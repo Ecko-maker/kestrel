@@ -55,6 +55,10 @@ RETRY_S = 10.0  # after a microphone or model error
 DEFAULT_MIN_BATTERY = 30
 DEFAULT_LISTEN_S = 8.0  # KESTREL_WAKE_LISTEN_SECONDS: the Listening window after a wake
 LEVEL_FLOOR_DB = -60.0  # loudness 0 at -60 dBFS, 1 at 0 dBFS
+# While Kestrel speaks and for a moment after, the microphone hears its voice (no echo cancellation, known
+# issue #62), so a wake then needs this score; saying "Kestrel" to interrupt still works (provisional, 2026-11-07).
+SELF_WAKE_THRESHOLD = 0.98
+SELF_WAKE_TAIL_S = 1.0
 
 
 def loudness(pcm: bytes) -> float:
@@ -191,6 +195,8 @@ class WakeService:
         self._pending: tuple[str, str] | None = None  # (id, text) during the send countdown
         self._cancel_detector: Detector | None = None  # listens for "cancel" during the countdown only
         self._pending_lock = threading.Lock()
+        self._speaker_on = True  # the console's Speaker switch: off means Kestrel says nothing at all
+        self._spoke_at: float | None = None  # the last moment Kestrel was heard speaking (clock)
         self._changed = threading.Event()
         self._stopping = threading.Event()
         self._lock = threading.Lock()
@@ -235,7 +241,18 @@ class WakeService:
                 "on_ac": self._on_ac,
                 "battery": self._battery,
                 "talk": self.make_transcriber is not None,
+                "speaker": self._speaker_on,
             }
+
+    def set_speaker(self, on: bool) -> dict:
+        """The console's Speaker switch, for every console: off stops what is playing and silences the
+        greeting, answers and fixed sentences until it is turned on again. Returns the status for the
+        web app to send to every console."""
+        with self._lock:
+            self._speaker_on = on
+        if not on:
+            self.speaker.stop()
+        return self.status()
 
     # --- the listening thread -----------------------------------------------------------
 
@@ -303,7 +320,14 @@ class WakeService:
                     heard = self.clock()
                     level = loudness(chunk)
                     self._hear_cancel(chunk)
-                    woke = detector.feed(chunk) is not None and self.on_wake(getattr(detector, "greeting", None))
+                    if self.speaker.busy():
+                        self._spoke_at = self.clock()
+                    score = detector.feed(chunk)
+                    woke = (
+                        score is not None
+                        and self._not_its_own_voice(score)
+                        and self.on_wake(getattr(detector, "greeting", None))
+                    )
                     if self._recording is not None and not woke:
                         self._record(chunk, level)
                     elif self._recording is None:
@@ -322,6 +346,12 @@ class WakeService:
             source.close()
             self._release()
         self._changed.clear()
+
+    def _not_its_own_voice(self, score: float) -> bool:
+        """While Kestrel speaks, and SELF_WAKE_TAIL_S after, only a clear "Kestrel" wakes it."""
+        spoke = self._spoke_at
+        recent = spoke is not None and self.clock() - spoke <= SELF_WAKE_TAIL_S
+        return not recent or score >= SELF_WAKE_THRESHOLD
 
     def _release(self) -> None:
         """Close down: clear the keep-awake request and say the microphone is off."""
@@ -351,7 +381,8 @@ class WakeService:
     # --- a spoken request ------------------------------------------------------------------------
 
     def say(self, text: str) -> None:
-        self.speaker.say(for_speech(text))
+        if self._speaker_on:
+            self.speaker.say(for_speech(text))
 
     def _record(self, chunk: bytes, level: float) -> None:
         recording, endpoint = self._recording, self._endpoint

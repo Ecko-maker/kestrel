@@ -87,6 +87,7 @@ export interface Turn {
 type ServerEvent = { type: string; trace_id?: string; [key: string]: unknown };
 
 type Action =
+  | { kind: "reset" } // New conversation: the chat is cleared (the traces are kept on the server)
   | { kind: "send"; text: string; voice?: boolean }
   | { kind: "event"; event: ServerEvent }
   | { kind: "localApproval"; approvalId: string; status: ApprovalStatus };
@@ -110,6 +111,7 @@ function mapApprovals(turn: Turn, fn: (a: Approval) => Approval): Turn {
 }
 
 export function reduce(turns: Turn[], action: Action): Turn[] {
+  if (action.kind === "reset") return [];
   if (action.kind === "send") {
     const turn: Turn = { id: crypto.randomUUID(), user: action.text, startedAt: now(), steps: [], done: false };
     return [...turns, action.voice ? { ...turn, voice: true } : turn];
@@ -264,6 +266,7 @@ export const micLevel = {
 
 // "Speak answers" (spoken requests only), remembered per browser; storage may be blocked.
 const SPEAK_KEY = "kestrel-speak-answers";
+export const speakerMessage = (on: boolean) => ({ type: "speaker", on });
 function readSpeak(): boolean {
   try {
     return localStorage.getItem(SPEAK_KEY) !== "off";
@@ -302,14 +305,24 @@ export function useChat(onTurnDone?: () => void) {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${window.location.host}/ws`);
     socket.current = ws;
-    ws.addEventListener("open", () => setState("open"));
+    ws.addEventListener("open", () => {
+      setState("open");
+      ws.send(JSON.stringify(speakerMessage(speakRef.current))); // this browser's Speaker switch
+    });
     ws.addEventListener("close", () => {
       if (socket.current === ws) setState("closed");
     });
     ws.addEventListener("message", (msg) => {
       const event = JSON.parse(msg.data) as ServerEvent;
       if (event.type === "ready") return setNotice(null);
-      if (event.type === "wake_status") return setWakeStatus(event as unknown as WakeStatus);
+      if (event.type === "wake_status") {
+        const status = event as unknown as WakeStatus;
+        if (typeof status.speaker === "boolean") {
+          speakRef.current = status.speaker; // another console may have flipped it: one setting for all
+          setSpeak(status.speaker);
+        }
+        return setWakeStatus(status);
+      }
       if (event.type === "wake_level") return micLevel.set(event.level as number);
       // A spoken request, already transcribed by the server: sent exactly like typed text.
       if (event.type === "voice_pending") return setPendingSend((p) => pendingAfter(p, event, Date.now()));
@@ -374,6 +387,7 @@ export function useChat(onTurnDone?: () => void) {
   const setSpeakAnswers = useCallback((on: boolean) => {
     setSpeak(on);
     speakRef.current = on;
+    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify(speakerMessage(on)));
     try {
       localStorage.setItem(SPEAK_KEY, on ? "on" : "off");
     } catch {
@@ -417,6 +431,16 @@ export function useChat(onTurnDone?: () => void) {
   );
 
   const running = turns.length > 0 && !turns[turns.length - 1].done;
+  // New conversation: a fresh connection is a fresh agent on the server (new session_id, empty history,
+  // nothing read yet). Not while a turn runs or waits for an approval. The traces stay on the server.
+  const newConversation = useCallback(() => {
+    if (running) return;
+    dispatch({ kind: "reset" });
+    setHeardCheck(null);
+    setPendingSend(null);
+    setVoiceNote(null);
+    connect();
+  }, [running, connect]);
   return {
     turns,
     state,
@@ -425,6 +449,7 @@ export function useChat(onTurnDone?: () => void) {
     send,
     answerApproval,
     reconnect: connect,
+    newConversation,
     wake,
     wakeStatus,
     setWakeStatus,

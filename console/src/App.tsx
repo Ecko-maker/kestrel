@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppWindow, ChartColumn, ChartGantt, FlaskConical, MessagesSquare, Monitor, Moon, Radar, Sun } from "lucide-react";
 import { api, AuthError, getWake, setWake, type SessionInfo, type Stats } from "./api";
+import { listeningToApply, readListening, rememberListening } from "./listening";
 import { cx } from "./components/ui";
 import { Caption, SpeakSwitch, WakeChip, greetingCaption } from "./components/WakeChip";
 import { BootSequence } from "./hud/BootSequence";
@@ -128,10 +129,19 @@ export function App() {
   const chat = useChat(refreshStats);
   const { setWakeStatus } = chat;
   useEffect(() => {
-    getWake().then(setWakeStatus).catch(() => undefined); // later changes arrive over the socket
+    getWake()
+      .then((status) => {
+        setWakeStatus(status); // later changes arrive over the socket
+        const want = listeningToApply(readListening(), status); // this browser turned listening off before
+        if (want !== null) return setWake(want).then(setWakeStatus);
+      })
+      .catch(() => undefined);
   }, [setWakeStatus]);
   const toggleWake = useCallback(
-    (enabled: boolean) => void setWake(enabled).then(setWakeStatus).catch(() => undefined),
+    (enabled: boolean) => {
+      rememberListening(enabled);
+      void setWake(enabled).then(setWakeStatus).catch(() => undefined);
+    },
     [setWakeStatus],
   );
 
@@ -199,7 +209,7 @@ export function App() {
           </span>
           <div className="flex items-center gap-2 md:flex-col md:items-stretch">
             <WakeChip status={chat.wakeStatus} onToggle={toggleWake} />
-            {chat.wakeStatus.available && chat.wakeStatus.talk && <SpeakSwitch on={chat.speakAnswers} onChange={chat.setSpeakAnswers} />}
+            {chat.wakeStatus.available && <SpeakSwitch on={chat.speakAnswers} onChange={chat.setSpeakAnswers} />}
             <LookSwitch look={look} setLook={setLook} />
             {look === "classic" && <ThemeSwitch theme={theme} setTheme={setTheme} />}
           </div>

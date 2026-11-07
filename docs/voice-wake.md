@@ -19,9 +19,24 @@ on `[unk]`. When one of them is heard with the wake word, Kestrel greets back wi
 "Hello, {name}. I'm here, what do you need?" ("Hi", "Hey", "Shalom", "Good morning"; no name set:
 "Hello. I'm here, what do you need?"). Otherwise the normal greeting. A greeting alone never wakes it.
 
-**Accepted behaviour:** "kestrel" inside a longer sentence ("I saw a kestrel over the field") wakes it
-too. That is the same rule, and it is on purpose: requiring the word on its own or at the start
-would also reject "hi Kestrel". The cost shows up as false wakes per hour in `wake_eval.py`.
+**Rule B (2026-11-07), replacing "kestrel anywhere":** "kestrel" wakes it only when nothing but the known
+greetings comes before it in the utterance. So "Kestrel", "Kestrel, what time is it?" in one breath, "Hi
+Kestrel" and "Good morning Kestrel" wake it; "[unk] kestrel" doesn't: an unknown greeting ("Howdy Kestrel"), and
+"kestrel" in the middle of other speech ("I saw a kestrel over the field", a podcast). Those were most of the
+false wakes with a podcast playing: 32 of the 50 wakes on 11-05/06 had no answer in the 20 s before them. One
+function decides it for the live detector and the evals alike (`detector.wake_confidence`).
+
+| Measured offline, threshold 0.9 | Before (anywhere) | After (rule B) |
+|---|---|---|
+| False wakes on the 1.00 h podcast background | 2 per hour | **0 per hour** |
+| `positives-v2` (30 "Kestrel" clips) | 29/30 | **29/30** |
+| `positives` (30 older clips) | 19/30 | 19/30 |
+
+**While Kestrel speaks, and for 1 s after,** a wake needs a score of 0.98 instead of the threshold
+(`service.SELF_WAKE_THRESHOLD`, provisional), because the microphone hears its voice (known issue #62). Saying
+"Kestrel" to interrupt still works: `positives-v2` is 29/30 at 0.98 too. Kestrel's own answers, rendered with the
+same voice (52 answers, 12.9 min, clean audio, no room): one "kestrel" heard, **at score 1.0**, so this rule doesn't
+stop that one. A room recording of the answers (`scripts/play_answers.py`) is the measurement that settles #62.
 
 **Old vs new grammar on your existing recordings** (2026-10-26, 30 plain "Kestrel" clips of 2 s,
 1.00 h of podcast in the room; no greeting clips recorded yet):
@@ -259,7 +274,19 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 | `KESTREL_TALK_HINT` | off | the vocabulary hint; `on` to use it (off since 2026-10-24: it was worse, see below) |
 | `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
 
-The console's **Speak answers** switch (remembered per browser) turns the spoken answers off.
+The console's **Speaker** switch (2026-11-07; was "Speak answers") is one setting for every console: off,
+Kestrel says nothing at all (no greeting, answers or fixed sentences) and stops what it is saying at once; on,
+it speaks again. Each browser remembers its choice and sends it when it connects, and every change is sent
+straight away (`{"type": "speaker", "on": ...}`), so the last console to change it wins and all of them show it.
+Before, the switch only travelled with the next spoken request: turning it off during an answer, or before a
+wake, changed nothing.
+
+The **wake word** switch (the chip next to it) closes the microphone. Each browser remembers it too, and turns
+listening off again on load after a server restart (which otherwise starts listening, `KESTREL_WAKE=on`).
+
+**New conversation** (under the chat, once there is one): the chat clears and the console reconnects, which
+gives a new agent: a new session id, no history, nothing read yet (the taint starts clean). It is disabled
+while Kestrel is answering or an approval is waiting. The traces of the old conversation stay.
 
 **How a request ends.** Each 0.1 s chunk's loudness is compared with the room's noise floor (learned
 while waiting for the wake word). The request starts at the first chunk 0.15 above it and ends after
@@ -430,7 +457,7 @@ LibriSpeech test-clean WER: base.en about 4.3%, tiny.en 8.4%, Vosk small 9.85%.
 | `src/kestrel/wake/speech.py` | The greeting through SAPI 5 (comtypes) on its own thread |
 | `src/kestrel/wake/greeting.py` | The fixed greeting, the echoed one ("Hello, {name}. ..."), and the name's cleaning |
 | `console/src/hud/useHud.ts` | `waking` phase and `arrive` pose; the fly-in plays once per wake |
-| `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator; "Speak answers" |
+| `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator; the Speaker switch |
 | `src/kestrel/wake/talk.py` | End of speech, the hallucination guard, what is spoken |
 | `src/kestrel/wake/transcribe.py` | whisper.cpp (pywhispercpp), pinned model files |
 | `src/kestrel/wake/normalize.py` | The text normaliser for word error rate |
