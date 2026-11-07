@@ -77,6 +77,23 @@ def wake_confidence(result_json: str, word: str = WAKE_WORD) -> float | None:
     return max(confs) if confs else None
 
 
+def wake_position(result_json: str, word: str = WAKE_WORD) -> str | None:
+    """Where the wake word sat in one Vosk result, as a category with no words in it: "alone",
+    "greeting" (only greetings before it, nothing after), "first" (more after it), or "after_speech"
+    (something unknown before it). For the wake span only; it doesn't decide anything."""
+    words = [w.get("word") for w in json.loads(result_json or "{}").get("result", [])]
+    if word not in words:
+        return None
+    at = words.index(word)
+    before, after = words[:at], words[at + 1 :]
+    known = {part for greeting in GREETINGS for part in greeting.split()}
+    if not all(w in known for w in before):
+        return "after_speech"
+    if after:
+        return "first"
+    return "greeting" if before else "alone"
+
+
 def heard_greeting(result_json: str) -> str | None:
     """The first greeting in one Vosk result ("hi", "good morning"...), or None."""
     words = [w.get("word") for w in json.loads(result_json or "{}").get("result", [])]
@@ -127,6 +144,7 @@ class VoskDetector:
         self.word = word
         self.partial = partial
         self.greeting: str | None = None  # the greeting heard with the last wake, for the reply
+        self.position: str | None = None  # where the word sat in the last wake (wake_position), for the span
         self.recognizer = make_recognizer(grammar_json(word))
 
     def feed(self, pcm: bytes) -> float | None:
@@ -142,4 +160,5 @@ class VoskDetector:
         if conf is None or conf < self.threshold:
             return None
         self.greeting = heard_greeting(result)
+        self.position = wake_position(result, self.word)
         return conf

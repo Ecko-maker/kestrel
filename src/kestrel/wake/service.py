@@ -5,9 +5,9 @@ greeting and tell open consoles to play the fly-in. It holds no agent, model or 
 start a model call, run a tool or answer an approval (approvals stay clicks).
 
 Privacy: audio chunks live only in memory (audio.py -> detector -> dropped). The only record of
-a wake is a span with its time (Tracer.record_wake). Listening is off unless KESTREL_WAKE=on, and
-the console shows "Listening" whenever the microphone is open: the `wake_status` event saying so is
-sent before the stream opens and again after it closes.
+a wake is a span with its time, score and path category, no words (Tracer.record_wake). Listening is
+off unless KESTREL_WAKE=on, and the console shows "Listening" whenever the microphone is open: the
+`wake_status` event saying so is sent before the stream opens and again after it closes.
 
 Power (power.decide): plugged in, listen and keep the PC awake; on battery, listen only while the PC
 is awake, at or above KESTREL_WAKE_MIN_BATTERY and with the saver off. The state is polled every
@@ -161,7 +161,7 @@ class WakeService:
         make_source: Callable[[], AudioSource],
         power: Power,
         speaker: Speaker,
-        record_wake: Callable[[float], None],
+        record_wake: Callable[..., None],  # (at, score=, path=): a time, a number, a category
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], float] = time.time,
         make_transcriber: Callable[[], Transcriber] | None = None,
@@ -320,7 +320,10 @@ class WakeService:
                     heard = self.clock()
                     level = loudness(chunk)
                     self._hear_cancel(chunk)
-                    woke = detector.feed(chunk) is not None and self.on_wake(getattr(detector, "greeting", None))
+                    score = detector.feed(chunk)
+                    woke = score is not None and self.on_wake(
+                        getattr(detector, "greeting", None), score, getattr(detector, "position", None)
+                    )
                     if self._window is not None and not woke:
                         self._hear_followup(chunk, level)
                     elif self._recording is not None and not woke:
@@ -462,6 +465,7 @@ class WakeService:
             self.say(closing_reply(end.phrase, self.settings.user_name, self._closings))
             self._closings += 1
         elif path == "speech":
+            self.record_wake(self.wall(), path="followup")  # no wake word started this one
             threading.Thread(
                 target=self._transcribe, args=(end.audio, end.speech_s), name="kestrel-stt", daemon=True
             ).start()
@@ -528,7 +532,7 @@ class WakeService:
 
     # --- a wake -----------------------------------------------------------------------
 
-    def on_wake(self, heard: str | None = None) -> bool:
+    def on_wake(self, heard: str | None = None, score: float | None = None, path: str | None = None) -> bool:
         """The detector heard the wake word (heard: a greeting said with it, echoed back).
         Returns False if it was within the cooldown."""
         now = self.clock()
@@ -539,7 +543,7 @@ class WakeService:
         self._followup_due = False  # the wake takes over: its own request, no follow-up window
         self._window = None
         at = self.wall()
-        self.record_wake(at)
+        self.record_wake(at, score=score, path=path)
         self.power.wake_display()
         self.power.bring_to_front(self.settings.window_title)
         self._level = 0.0

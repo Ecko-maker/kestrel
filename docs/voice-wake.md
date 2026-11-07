@@ -160,7 +160,7 @@ mouse move of zero pixels (`SendInput`). Never a click, a key press or a real mo
 | Audio is never saved | Chunks go from PortAudio's callback to a bounded in-memory queue to the detector, then are dropped | `test_audio_is_never_written_to_disk` |
 | Audio is never sent | The wake modules import no network library | `test_wake_code_imports_no_network_agent_model_or_tool_module` |
 | Only a loudness number reaches the console, only while Listening | `wake_level` carries `type` and `level` and nothing else; none in Standby or after Listening ends | `test_level_events_carry_one_number_and_only_while_listening`, `test_typing_or_sending_ends_the_listening_window` |
-| A wake records only its time | One span named `wake`, attributes `{"kestrel.wake": "detected"}` | `test_a_wake_records_only_its_time` |
+| A wake records its time, score and path, no words | One span named `wake`, attributes `{"kestrel.wake": "detected", "kestrel.wake.score": <0-1>, "kestrel.wake.path": <category>}`. The path is where "kestrel" sat (`alone`, `greeting`, `first`, `after_speech`) or `followup` (a follow-up window's speech, no wake word, no score); anything else is not stored | `test_a_wake_records_only_its_time`, `test_the_span_holds_a_time_a_number_and_a_known_category_and_no_free_text` |
 | Wake records never become data | No row in `traces`, so not in Traces, Stats, `kestrel export` or `kestrel distill build` | `test_wake_records_are_hidden_from_traces_stats_and_export`, `test_wake_records_never_reach_the_table_the_distillation_dataset_reads` |
 | No model call, no tool, no approval | The service holds no agent, model or tool | `test_a_wake_makes_no_model_call_runs_no_tool_and_leaves_approvals_to_clicks` |
 

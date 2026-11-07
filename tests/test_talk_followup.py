@@ -40,7 +40,7 @@ from kestrel.wake.closings import (
     learned_floor,
     parse_closing,
 )
-from kestrel.wake.detector import grammar_json
+from kestrel.wake.detector import grammar_json, wake_position
 from kestrel.wake.power import NullPower
 from kestrel.wake.talk import FILLERS, Endpointer
 from kestrel.web.app import WebConfig, create_app
@@ -89,6 +89,10 @@ def build(tmp_path, heard=(), *, conf=1.0, recogniser=None, followup=1.0, name=N
     mic = ScriptedMic([QUIET] * 10)
     recogniser = recogniser or FakeRecogniser()
     made: list[FakeVosk] = []
+    spans: list[dict] = []
+
+    def record(at, **details):
+        spans.append(details)
 
     def make_closing():
         made.append(FakeVosk(list(heard), conf))
@@ -103,7 +107,7 @@ def build(tmp_path, heard=(), *, conf=1.0, recogniser=None, followup=1.0, name=N
         lambda: mic,
         NullPower(),
         voice,
-        lambda at: None,
+        record,
         make_transcriber=(lambda: recogniser) if talk else None,
         make_closing=make_closing if closings else None,
     )
@@ -113,6 +117,7 @@ def build(tmp_path, heard=(), *, conf=1.0, recogniser=None, followup=1.0, name=N
     service.on_request = requests.append
     service.closings_made = made  # type: ignore[attr-defined]
     service.test_mic = mic  # type: ignore[attr-defined]
+    service.spans = spans  # type: ignore[attr-defined]
     return service, voice, recogniser, mic, events, requests
 
 
@@ -288,6 +293,63 @@ def test_without_the_closings_grammar_speech_still_reaches_whisper(tmp_path):
         wait_for(lambda: requests == ["And in Paris?"])
     finally:
         service.stop()
+
+
+# --- what a wake span records ------------------------------------------------------------------
+
+
+def test_a_follow_up_with_speech_records_its_path_and_a_closing_or_silence_records_nothing(tmp_path):
+    service, _v, _r, _m, events, requests = build(tmp_path, ["[unk]"], recogniser=FakeRecogniser("And in Paris?", 0.8))
+    open_window(service, events, [LOUD] * 8 + [QUIET] * 15)
+    try:
+        wait_for(lambda: requests == ["And in Paris?"])
+        assert service.spans == [{"path": "followup"}]  # type: ignore[attr-defined]
+    finally:
+        service.stop()
+    service, _v, _r, _m, events, _ = build(tmp_path, ["bye"])
+    open_window(service, events, [LOUD] * 5 + [QUIET] * 15)
+    try:
+        wait_for(lambda: ended(events) == "closing")
+        assert service.spans == []  # type: ignore[attr-defined]
+    finally:
+        service.stop()
+
+
+def test_a_wake_records_its_score_and_position(tmp_path):
+    service, *_ = build(tmp_path)
+    assert service.on_wake("hi", 0.97, "greeting")
+    assert service.spans == [{"score": 0.97, "path": "greeting"}]  # type: ignore[attr-defined]
+    service.stop()
+
+
+@pytest.mark.parametrize(
+    ("words", "position"),
+    [
+        (["kestrel"], "alone"),
+        (["hi", "kestrel"], "greeting"),
+        (["good", "morning", "kestrel"], "greeting"),
+        (["kestrel", "[unk]"], "first"),
+        (["[unk]", "kestrel"], "after_speech"),
+        (["[unk]", "kestrel", "[unk]"], "after_speech"),
+        (["[unk]"], None),
+    ],
+)
+def test_the_wake_position_is_a_category_with_no_words_in_it(words, position):
+    assert wake_position(json.dumps({"result": [{"word": w} for w in words]})) == position
+
+
+def test_the_span_holds_a_time_a_number_and_a_known_category_and_no_free_text(tmp_path):
+    tracer = Tracer(tmp_path / "traces.db", record_content=True, prices={})
+    tracer.record_wake(1.0, score=0.98765, path="after_speech")
+    tracer.record_wake(2.0, score=0.5, path="what they actually said")  # never stored
+    with tracer.connect() as conn:
+        spans = [json.loads(r[0]) for r in conn.execute("SELECT attributes FROM spans ORDER BY start_time")]
+        rows = conn.execute("SELECT COUNT(*) FROM traces").fetchone()[0]
+    assert spans == [
+        {"kestrel.wake": "detected", "kestrel.wake.score": 0.988, "kestrel.wake.path": "after_speech"},
+        {"kestrel.wake": "detected", "kestrel.wake.score": 0.5},
+    ]
+    assert rows == 0  # still not in the table the Traces page, export and the dataset read
 
 
 # --- outside the window -------------------------------------------------------------------------
