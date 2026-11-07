@@ -7,6 +7,14 @@ updates:
     groups:
       python:
         patterns: ["*"]
+    # Pinned to the Kaggle-tested versions until the next retrain (see distill/train_config.toml [pins];
+    # tests/test_distill_export.py and test_train_format.py fail when uv.lock moves away from them).
+    ignore:
+      - dependency-name: transformers
+      - dependency-name: peft
+      - dependency-name: trl
+      - dependency-name: datasets
+      - dependency-name: torch
 
   - package-ecosystem: npm
     directory: /console
