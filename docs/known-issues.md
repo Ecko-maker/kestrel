@@ -573,6 +573,15 @@ Found in the 2026-11-03 audit. `execute()` refuses a `confirm` tool without `app
 - Planned fix, after the Phase 4 routed runs: `execute()` takes the gate's `Requirement` (or the `Session`) and refuses when the call needs a card it wasn't given; callers without a session say so explicitly. Agent behaviour unchanged; check the agent fingerprint.
 **Done when:** `execute()` can't run a call that `required_approval()` says needs approval, with a test.
 
+### KI-pending-fetch-redirect-rebinding. The private-network block checks the URL, not where the fetch ends up
+**Labels:** `security`, `medium`
+Since 2026-11-07 (`src/kestrel/netguard.py`, the code for KI-pending-fetch-private-addresses / D-pending-fetch-private-addresses, both on PR #74), every `fetch__fetch` call is checked before it runs: the scheme must be http(s), and the URL's host must not be or resolve to a loopback, RFC 1918, link-local (169.254.169.254 included), carrier-grade NAT, unique-local or link-local IPv6, unspecified, multicast or other non-public address (IPv4-mapped IPv6 judged by the IPv4 inside; one private answer in a mixed reply is enough). A refusal is a tool error ("Error: blocked: private network address ..."), never a card, recorded in the audit log (`decision: blocked`) and on the trace's tool_call span (`kestrel.tool.blocked`, status error).
+- **What it can't stop:** mcp-server-fetch resolves the name again on its own and follows redirects. So a public host that redirects to a private address, or a name whose DNS answer changes between the check and the fetch (DNS rebinding), can still reach one.
+- **Also:** a name that doesn't resolve on this PC is left to the fetch (it fails there too). The bench checks literals only (`netguard.no_dns`): its fetches go to local stubs.
+- **Measured:** the 209 fetch calls in the pinned results files (81 benign, 128 attack; the main suite fetches nothing) replayed through the check: 0 refused. The CI subset on the PR is the live check.
+- **Full fix:** fetch through Kestrel itself (connect to the checked address, no redirects or each hop re-checked), or run the fetch server in a sandbox with no route to private networks.
+**Done when:** redirects and re-resolution can't reach a private address, with a test, or the owner decides the URL check is enough.
+
 ---
 
 ## Process
