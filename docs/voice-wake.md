@@ -69,6 +69,12 @@ same hour in an earlier run. Per-phrase detection waits for `wake_record.py --ph
 4. Start the console: `uv run kestrel web`. The nav shows a microphone switch; red "Listening" means
    the microphone is open.
 
+**If "Kestrel" gets no answer, check the server window first.** It prints "Wake word on: listening for
+'Kestrel'" or "Wake word off: ... Set KESTREL_WAKE=on", and the console shows a grey "Wake word off" chip instead
+of the switch. `KESTREL_WAKE=on` must be in `.env` or set in the same PowerShell window before `kestrel web`
+(`$env:KESTREL_WAKE = "on"` lasts only for that window). Without it, the Speaker switch is hidden too: with the
+wake word off, nothing is spoken. Found 2026-11-07: a server started in a new window without it.
+
 ### A console window that is already there when the display wakes
 
 Install the console as an Edge app window and let it start with Windows:

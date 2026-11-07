@@ -279,3 +279,12 @@ def test_the_playback_script_speaks_what_the_console_would_and_prints_no_text(tm
     assert said == texts
     printed = capsys.readouterr().out
     assert "found" not in printed and "Done" not in printed and "answer 2 of 2" in printed
+
+
+def test_a_server_without_the_wake_word_says_so_and_how_to_turn_it_on():
+    """11-07: "Kestrel" got no answer and the console showed nothing, because the server ran without KESTREL_WAKE."""
+    from kestrel import WAKE_OFF_NOTICE
+    from kestrel.wake import build_wake_service
+
+    assert "KESTREL_WAKE=on" in WAKE_OFF_NOTICE
+    assert build_wake_service(lambda at, **_: None) is None  # off unless asked for (the test env doesn't set it)
