@@ -86,16 +86,37 @@ Every open problem is in [known issues](docs/known-issues.md), and every decisio
 
 ## Run it (free tiers)
 
-**1. Demo mode, no API keys.** Scripted model replies for a few sample prompts. The tools, approval cards, prompt-injection handling and traces are real. With [uv](https://docs.astral.sh/uv/):
+**You need:**
+- [git](https://git-scm.com) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.14 itself if you don't have it.
+- [Node.js](https://nodejs.org) for the web console only. The terminal works without it.
+
+**1. Demo mode, no API keys.** Scripted model replies for a few sample prompts. The tools, approval cards, prompt-injection handling and traces are real.
 
 ```bash
-git clone https://github.com/Ecko-maker/kestrel && cd kestrel
+git clone https://github.com/Ecko-maker/kestrel
+cd kestrel
 uv sync
-uv run kestrel --provider demo          # terminal
-uv run kestrel web --build              # web console (needs Node.js; set KESTREL_PROVIDERS=demo first)
+uv run kestrel --provider demo          # terminal chat; type 'exit' to quit
 ```
 
-Or with Docker (verified in CI only): `KESTREL_PROVIDERS=demo docker compose up` (PowerShell: `$env:KESTREL_PROVIDERS="demo"; docker compose up`). Then open the link printed in the logs, `http://127.0.0.1:8000/?token=...`.
+**Prompts the demo knows** (it lists them if you type anything else):
+- "What time is it in Tokyo?"
+- "Create a note called 'Kestrel ideas' with three ideas for features": this one shows an approval card. Answer `a` (approve), `e` (edit), `r` (reject) or `s` (approve for the session); closing the input counts as a rejection.
+- "Summarize suspicious_email.txt": the email hides an instruction, and the scripted model obeys it. The gate's card flags an address you never typed, and the send is only simulated, so nothing leaves your machine.
+
+**The web console in demo mode:**
+
+```bash
+KESTREL_PROVIDERS=demo uv run kestrel web --build      # PowerShell: $env:KESTREL_PROVIDERS="demo"; uv run kestrel web --build
+```
+
+- **What `--build` does:** it builds the console, running `npm install` the first time (about 12 MB to download), then starts the server. Later runs can leave out `--build`.
+- **Opening it:** open the link it prints, `http://127.0.0.1:8765/?token=...`. The token is required.
+- **If `npm install` fails:** delete `console/node_modules` before trying again. Otherwise `--build` skips the install and the build fails.
+
+**MCP servers start too:** Kestrel starts two MCP servers (`fetch` and `time`) through `uvx`, which downloads them on the first run. Set `KESTREL_MCP=off` to skip them.
+
+**Or with Docker** (verified in CI only): `KESTREL_PROVIDERS=demo docker compose up`, or in PowerShell `$env:KESTREL_PROVIDERS="demo"; docker compose up`. Then open the link printed in the logs, which is on port 8000: `http://127.0.0.1:8000/?token=...`.
 
 **2. With a free key.** Get a key from [Groq](https://console.groq.com/keys) or [Google AI Studio](https://aistudio.google.com/apikey), or run a model locally with [Ollama](https://ollama.com):
 
@@ -106,7 +127,8 @@ uv run kestrel --provider groq          # or gemini, or ollama
 
 - **Providers:** Kestrel tries them in the order of `KESTREL_PROVIDERS` (default `gemini`); `--provider` pins one.
 - **Other commands:** `uv run kestrel traces`, `uv run kestrel stats`.
-- **Tests:** `uv run pytest`, which needs no keys or network.
+- **Tests:** `uv run pytest`, which needs no keys or network. A few tests are skipped without the optional `train` extra (torch, transformers); that's expected.
+- **The judge calibration:** `uv run kestrel bench calibrate --split heldout` recomputes the [calibration report](evals/reports/judge-calibration.md)'s numbers from stored verdicts, with no model calls.
 
 ## Architecture
 
