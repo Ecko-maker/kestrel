@@ -169,7 +169,7 @@ The owner labelled 74 answers by 2026-11-03 (result below), but the "done when" 
 - **Run:** `kestrel bench calibrate --split heldout` on `main` `1cdc693`, stored verdicts only (no re-grading, no model calls). It gives the same numbers as 2026-11-03: held-out 32 labelled answers, agreement 91% (95% CI 78–100%), kappa 0.0, confusion 29 / 3 too strict / 0 too lenient / 0; dev 42.
 - **Verdict:** both halves have 20+ labels, and **kappa 0.0 does not reach 0.6**, so the judge is not calibrated.
 - **Next:** held-out answers the owner would fail are needed before kappa can move, or a different judge re-graded on the labels (Groq quota, owner's OK).
-- **Found:** 32 labels (14 held-out, 18 dev) name the git-ignored `evals/results/run2-v1.1-judge-v2.json`, so on a clean clone `calibrate` skips them as "not found". Their answers and verdicts (score and reason) match the pinned `evals/baselines/run2-v1.1-judge-v2-final.json` 32/32. Pointing the labels at the pinned copy is a follow-up.
+- **Found:** 32 labels (14 held-out, 18 dev) name the git-ignored `evals/results/run2-v1.1-judge-v2.json`, so on a clean clone `calibrate` skips them as "not found". Their answers and verdicts (score and reason) match the pinned `evals/baselines/run2-v1.1-judge-v2-final.json` 32/32. **Fixed the same day:** the 32 labels now name the pinned copy (`results_file` only), and `calibrate`'s output is identical before and after, and on a clean clone.
 
 **Done when:** the owner has labelled answers in both halves (aim for 20+ per half; label repeats to get more than the 43 rubric tasks), and the README reports held-out agreement and kappa, with kappa ≥ 0.6, or the judge prompt (improved on dev only) or judge model is changed until it is.
 

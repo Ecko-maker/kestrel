@@ -20,12 +20,12 @@ Both halves pass #21's 20-label minimum, so a verdict can be given.
 
 **Where the answers come from:**
 
-| Half | Pinned baseline (`evals/baselines/baseline-v1.1-judge-v2-final.json`) | Run 2 (`evals/results/run2-v1.1-judge-v2.json`, git-ignored) |
+| Half | Pinned baseline (`evals/baselines/baseline-v1.1-judge-v2-final.json`) | Run 2 (pinned `evals/baselines/run2-v1.1-judge-v2-final.json`; labelled on the git-ignored `evals/results/run2-v1.1-judge-v2.json`) |
 |---|---|---|
 | Held-out | 18 | 14 |
 | Dev | 24 | 18 |
 
-- **Pinned copies:** all 74 labelled answers match, by answer hash, stored score and stored reason, the pinned copies in `evals/baselines/` (`run2-v1.1-judge-v2-final.json` and `baseline-v1.1-judge-v2-final.json`). The data behind the result is therefore in git; for the one caveat, see "Reproduce".
+- **Pinned copies:** all 74 labelled answers match, by answer hash, stored score and stored reason, the pinned copies in `evals/baselines/` (`run2-v1.1-judge-v2-final.json` and `baseline-v1.1-judge-v2-final.json`). The data behind the result is therefore in git, and since 2026-11-08 the labels point to it (see "Reproduce").
 
 ## Held-out result
 
@@ -74,7 +74,7 @@ uv run kestrel bench calibrate --split heldout
 
 This reads `evals/labels/human.jsonl` and the results files the labels name, and makes no model calls.
 
-**Caveat on a clean clone:** the labels point to the git-ignored run 2 file, so a clean clone can't find it.
-- **What happens:** `calibrate` reports the 32 run 2 labels (14 held-out, 18 dev) as "answer or verdict not found" and computes on the rest.
-- **The data is still in git:** the same answers and verdicts are in the pinned `evals/baselines/run2-v1.1-judge-v2-final.json`, checked 2026-11-08 by task id, answer hash, score and reason (74/74 match).
-- **Follow-up (not done here):** point those 32 labels' `results_file` at the pinned copy, or let `calibrate` fall back to it.
+**Clean clone: fixed 2026-11-08.**
+- **The problem:** 32 labels (14 held-out, 18 dev) named the git-ignored `evals/results/run2-v1.1-judge-v2.json`. On a clean clone, `calibrate` reported them as "answer or verdict not found" and computed on the rest: held-out 18 answers, 89% (95% CI 72–100%); dev 24.
+- **The fix:** those 32 labels' `results_file` now names the pinned `evals/baselines/run2-v1.1-judge-v2-final.json`, which holds the same answers and verdicts (task id, answer hash, score and reason, 74/74 match). No other field of any label changed.
+- **Check:** `calibrate`'s full output (both halves, every disagreement) is identical before and after the fix, and identical on a clean clone of `main` with the fixed labels.
