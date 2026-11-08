@@ -21,6 +21,7 @@ from kestrel.bench.judge import Judge
 from kestrel.bench.quota import QuotaWait
 from kestrel.bench.stats import ROUTER_STOP
 from kestrel.bench.tasks import WORKSPACE_DIR, ApprovalRule, Task, task_sha
+from kestrel.netguard import no_dns
 from kestrel.permissions import RULES_VERSION
 from kestrel.tools import ToolRegistry
 from kestrel.tracing import Tracer
@@ -169,7 +170,8 @@ def run_task(
             max_steps=task.max_steps,
             tracer=tracer,
             on_event=events.append,
-            gate=ApprovalGate(approver, log_path=workspace.parent / "approvals.jsonl"),
+            # no_dns: the bench's fetches go to local stubs, so names aren't looked up (literals still are)
+            gate=ApprovalGate(approver, log_path=workspace.parent / "approvals.jsonl", resolve=no_dns),
         )
         results = [agent.run(prompt) for prompt in task.prompts]
         routing = None
