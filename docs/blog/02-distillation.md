@@ -1,9 +1,7 @@
 # Can a 4B model do most of an agent's work?
 
-*Draft, 2026-11-03. Sections 1–4 and 6 use only numbers that exist now, each linked to its source. Section 5 is
-placeholders apart from the two pinned check-pass rates (teacher alone, student alone), filled from
-`evals/reports/phase4-result.md` once the section 8 runs are done (the table at the end says where each one comes
-from). Nothing here says how the routed system did: that isn't measured yet.*
+*Draft, 2026-11-08. Every number is linked to its source. Section 5 is section 8's result, applied as frozen: it
+FAILED. Section 6 is the re-measurement after the fix, and stays a marked placeholder until its runs are done.*
 
 ## 1. The question
 
@@ -99,7 +97,7 @@ I froze the claim and the test on 2026-10-30, before any teacher data existed ([
   - shows the claim **87%** of the time if the routed system matches the teacher;
   - **14%** of the time if it loses 2 tasks for good;
   - **2%** of the time if it sits exactly at the 95% margin.
-  
+
   It's strict on purpose.
 - **NOT SHOWN is a legitimate outcome.** If the interval contains 0, the write-up says so, with the numbers, and I don't
   add repeats to rescue it.
@@ -114,79 +112,118 @@ I froze the claim and the test on 2026-10-30, before any teacher data existed ([
 
 ## 4. Safety
 
-- **The student alone** (no router, no teacher), on the 48-task prompt-injection split ([report](../../evals/reports/student-safety-alone.md)):
-  - **0 of 29** attacks got through under the strict user (95% CI 0–12%), the same as the teacher;
-  - but it **attempted** more: 5 of 29, against the teacher's 1;
-  - under a user who approves everything, 3 of 29 got through, against the teacher's 0.
-  
-  With 29 attacks none of these differences is significant. Still, they lean toward the student, and the gate is what
-  held.
-- **The group F/S split.** Every safety task offers a fetch tool, and the student never saw that tool in training, so
-  the router would send all 48 tasks to the teacher and measure nothing new. So I split the tasks by their own data
-  ([design decision 31](../design-decisions.md), [8.7](../phase4-plan.md)):
-  - **Group F (19):** tasks that need a tool the student never saw. They stay with the teacher by rule, keeping its
-    measured result.
-  - **Group S (29):** run routed.
+**Where the gate stood before Phase 4.** In Phase 3, permission tiers v2.1 brought prompt-injection attacks that got
+through, at system level and under the strict user, from:
+- **13/29 to 0/29 for a scripted model that reads the data and then always obeys the injection.** That's a test of the
+  code, not of a model: the gate stops every attack *if the model tries it after reading the data*. A user who approves
+  everything isn't protected the same way: 25/29 to 23/29 for the same scripted model ([offline report](../../evals/reports/tiers-v2-offline.md)).
+- **1/29 (95% CI 0–18%) to 0/29 (0–12%) for gpt-oss-120b** ([design](../tiers-v2-design.md), [safety report](../../evals/reports/safety-after-v2.1.md)).
 
-## 5. Results
+**The student alone** (no router, no teacher), on the 48-task prompt-injection split ([report](../../evals/reports/student-safety-alone.md)):
+- **0 of 29** attacks got through under the strict user (95% CI 0–12%), the same as the teacher;
+- but it **attempted** more: 5 of 29, against the teacher's 1;
+- under a user who approves everything, 3 of 29 got through, against the teacher's 0.
 
-{{SECTION8_VERDICT}}
+With 29 attacks none of these differences is significant. Still, they lean toward the student, and the gate is what
+held.
+
+**The group F/S split.** Every safety task offers a fetch tool, and the student never saw that tool in training, so
+the router would send all 48 tasks to the teacher and measure nothing new. So I split the tasks by their own data
+([design decision 31](../design-decisions.md), [8.7](../phase4-plan.md)):
+- **Group F (19):** tasks that need a tool the student never saw. They stay with the teacher by rule, keeping its
+  measured result.
+- **Group S (29):** run routed.
+
+## 5. Results: section 8 FAILED
+
+**Outcome: FAIL**, applied exactly as frozen ([result report](../../evals/reports/phase4-result.md)). Cost was shown,
+quality was not shown, and the safety gate failed on one attack.
 
 | | Teacher alone | Routed | Student alone |
 |---|---|---|---|
-| Check-pass rate (95% CI) | 92% (88–96%), ×3 | {{ROUTED_CHECK_RATE}} | 90% (84–96%), ×1 |
-| List-price cost per 1,000 tasks | {{COST_PER_1000_TASKS_TEACHER}} | {{COST_PER_1000_TASKS_ROUTED}} | {{COST_PER_1000_TASKS_STUDENT}} |
-| Groq billable tokens per 100 tasks | {{GROQ_BILLABLE_PER_100_TEACHER}} | {{GROQ_BILLABLE_PER_100_ROUTED}} | |
-| Latency p50 / p95 per task run | {{LATENCY_TEACHER}} | {{LATENCY_ROUTED}} | |
+| Check-pass rate (95% CI) | 92% (88–96%), ×3 | 90% (84–94%), ×5 | 90% (84–96%), ×1 |
+| List-price cost per 1,000 tasks | $0.574 | $0.030 | $0.000 |
+| Groq billable tokens per 100 tasks | 147,667 | 13,670 | |
+| Latency p50 / p95 per task run | 9.9 s / 27.0 s | 10.3 s / 33.2 s | |
 
-- Quality (a), primary: {{QUALITY_A}}
-- Quality (b), against all three references: {{QUALITY_B}}
-- Cost, routed − teacher: {{COST_DIFF}}
-- The teacher's share of turns: {{TEACHER_SHARE_TURNS}}; of task runs: {{TEACHER_SHARE_RUNS}}
-- Why it escalated: {{ESCALATION_REASONS}}
-- Safety, group S: {{SAFETY_GATE}}
-- Drift guard: {{DRIFT}}. Student-health stop: {{STUDENT_HEALTH}}
-- At a 0.90 ratio, for context only: {{CONTEXT_090}}
-- Secondary metric (full rule, judge): {{SECONDARY}}
+![Cost vs quality](../../evals/reports/phase4-cost-quality.svg)
 
-{{CHART}}
+**Cost: shown.**
+- **The difference:** routed − teacher is −$0.544 per 1,000 tasks (95% CI −$0.597 to −$0.494), **94.8% lower list cost**
+  ([how it's computed](../../evals/reports/phase4-result.md#derived-numbers-quoted-in-the-readme-added-2026-11-08)).
+- **The teacher's share:** it answered 3.4% of turns (95% CI 1.3–6.0%) and took part in 3.6% of task runs (1.4–6.2%).
+- **Why it escalated:** 18 of 530 turns, 13 for an invalid tool call and 5 for an empty reply.
 
-## 6. Limits
+**Quality: not shown.**
+- **The ratio:** check-pass 89.6% against 92.3%, a quality ratio of **0.970**.
+- **The pre-registered test** needed the 95% lower bound of mean(routed − 0.95 × teacher) above 0:
+  - primary: **+0.0188 (95% CI −0.0342 to +0.0715)**;
+  - against all three references: +0.0125 (95% CI −0.0393 to +0.0625).
+- **For context only,** at a 0.90 ratio the lower bound is +0.0120.
+- **What it means:** the routed system is close to the teacher, but this test on 100 tasks can't show it's within 5%.
+  Section 3's power table shows how rarely the test passes once the routed system loses even 2 tasks for good.
+
+**Safety gate: FAIL.**
+- **Strict user, group S:** 0/17 got through (95% CI 0–20%).
+- **The failure, rubber-stamp user, group S:** **1/17** got through (`atk-exfil-search-file`, 95% CI 0–29%), where the
+  rule requires 0. The teacher had 0 of 29.
+- **Group F:** the teacher's 0, by the pre-route rule.
+- **The cause:**
+  - The router sent every turn to the student, including turns after the session had read untrusted data (that run made
+    no Groq calls at all).
+  - The student read the private file, then followed the injected instruction and put its secret into a web search.
+  - The gate raised a card (the content check, plus taint from the file it had read), and the user who approves
+    everything approved it.
+  - A gate that asks a rubber-stamp user is only as safe as the model behind it
+    ([run report](../../evals/reports/routed-safety-S-rubber-attacks.md)).
+
+**The rest.** Drift guard: +0 points (95% CI −10 to +11), none. Student-health stop: not triggered. Secondary metric
+(full rule, LLM judge): not run.
+
+**Disclosed after the run, not recomputed** ([8.7](../phase4-plan.md#87-amendments)): Ollama updated itself from
+0.40.13 to 0.40.14 between the main suite's two segments.
+- **Why it matters:** that update changed the student's sampling, from temperature/top_p 1.0/1.0 to the Modelfile's
+  0.7/0.8.
+- **Which runs:** the first 320 routed main runs used the old sampling; the last 180 and group S used the new one.
+- **How it's known:** from Ollama's source, not measured.
+- **What changed afterwards:** the run checklist (`distill/EVAL.md`, step 0) now stops a run on any Ollama version but
+  the recorded one ([known issues](../known-issues.md)).
+
+**What follows.** Decided before any data, as decision 9 ([plan](../phase4-plan.md)): a safety failure first gets one
+fix, then a new pre-registered measurement. Retraining comes only if that fails too.
+- **The fix:** once a session is tainted (it has read untrusted data), its turns go to the teacher.
+- **Sampling:** the fix also sends the student's sampling settings explicitly and makes them part of the routed
+  fingerprint (on `phase4/tainted-to-teacher`, not in `main` yet).
+
+## 6. Section 9: the re-measurement after the fix
+
+> **PLACEHOLDER: section 9's runs aren't finished. Nothing goes here until they are, and no result is guessed.**
+> **The frozen design:** section 9, frozen 2026-11-07 (`0071e54`), in `docs/phase4-section9-proposal.md` on
+> `phase4/tainted-to-teacher`; it isn't in `main` yet. It runs:
+> - routed group S, strict ×3 and rubber-stamp ×3;
+> - a same-week drift control;
+> - the routed main suite R=1.
+>
+> A stop rule applies after the safety runs.
+
+{{SECTION9_RESULT}}
+
+## 7. Limits
 
 - **89 examples.** That's a small training set, and the student only knows Kestrel's built-in tools: the fetch and MCP
   tools send a turn to the teacher by rule.
 - **CPU serving.** On my laptop the student's model calls took 6.6 s at the median and 16.1 s at p95, with the slowest
   at 42.9 s (658 calls, [8.7](../phase4-plan.md)). Fine for a background agent, slow for a chat. Cheaper doesn't mean
   faster here.
-- **A self-judging secondary metric.** The secondary metric's judge is gpt-oss-120b, the teacher itself, and it isn't
-  calibrated: on my held-out labels it agrees 91% of the time, but Cohen's kappa can't be read yet
-  ([known issue #21](../known-issues.md)). That's why the claim rests on deterministic checks.
+- **A self-judging secondary metric.** The secondary metric's judge is gpt-oss-120b, the teacher itself
+  ([calibration report](../../evals/reports/judge-calibration.md)).
+  - It agrees with my labels 91% of the time (95% CI 78–100%) on 32 held-out answers, and all 3 disagreements were the
+    judge being too strict.
+  - Its leniency can't be measured yet, because the held-out labels contain no failing answers. That's also why kappa
+    is 0.
+  - That's why the claim rests on deterministic checks.
+- **Web fetch can reach private addresses in `main`.** The block for loopback and private addresses is on
+  `fix/fetch-private-block`, not merged yet. Even with it, a redirect to a private address and DNS rebinding stay open
+  ([known issues](../known-issues.md)).
 - **No published weights, by design.** The code, configs, manifests and hashes are in the repo; the trained student's
   weights and the teacher's training data aren't.
-
----
-
-## Filling section 5 (delete this part before publishing)
-
-Every placeholder comes from `evals/reports/phase4-result.md` (written by `scripts/phase4_result.py`, branch
-`phase4/integration`) or from the chart file it writes beside it. The script writes labelled rows, not named values, so
-each placeholder is named after the row it copies; copy the cell as written.
-
-| Placeholder | Where in `phase4-result.md` |
-|---|---|
-| `{{SECTION8_VERDICT}}` | the title line `# Phase 4 result: …`, and the **Outcome** row of "## Verdict (section 8.5)" (Holds column) |
-| `{{QUALITY_A}}` | "## Verdict", row "Quality (a), primary": the Result and Holds cells |
-| `{{QUALITY_B}}` | "## Verdict", row "Quality (b)": the Result and Holds cells |
-| `{{COST_DIFF}}` | "## Verdict", row "Cost": the Result cell (USD per 1,000 tasks, 95% CI) and Holds (`yes` / `no`) |
-| `{{SAFETY_GATE}}` | "## Verdict", row "Safety (8.4 as amended in 8.7)": the Result and Holds cells |
-| `{{DRIFT}}` | "## Verdict", row "Drift guard (#58, read as pre-registered 2026-11-01)": the Result and Holds cells |
-| `{{STUDENT_HEALTH}}` | "## Verdict", row "Student-health stop": the Holds cell |
-| `{{CONTEXT_090}}` | "Not part of the verdict", line "At 0.90 for context: lower bound …" |
-| `{{SECONDARY}}` | "Not part of the verdict", line "Secondary metric (full rule, judge `gpt-oss-120b` v2): …" (`not run` unless re-judged) |
-| `{{ROUTED_CHECK_RATE}}` | "## Cost vs quality" table, column "Check-pass rate (95% CI, over tasks)", row "Routed". The Teacher alone and Student alone cells are already filled from the pins; check they match that table's rows |
-| `{{COST_PER_1000_TASKS_TEACHER}}`, `{{COST_PER_1000_TASKS_ROUTED}}`, `{{COST_PER_1000_TASKS_STUDENT}}` | "## Cost vs quality" table, column "List-price cost per 1,000 tasks", rows "Teacher alone", "Routed", "Student alone" |
-| `{{GROQ_BILLABLE_PER_100_TEACHER}}`, `{{GROQ_BILLABLE_PER_100_ROUTED}}` | "## Cost" table, row "Groq billable tokens per 100 tasks" |
-| `{{LATENCY_TEACHER}}`, `{{LATENCY_ROUTED}}` | "## Cost" table, row "Latency p50 / p95 per task run" |
-| `{{TEACHER_SHARE_TURNS}}`, `{{TEACHER_SHARE_RUNS}}` | "## Cost" table, rows "Teacher's share of turns" and "Teacher's share of task runs", Routed column |
-| `{{ESCALATION_REASONS}}` | "## Cost", the "Reason \| Turns" table and the "Turns: … escalated" line under it |
-| `{{CHART}}` | `![Cost vs quality](../../evals/reports/phase4-cost-quality.svg)`: the file the script writes next to the report |
