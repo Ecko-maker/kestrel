@@ -130,7 +130,7 @@ def make(tmp_path, *, script=(), recogniser=None, voice=None, talk=True, countdo
         lambda: mic,
         NullPower(),
         voice,
-        lambda at: None,
+        lambda at, **_: None,
         make_transcriber=(lambda: recogniser) if talk else None,
         make_cancel=cancel,
     )

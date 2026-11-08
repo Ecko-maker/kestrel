@@ -64,7 +64,7 @@ class Speaker:
 def measure(delay: float, talk: bool) -> dict:
     clock = Clock()
 
-    def record_wake(at: float) -> None:
+    def record_wake(at: float, **_: object) -> None:
         clock.t += delay
 
     service = WakeService(

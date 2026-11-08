@@ -181,7 +181,7 @@ mouse move of zero pixels (`SendInput`). Never a click, a key press or a real mo
 | Audio is never saved | Chunks go from PortAudio's callback to a bounded in-memory queue to the detector, then are dropped | `test_audio_is_never_written_to_disk` |
 | Audio is never sent | The wake modules import no network library | `test_wake_code_imports_no_network_agent_model_or_tool_module` |
 | Only a loudness number reaches the console, only while Listening | `wake_level` carries `type` and `level` and nothing else; none in Standby or after Listening ends | `test_level_events_carry_one_number_and_only_while_listening`, `test_typing_or_sending_ends_the_listening_window` |
-| A wake records only its time | One span named `wake`, attributes `{"kestrel.wake": "detected"}` | `test_a_wake_records_only_its_time` |
+| A wake records its time, score and path, no words | One span named `wake`, attributes `{"kestrel.wake": "detected", "kestrel.wake.score": <0-1>, "kestrel.wake.path": <category>}`. The path is where "kestrel" sat (`alone`, `greeting`, `first`, `after_speech`) or `followup` (a follow-up window's speech, no wake word, no score); anything else is not stored | `test_a_wake_records_only_its_time`, `test_the_span_holds_a_time_a_number_and_a_known_category_and_no_free_text` |
 | Wake records never become data | No row in `traces`, so not in Traces, Stats, `kestrel export` or `kestrel distill build` | `test_wake_records_are_hidden_from_traces_stats_and_export`, `test_wake_records_never_reach_the_table_the_distillation_dataset_reads` |
 | No model call, no tool, no approval | The service holds no agent, model or tool | `test_a_wake_makes_no_model_call_runs_no_tool_and_leaves_approvals_to_clicks` |
 
@@ -277,6 +277,8 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 | `KESTREL_TALK` | on | `off`: a wake only greets |
 | `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech; `small.en-q5_1` (190 MB): a little more accurate, ~3 s per request (not the default, see below) |
 | `KESTREL_TALK_MIN_CONFIDENCE` | 0.50 | below it: "check first" instead of sending (provisional, owner 2026-10-24; `talk_eval.py` sweeps it) |
+| `KESTREL_TALK_FOLLOWUP_SECONDS` | 5 | after a spoken answer, listen this long without the wake word (0-30; 0 = off). See "Follow-up and closings" |
+| `KESTREL_TALK_CLOSING_THRESHOLD` | 0.5 | lowest word confidence for a local closing reply (provisional, no clips measured yet) |
 | `KESTREL_TALK_HINT` | off | the vocabulary hint; `on` to use it (off since 2026-10-24: it was worse, see below) |
 | `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
 
@@ -351,7 +353,58 @@ logged or sent (tests: `tests/test_talk.py`). The model sees the same input for 
 requests: the voice flag stays in the console and the server, never in the agent's messages
 (`test_the_model_sees_the_same_input_typed_or_spoken`; the agent's code and fingerprint are unchanged).
 
+### Follow-up and closings
+
+**The follow-up window.** When Kestrel finishes speaking the answer to a spoken request, it listens for
+`KESTREL_TALK_FOLLOWUP_SECONDS` (default 5) without the wake word, and the HUD shows "Listening…", with no
+fly-in and no greeting. Speech must *start* within the window; once it has, the usual end-of-speech rule
+applies, so a long request isn't cut. Silence: back to Standby, with nothing said.
+
+It opens only after a spoken answer. Never after a typed question, never after the approval sentence, and
+not with **Speak answers** off (nothing is spoken, so nothing can finish). Typing ends it. "Kestrel" during
+the answer still stops the speech (barge-in), and "Kestrel" in the window takes over as a normal wake; both
+cancel the window. The microphone was already open: the window only changes what is done with its audio,
+which stays in memory as everywhere else in the wake flow.
+
+**Local closings.** In the window, a second Vosk recognizer runs a small grammar: "thank you", "thanks",
+"cheers", "that's all", "never mind", "bye" and `[unk]`. All the words are in the small model's vocabulary,
+"that's" as one word (checked with `vosk_model_find_word`, 2026-11-05: thank, you, thanks, cheers, that's,
+all, never, mind, bye). A closing gets a fixed local reply, with no model call, no chat message and no tool
+call, and then Standby:
+- "thank you", "thanks", "cheers": "You're welcome, {name}." and "Anytime, {name}.", in turn;
+- "that's all", "never mind", "bye": "Okay, I'm here if you need me."
+
+A closing must be the **whole utterance**. "Thanks, now list my files" comes out as `thanks [unk] ...`, is
+not a closing, and goes to Whisper; so the grammar waits for the end of the utterance and never acts on a
+partial result. Only closings together ("thank you, bye") count: the first one picks the reply.
+
+**Anything else said in the window** takes the normal path: Whisper, the guard, the 2-second countdown and
+"cancel". That includes "I didn't catch that" when the guard drops it.
+
+**Whisper's filler list is unchanged.** "Thank you" stays a filler, because Whisper invents it on silence.
+So closings are handled only by the grammar, and only in the window. Two results of that, both on purpose:
+- **"Kestrel, thank you" outside the window is dropped as a filler** ("I didn't catch that"): the grammar
+  isn't running then;
+- a closing the grammar misses goes to Whisper. "Thank you", "thanks" and "bye" are fillers there, so they
+  are dropped. **"Never mind", "that's all" and "cheers" are not fillers, so a missed one reaches the send
+  countdown as a request.** `closings_eval.py` counts this per phrase.
+
+**With speech in the room (known issue KI-pending-followup-background-speech).** The window can't tell you
+from a podcast or a TV. Measured on 1.00 h of podcast in the room (2026-11-05, 200 windows at random points,
+seed 2026, base.en, numbers only): **0 false closings** at every threshold (0/200, 95% CI 0-1.8%), but **176
+of 200 windows (88%, 95% CI 83-92%) became a false request**, 15 a check, 8 dropped, 1 silence. Each false
+request is answered and spoken, and that answer opens another window. Until this is decided, leave the room
+quiet or set `KESTREL_TALK_FOLLOWUP_SECONDS=0` when something is playing.
+
 ### Measuring it (no accuracy is claimed until you have recorded your requests)
+
+Closings, on the same code as the live window (`wake/closings.py`):
+`uv run --no-sync python scripts/wake_record.py --phrases --set closings` records each closing x 5, 3 s clips, into
+`data/wake/closings/` (git-ignored). Then `uv run --no-sync python scripts/closings_eval.py --closings data/wake/closings
+--background data/wake/background` reports detection per phrase and threshold, what each miss turns into on the live
+path (sent, checked or dropped), and false closings and false requests when the window opens at random points (seeded,
+200 by default) in the background, per 100 windows and per hour of audio heard inside windows. A window only opens
+after a spoken answer, so these are rates while one is open, not per hour of the day. No transcript is printed or saved.
 
 1. `uv run python scripts/talk_record.py`: 20 built-in requests (or `--prompts file.txt`); each one is
    shown, you press Enter, read it at your normal distance and pace, press Enter. WAVs and `refs.tsv`

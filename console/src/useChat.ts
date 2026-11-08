@@ -245,6 +245,7 @@ export interface Wake {
   receivedAt: number; // this browser's time, compared with when a message was sent
   greeting: string;
   listenSeconds: number; // the Listening window (KESTREL_WAKE_LISTEN_SECONDS)
+  followup?: boolean; // the window after a spoken answer: Listening without the fly-in or a greeting
 }
 
 // The live mic level (0-1) during Listening, from `wake_level` events (about 10 a second). A tiny
@@ -343,6 +344,20 @@ export function useChat(onTurnDone?: () => void) {
       if (event.type === "voice_ignored") {
         wakes.current += 1;
         return setVoiceNote({ key: `note-${wakes.current}`, text: "I didn't catch that." });
+      }
+      // After a spoken answer: "Listening…" again without the wake word. No fly-in and no greeting.
+      if (event.type === "wake_followup") {
+        wakes.current += 1;
+        wakeKey.current = `followup-${wakes.current}`;
+        micLevel.set(0);
+        return setWakeEvent({
+          key: wakeKey.current,
+          at: Date.now() / 1000,
+          receivedAt: Date.now(),
+          greeting: "",
+          listenSeconds: (event.listen_seconds as number) ?? 5,
+          followup: true,
+        });
       }
       if (event.type === "wake") {
         wakes.current += 1;

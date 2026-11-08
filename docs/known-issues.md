@@ -584,6 +584,13 @@ Found in the 2026-11-03 audit. `execute()` refuses a `confirm` tool without `app
 - Planned fix, after the Phase 4 routed runs: `execute()` takes the gate's `Requirement` (or the `Session`) and refuses when the call needs a card it wasn't given; callers without a session say so explicitly. Agent behaviour unchanged; check the agent fingerprint.
 **Done when:** `execute()` can't run a call that `required_approval()` says needs approval, with a test.
 
+### KI-pending-followup-background-speech. The follow-up window takes a podcast or a TV for a request
+**Labels:** `voice`, `high`
+The window has no wake word, so any speech in the room starts the normal path. On 1.00 h of podcast in the room (2026-11-05, `scripts/closings_eval.py`, 200 windows at random points, seed 2026): 0 false closings (0/200, 95% CI 0-1.8%), but **176 false requests (88%, 95% CI 83-92%)**, 15 checks, 8 dropped, 1 silence. A false request is sent after the 2-second countdown unless cancelled, spoken back, and that answer opens another window, so it can **chain with no one talking, spending model calls** (Groq quota on a real provider). Podcast audio out loud is the worst case; a quiet room isn't measured yet.
+- Options for the owner, none built: only one follow-up per wake (a follow-up's answer opens no window); no window when the room's noise floor shows speech; a follow-up always asks on screen ("check") instead of the countdown. They can be combined.
+- Until decided: `KESTREL_TALK_FOLLOWUP_SECONDS=0` when something is playing.
+**Done when:** the owner picks a rule, it is built, and `closings_eval.py` shows the result on the same audio.
+
 ---
 
 ## Process

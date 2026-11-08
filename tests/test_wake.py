@@ -914,7 +914,7 @@ def test_a_slow_trace_write_or_windows_call_does_not_shorten_listening(tmp_path)
     service, _, events, _, power, *_ = make_service(tmp_path, clock=lambda: now[0], listen_seconds=0.4)
 
     def slow(seconds):
-        def call(*args):
+        def call(*args, **_):
             now[0] += seconds
             return True
 

@@ -535,3 +535,13 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** MCP elicitation where the client supports it and refuse otherwise (more code, depends on each client); keep the client's prompt as the approval (#5 stays open).
 
 **Why:** Kestrel's gate is the one place approval is decided; a tool that is approved somewhere else is a second trust model to explain and test. Claude Code loses the ability to add notes through `kestrel-mcp`.
+
+## D-pending-followup-closings. A follow-up window after spoken answers, and closings handled only by a Vosk grammar
+
+**Decision (owner, 2026-11-05):** after a spoken answer, listen for 5 s without the wake word. A small Vosk grammar hears closings first and gets a fixed local reply, with no model, chat message or tool. Anything else takes the normal path. "Thank you" stays on Whisper's filler list.
+
+**How it works:** `wake/closings.py` holds the grammar, the replies and `FollowupWindow`, the same code in the live service and `scripts/closings_eval.py`. A closing must be the whole utterance, decided at its end, never on a partial result.
+
+**Alternatives:** take "thank you" off the filler list and let Whisper hear closings (Whisper invents it on silence, the reason it is a filler); act on Vosk's partial result as the spoken "cancel" does (faster, but "thanks, now list my files" would be taken for a closing, and a false cancel is harmless where a lost request isn't).
+
+**Why:** a thank-you is the commonest thing said after an answer, and it shouldn't cost a model call or put a message in the chat. Open: the window takes speech in the room for a request (KI-pending-followup-background-speech).

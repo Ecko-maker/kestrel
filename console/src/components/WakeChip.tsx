@@ -83,4 +83,5 @@ export function Caption({ item }: { item: { key: string; text: string } | null }
   );
 }
 
-export const greetingCaption = (wake: Wake | null) => (wake ? { key: wake.key, text: wake.greeting } : null);
+export const greetingCaption = (wake: Wake | null) =>
+  wake?.greeting ? { key: wake.key, text: wake.greeting } : null;
