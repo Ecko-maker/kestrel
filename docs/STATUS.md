@@ -4,13 +4,77 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-03 evening, from the 11-03 quota-fix and blog session (log below).
+2026-11-08 afternoon, from the branch-cleanup docs session (log below).
 
 ## Now
 
-**Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT) `phase4/kaggle-teacher` + `phase4/student-eval` (PR #50, `43d5522`, 2026-11-02 19:55 UTC) and `phase4/export-readiness` (PR #53, `2cb2a4b`, 2026-11-03 00:55 UTC: the first trained student's export path, the Ollama tool-call tag fix, the router's `text_tool_call` escalation). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running.
+**Section 8: FAIL** (applied as frozen, 11-05; `evals/reports/phase4-result.md`). The Phase 4 gate is not passed.
 
-**The single next step:** routed main suite day 1 starts 11-04 after 09:40 EST (cancelled CI runs leave the window at 09:38), in `..\kestrel-runs` at `a59439b`, only after `scripts/groq_quota.py --need <the day's budget>` prints OK; router variables set per session (`distill/EVAL.md` 1.4), output filtered to a log (no interim look).
+**Section 9 is running.** It is the re-measurement after decision 9's fix, frozen 11-07 (`0071e54`, `docs/phase4-section9-proposal.md` on `phase4/tainted-to-teacher`). The queue `scripts/s9_queue.ps1` runs in `..\kestrel-runs`, started 11-08 08:19 EST at the tag `phase4-s9-runs` (`497643a`).
+- **Runs 1 and 2 are done:**
+  - run 1, group S strict ×3: 87/87 graded, 66,613 billable;
+  - run 2, group S rubber-stamp ×3: 54/54 graded, 31,627 billable;
+  - **the stop rule HELD after both**, so runs 3 and 4 go ahead.
+- **Runs 3 and 4 are pending:**
+  - run 3, the same-week drift control: waiting for Groq quota (needs 55,000, 30,808 free at 12:21 EST);
+  - then run 4, the routed main suite R=1.
+- **Groq so far:** 154,192 of the 303,000 approval, the CI runs on #79 included.
+- **Not read yet:** no section 9 outcome. Leave the window open, on mains power and awake.
+
+**This week:**
+- **Tuesday 2026-11-10:**
+  - the section 9 verdict, from the finished runs;
+  - then PR #79 (`phase4/tainted-to-teacher`), and the PRs for `fix/fetch-private-block` and `fix/voice-console-week`.
+  - Each of those three changes `src/kestrel/`, so each runs the CI evals on Groq (~56k per PR). #79 has its approval line; the other two need their own lines first.
+- **Friday 2026-11-13: the v1.0 release.**
+  - Merge `docs/readme-v1`: the README and `docs/release-notes-v1.0.md`, with section 9 filled in.
+  - Then the blog post on `docs/blog-phase4`, and the tag `v1.0`.
+
+## 2026-11-08 afternoon (branch-cleanup docs session; no Groq, no model calls)
+
+1. **Merged into `main`:**
+   - PR #82, the judge calibration report: held-out 32 answers, 91% (95% CI 78–100%), kappa 0.0, below #21's 0.6;
+   - PR #83: the 32 run 2 labels now point at the pinned copy, so `calibrate` works on a clean clone, with identical output;
+   - PR #84: the derived numbers (94.8%, 0.970) recorded in `phase4-result.md` with their commands.
+   - **CI flake on #84:** the push-event Windows job failed once on `test_wake.py::test_wake_flow_end_to_end`; the re-run of that job passed.
+2. **Pushed, no PR:**
+   - `docs/readme-v1`: the README rewrite, fixed after a fresh-clone test in demo mode, and the v1.0 release notes draft;
+   - `docs/blog-phase4`: blog post 2 with section 8's result and a section 9 placeholder;
+   - `fix/voice-console-week` and `fix/fetch-private-block`, with `main` merged in and all checks green.
+   - **Fingerprints:** `35fac5ba6277` on both. The fetch branch changes the gate without bumping `RULES_VERSION` (owner's call before its PR).
+3. **Branch cleanup (owner's OK):**
+   - 9 merged branches deleted, and 7 parked branches archived as tags (`archive/<branch>`, list under Branches) and then deleted.
+   - The `..\kestrel-f5` worktree was removed; it held only an empty log. `..\kestrel-runs` is again the only other worktree.
+   - `fix/bench-audit-line-separator` stays until #79 merges.
+
+## 2026-11-08 (demo-video docs session; no Groq from the session)
+
+1. **Demo video published:** [Demo (1:50)](https://youtu.be/kglrGnkzt_I), linked near the top of README.md. Scene 3 uses a scripted model to show the approval gate stopping a prompt injection; the closing slide's numbers are the measured ones, each linked in README's Results section. Phase 5's demo video is done; the posts are not.
+
+## 2026-11-05 night (after-section-8 session; no Groq from the session)
+
+1. **Owner decisions (8.7, D-pending-after-section8):** the FAIL stands; next decision 9's fix, then a new pre-registered measurement (section 9); retraining only if that fails; `rejudge` deferred. **Correction found after them:** Ollama 0.40.14 changed the student's sampling, not just the version: 1.0 / 1.0 for the first 320 routed runs and the student-alone runs, 0.7 / 0.8 for the last 180 and group S, from Ollama's source, not measured (8.7, KI-pending-ollama-auto-update).
+2. **Parity on 0.40.14:** 20/20 live on the running server; renderer and golden 20/20, both at v0.40.6; a v0.40.14 renderer not built (~460 MB, owner's call). `distill/EVAL.md` step 0 now stops a run on any Ollama version but the recorded one. The owner turns off "Auto-download updates".
+3. **`phase4/integration` fixed at the root:** the drift reference's original CRLF bytes stored with `-text` (`9ad3742`), pin and section 8 text unchanged. **`phase4/tainted-to-teacher`** (`97f14b1`, pushed, no PR): design and section 9 draft, no code.
+4. **Owner decisions on the design and section 9 (8.7):** the sampling finding is disclosed, not recomputed; rule A, plus explicit student sampling in the routed fingerprint; only FAIL retrains; if group S fails, no main suite; no 460 MB renderer; rubber-stamp ×1; section 9 approved up to 600k over at most 4 Groq days, the fix PR's ~56k on its own line.
+
+## 2026-11-05 evening (section 8 verdict session; no Groq from the session)
+
+1. **Outcome (section 8.5): FAIL**, by the safety gate: group S rubber-stamp system-level 1/17 (`atk-exfil-search-file`), where 8.7's rule requires 0 (`--safety failed`). Strict 0/17, gate line PASS; group F the teacher's 0 by the pre-route rule (`tests/test_routed_safety.py`). The rubber-stamp run made no Groq calls.
+2. **The other conditions:** quality NOT SHOWN, mean(routed − 0.95 × teacher) +0.0188 (95% CI −0.0342 to +0.0715), at 0.90 lower bound +0.0120, (b) NOT SHOWN; check-pass teacher 92%, routed 90%. Cost SHOWN, −$0.544 per 1,000 tasks (95% CI −$0.597 to −$0.494), $0.030 against $0.574; teacher's share of turns 3.4% (95% CI 1.3–6.0%); drift none; no student-health stop. Secondary metric not run.
+3. **Pinned:** the three routed files in `evals/after-runs/`, with tests. **Groq:** main 68,348 + aborted 59,554 = 127,902 of 500k; group S 12,991 of 180k. **Disclosed in 8.7:** Ollama updated itself from 0.40.13 to 0.40.14 at 15:08 EST on 11-05, between the main suite's two segments (KI-pending-ollama-auto-update; parity not repeated on 0.40.14). Backup `C:\kestrel-backup\2026-11-05\`. `bench/student-alone-label` and the two 11-05 bugs no longer wait for the section 8 runs; `phase4/integration`'s red Ubuntu CI (below) still needs the owner's call.
+
+## 2026-11-05 (routed-main-done session; no Groq from the session)
+
+1. **Routed main suite complete:** 500/500 graded, 0 skipped, 0 errored, at `bf1b68b`, agent `502b95cc0fb8`: 11-04 18:39–19:46 EST (320 runs, stopped by its budget) and 11-05 15:39–16:27 EST (180 runs, `--resume`). **68,348 Groq billable;** with both aborted attempts **127,902 of the 500k approval**. No pass rate read. `docs/phase4-plan.md` 8.7 has the detail, including the owner's disclosure: 6 per-task results from repeat 4 were printed after the run ended, by following an instruction of Claude's meant for a refused run; the frozen design is unchanged.
+2. **Two bugs found, both to fix after the section 8 runs:** `--token-budget` counts the student's free local tokens (KI-pending-budget-counts-local-tokens; the file's "billable" 202,084 includes 133,736 of them), and a routed run started with `--model` can't resume (KI-pending-routed-resume-fingerprint, 3 refused starts in all, one of them a mistyped budget, 0 Groq). **Workaround:** no `--model`, on the owner's OK; `KESTREL_ROUTER_STUDENT_MODEL` names the student. `distill/EVAL.md` is corrected.
+3. **Both fingerprints are one agent:** `502b95cc0fb8` in results files, `4da8f4b3c792` in the docs; the hash covers the model label, `kestrel-student -> openai/gpt-oss-120b` or `kestrel-student`. **Backup:** `C:\kestrel-backup\2026-11-04\` (results, all 5 logs, `bench.db` by the backup API, integrity check ok, 31.9 MB with `MANIFEST.txt`; the runs' logs still unread by Claude). 
+4. **`fix/bench-audit-line-separator` merged into `phase4/integration`** (`426f5a5`, pushed; local checks 1181 passed, default fingerprint `35fac5ba6277`). **That branch's Ubuntu CI is red, and was before this merge** (`4642888`, `552a5ff`): `test_the_pinned_references_are_the_files_in_git`, `drift_reference`. `scripts/phase4_result.py` pins `evals/reports/ci-repeat3-2026-10-07.json` at `4750d773…`, its CRLF form from a Windows checkout; the bytes in git hash to `c0e2d44a…`, and `.gitattributes` has no `-text` for that folder. Must be fixed before that branch can merge; pin not changed, owner's call.
+
+## 2026-11-04 (routed attempts session; no Groq from the session)
+
+1. **Two aborted attempts, both before any routed result was seen** (`docs/phase4-plan.md` 8.7): `a59439b`, a crash in the bench's audit reader (22 Groq calls, ~30.5k); `46c54d8`, the process killed from outside when its window disappeared by itself, cause unknown (20 calls, ~29k). Fixes on `fix/bench-audit-line-separator` (`bf1b68b`, pushed, no PR until the section 8 runs are done). **Tonight: restart at `bf1b68b`**, all 500 runs. If a run dies at `act-packing-list` repeat 2 again, it isn't chance.
+2. **Pre-commit's Go tools, 11-04 18:08-18:09 EST (no change needed).** Go is now on `PATH` (`C:\Program Files\Go`, 1.27.3), so the next commit made pre-commit build gitleaks again with that Go, as a new environment. New: `golangenv-system` 44 MB (`gitleaks.exe` 25 MB, `config.exe` 21 MB) in `~\.cache\pre-commit\repo3humfkh1`, and 176 MB of Go build cache in `~\AppData\Local\go-build` (298 MB in all). Go modules were downloaded for the build and removed afterwards, so their size can't be read from the cache, and it isn't known whether the download passed the 100 MB rule. No Go toolchain was downloaded. The pre-commit cache's 398 MB total is mostly from 2026-10-03 (`golangenv-default`: Go 1.27.1 268 MB, binaries 44 MB; Python hooks 40 MB).
 
 ## 2026-11-03 evening (quota-fix and blog session; KestrelBench not run, no Groq)
 
@@ -142,35 +206,43 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | Phase | State | Proof |
 |---|---|---|
 | 1 Foundation | done | tag `v0.1.0`; `main` |
-| 2 Evals | done, except judge calibration (#21: 35 labels, dev 20 / held-out 15, PR #47) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
-| 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29, decision 17); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); `phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) |
-| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 next | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
-| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video and posts not started | `voice/talk` (`docs/voice-wake.md`); CI green |
+| 2 Evals | done, except judge calibration (#21): measured 2026-11-08 on 32 held-out answers, agreement 91% (78–100%), kappa 0.0, so not calibrated (`evals/reports/judge-calibration.md`) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
+| 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29, decision 17); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); memory on the tags `archive/phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) and `archive/phase3/memory` |
+| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate), gate not passed (`evals/reports/phase4-result.md`) | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
+| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog post 1 in `main`, post 2 drafted; the 2 MCP servers built but archived (future work) | `main` (`docs/voice-wake.md`); `fix/voice-console-week`, `voice/talk`; [demo video](https://youtu.be/kglrGnkzt_I); `archive/phase5/mcp-servers` |
 
 ## Branches
 
-Merge order: ~~PR #14 → `phase3/tiers-v2`~~ (done, `02c1d2e`) → ~~`console/hud-theme`~~ (done, `7664103`) → ~~voice~~ (done, `d746e9c`) → ~~`phase4/trace-dataset`~~ (done, PR #37, `4290fc6`, with `fix/quota-retry-spend`). The merge rehearsal (`evals/reports/merge-rehearsal.md` on `docs/merge-plan`) planned this order; it is **superseded** (2026-10-30): every branch before phase4 is merged and phase4 is rebased onto `main`, so its hashes and conflict lists no longer apply. Nothing is deleted yet: the last column only proposes.
+**Live branches** (2026-11-08; the same set locally and on `origin`):
 
-| Branch | Phase | State | Next action |
-|---|---|---|---|
-| `phase3/results-analysis` | 3 | in `main` via tiers-v2 (PR #14 → `caff0f8`) | proposed: delete (no tag needed) |
-| `phase3/tiers-v2` | 3 | **merged into `main`** (PR #27, `02c1d2e`, 2026-10-29) | proposed: delete |
-| `phase4/trace-dataset` | 4 | **merged into `main`** (PR #37, `4290fc6`, 2026-10-30; decisions 22–28, issues 66–78, #53 and #77 closed) | keep for now (Phase 4 continues there or on a new branch off `main`) |
-| `voice/wake-word` + `voice/talk` | 5 | **merged into `main`** (PR #31, `d746e9c`, 2026-10-29; decisions 19–21, issues 61–65) | proposed: delete (old talk tip kept by tag `archive/voice-talk-4155004`) |
-| `console/hud-theme` | console | **merged into `main`** (PR #29, `7664103`, 2026-10-29; decision 18, issue 60) | proposed: delete |
-| `docs/merge-plan` | – | merge-rehearsal report, **superseded** 2026-10-30 (all merges before phase4 done, phase4 rebased) | proposed: don't merge; archive as tag, delete |
-| `phase3/memory-rag` | 3 | memory + hybrid RAG design, parked (option B) | park until after the Phase 4 measurements |
-| `phase3/memory` | 3 | memory backend + guidance; smoke 2 on Ollama | park; rebase after Phase 4 |
-| `phase3/search-spike` | 3 | search design (in `phase3/memory`) | park; then archive as tag, delete |
-| `phase3/memory-evals` | 3 | memory split m1.0 (in `phase3/memory`) | park; then archive as tag, delete |
-| `fix/quota-retry-spend` | 3 | from tiers-v2 `d5b46d5`; known issue #53 fixed in code (`ee496a0`): budget checked inside the retry loop, back-off covers spent tokens, Groq's limit text in the `[quota]` line; agent fingerprint unchanged (`35fac5ba6277`); CI green; **in `main` via phase4** (PR #37, `4290fc6`) | proposed: delete |
-| `docs/approval-2026-10-30-phase4` | – | merged (PR #36, `6292bf7`) | proposed: delete |
-| `docs/status-2026-10-30-phase4-merged` | – | this update | merge to `main` (KestrelBench not run) |
-| `phase4/kaggle-teacher` | 4 | **merged into `main`** with `phase4/student-eval` (PR #50, `43d5522`, 2026-11-02); `5b2a242` = the collection commit | keep (the collection commit) |
-| `phase4/student-eval` | 4 | **merged into `main`** (PR #50, `43d5522`, 2026-11-02; decisions 30-31 and issue 79 numbered in PR #52); `a4b3372` = the first training code commit | can be deleted (merged; `phase4/export-readiness` merged too) |
-| `phase4/export-readiness` | 4 | **merged into `main`** (PR #53, `2cb2a4b`, 2026-11-03): training fixes, the student's export (`--low-memory`), the Ollama tool-tag fix, the router's `text_tool_call`; `5b175f1` = the training code commit | can be deleted (merged) |
-| `bench/student-alone-label` | 4 | the safety report labels the served student's runs as the student-alone measurement (8.7), not a smoke test; `8d998d9`, pushed, no PR | PR when Groq allows (~56k, CI subset; approval line first) |
-| `main` | – | = `origin/main` `2cb2a4b` (PR #53) | – |
+| Branch | Holds | Next |
+|---|---|---|
+| `main` | everything merged, up to PR #84 (`f6535a4`) | – |
+| `phase4/tainted-to-teacher` | decision 9's fix, section 9 and its queue; PR #79 open; the tag `phase4-s9-runs` (`497643a`) is one commit past the pushed branch | PR #79 after the section 9 verdict (Tuesday) |
+| `fix/bench-audit-line-separator` | section 8's bench fixes (`bf1b68b`); already inside #79 | delete after #79 merges, as `archive/fix/bench-audit-line-separator` |
+| `phase4/integration` | the results kit (`scripts/phase4_result.py`, which wrote `phase4-result.md`), the student-alone label, the two MCP servers, and the drift-reference `-text` fix (`9ad3742`); none of these is in `main` or #79 | owner's call (11-08 proposal: keep until the section 9 verdict) |
+| `fix/fetch-private-block` | the private-address block for `fetch__fetch`; `main` merged in | PR Tuesday (CI evals; approval line first; `RULES_VERSION` decision first) |
+| `fix/voice-console-week` | rule B, the Speaker switch, the wake-off notice; `main` merged in | PR Tuesday (CI evals; approval line first) |
+| `voice/talk` | the follow-up window, local closings, the wake score on spans (`e2b6693`, `5f8f681`, pushed); not in `fix/voice-console-week` and conflicts with it in 3 files | owner's call (11-08 proposal) |
+| `docs/readme-v1` | the README rewrite and `docs/release-notes-v1.0.md` | PR Friday, with section 9 filled in |
+| `docs/blog-phase4` | blog post 2 | publish with v1.0 |
+
+**Archived as tags, branches deleted (2026-11-08, owner's OK).** Each tag sits at the branch's last commit:
+
+| Tag | Commit |
+|---|---|
+| `archive/phase3/memory` | `e960038` |
+| `archive/phase3/memory-rag` | `afc3435` (holds `docs/memory-rag-design.md`) |
+| `archive/phase3/memory-evals` | `b3d4851` |
+| `archive/phase3/search-spike` | `514a00b` |
+| `archive/phase4/results-kit` | `cfb9634` |
+| `archive/bench/student-alone-label` | `8d998d9` |
+| `archive/phase5/mcp-servers` | `dedd05d` (the 2 read-only MCP servers, future work) |
+
+- **Restore one:** `git switch -c <branch> archive/<branch>`, for example `git switch -c phase3/memory archive/phase3/memory`.
+- **Older archive tags** (different naming): `archive/console-hud-theme-9c4bb52`, `archive/docs-merge-plan-56d1edf`, `archive/fix-quota-retry-spend-ee496a0`, `archive/phase4-trace-dataset-1f0084f`, `archive/phase4-trace-dataset-v0-289274e`, `archive/voice-talk-4155004`, `archive/voice-talk-8a4e22b`, `archive/voice-wake-word-88bb9d1`.
+
+**Deleted 2026-11-08** (owner's OK; local and `origin`, all merged into `main`): `deps/pin-training-libs`, `docs/demo-video`, `docs/judge-calibration`, `docs/phase4-derived-numbers`, `docs/s9-approval`, `docs/s9-approval-303k`, `fix/audit-2026-11-03`, `fix/label-paths`, and `dependabot/npm_and_yarn/console/console-5cae597071` (origin only).
 
 **Deleted 2026-10-28** (owner OK; local and `origin`): `master`, `dev`, `phase2/kestrelbench` (merged into `main`); `docs/status-2026-10-27`, `-27-voice`, `-28`, `-28-verdict`, `-28-gate` (merged); `docs/status-2026-10-26`, `docs/approvals-2026-10-26`, `labels/judge-calibration` (squash-merged as PRs #18, #20, #19; GitHub keeps their tips under the PRs); `phase3/memory-safety` (tip kept by tag `safety-before`, `6f58ee5`); `phase4/trace-dataset-v0` (tip kept by the new tag `archive/phase4-trace-dataset-v0-289274e`). Kept for now: `phase3/results-analysis` (in tiers-v2 via #14; delete without a tag once tiers-v2 is in `main`), `docs/merge-plan`, the Dependabot branches (open PRs).
 
@@ -212,8 +284,11 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 11-02 | Phase 4 branches (`phase4/kaggle-teacher` + `phase4/student-eval`) → `main`, one CI run on the PR + one on the merge to `main` | ~56k (estimate) | approved by the owner, up to **70k billable**. `main` merged into `phase4/student-eval` and pushed before the PR opens; agent fingerprint `35fac5ba6277` = `main`'s. Opens only after this line is on `main`, while no other Groq consumer runs, and when 200,000 − last-24 h use − 15,000 ≥ 70,000. Extra pushes to the open PR need a new approval line. **Ran:** PR #50, PR run 28,598 + merge-to-main run 30,710 = **59,308 billable**, within the 70k approval (both 81%, 13/16, 0 errored). |
 | 11-02 | 11-02: phase4/export-readiness → main, one CI run on the PR + one on the merge | ~56k (estimate) | approved by the owner, up to **70k billable**. `main` merged into `phase4/export-readiness` and the checks run before the PR opens; default agent fingerprint `35fac5ba6277`. Opens only after this line is on `main`, while no other CI run is in progress, and when 200,000 − last-24 h use − 15,000 ≥ 70,000. Extra pushes to the open PR need a new approval line. **Ran:** PR #53, PR run 31,892 + merge-to-main run 21,587 = **53,479 billable**, within the 70k approval (88% 14/16 and 100% 16/16, 0 errored). |
 | 11-03 | 11-03: same-week drift control (#58), old agent ×2 on the CI subset, approved up to 55,000 billable. | ~40k (39,706 measured 10-29) | approved by the owner (11-03). One command in `..\kestrel-runs` at `c7c0d4f` (agent `cc5c16377662`): `--subset ci --repeat 2 --token-budget 55000`, judge groq, no `--wait-for-quota`, results `control-old-ci-2026-11-03.json`; then the runs folder back to `a59439b`. Starts after 10:30 EST, while no other Groq consumer runs, when `scripts/groq_quota.py --need 55000` prints OK. **Ran:** 2026-11-03 09:03–09:09 EST (agent runs 14:03–14:09 UTC), runs folder at `c7c0d4f`, agent `cc5c16377662`, 28/32 runs passed, 0 errored; **49,953 billable** by the run's summary (agent 45,034 + judge 4,919), within the 55,000 approval. The Groq-side count from the trace database was 45,034: both subtract cached input (29,184 here), but the judge's calls aren't traced, so the traces alone missed the judge's 4,919; `groq_quota.py` now adds a run's judge tokens from its results file. **Process slip:** the run was started although `groq_quota.py --need 55000` had printed NOT ENOUGH (51,862 free). It used less than was free (49,953 ≤ 51,862; window total 183,091 ≤ 185,000), so no limit was hit and the 15,000 margin held, but the stop rule was skipped. **Rule kept:** a run starts only after the check prints OK. Reading: drift not shown (+0 points, 95% CI −10 to +11; #58). |
-| 11-04 onward | 11-04 onward: routed main suite R=5, one command per Groq day with `--token-budget` = that day's 200,000 − last 24 h − 15,000, approved up to 400,000 billable over at most 3 days. | 5 × e × 153k: 76.5k / 229.5k / 382.5k at e = 10 / 30 / 50% | approved by the owner (11-03). `--provider routed --model kestrel-student --repeat 5 --judge none`, results `routed-main-r5.json` (`--resume` on later days); `KESTREL_REQUEST_TIMEOUT` unset (60 s); `KESTREL_ROUTER_LINEAGE` set per session (`docs/phase4-plan.md` 8.7, 11-03). After the drift control. |
-| after the main suite | Routed safety group S (8.7), strict ×3 + rubber-stamp ×1, approved up to 180,000 billable. | 18k / 54k / 90k at e = 10 / 30 / 50%; ceiling ~180k | approved by the owner (11-03). `--split safety --safety-group S --provider routed`, results `routed-safety-S-strict-x3.json` and `routed-safety-S-rubber-attacks.json`, `KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`; each command's `--token-budget` = that day's free quota. |
+| 11-04 onward | 11-04 onward: routed main suite R=5, one command per Groq day with `--token-budget` = that day's 200,000 − last 24 h − 15,000, approved up to **500,000 billable** over at most 3 days (11-04 to 11-06), counting both aborted attempts (~30.5k + ~29k = **~59.5k so far**). | 5 × e × 153k: 76.5k / 229.5k / 382.5k at e = 10 / 30 / 50% | approved by the owner (11-03, up to 400,000); **raised to 500,000 by the owner on 11-04, before any routed data exists:** at e ≈ 50% the estimate (382.5k) plus the aborted 30.5k exceeds 400k, and an incomplete R=5 would break the pre-registered design. `--provider routed --model kestrel-student --repeat 5 --judge none --wait-for-quota`, results `routed-main-r5.json` (`--resume` on later days); `KESTREL_REQUEST_TIMEOUT` unset (60 s); `KESTREL_ROUTER_LINEAGE` set per session (`docs/phase4-plan.md` 8.7, 11-03). First restart at `46c54d8` aborted (8.7, 11-04, second note); **the restart at `bf1b68b` runs tonight (11-04)**, all 500 runs from the start. After the drift control. **Ran:** 11-04 18:39–19:46 EST (320 runs, stopped by its budget) and 11-05 15:39–16:27 EST (180 runs, `--resume` without `--model`, owner's OK 11-05), at `bf1b68b`, agent `502b95cc0fb8`; 500/500 graded, 0 errored; **68,348 Groq billable** from the traces (the file's 202,084 includes 133,736 local Ollama tokens); with both aborted attempts (59,554) **127,902, within the 500,000 approval**. |
+| after the main suite | Routed safety group S (8.7), strict ×3 + rubber-stamp ×1, approved up to 180,000 billable. | 18k / 54k / 90k at e = 10 / 30 / 50%; ceiling ~180k | approved by the owner (11-03). `--split safety --safety-group S --provider routed` (no `--model`, 8.7, 11-05), results `routed-safety-S-strict-x3.json` and `routed-safety-S-rubber-attacks.json`, `KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`; each command's `--token-budget` = that day's free quota. **Ran:** 11-05 17:07–17:26 and 17:31–17:35 EST, at `bf1b68b`, agent `502b95cc0fb8`; 87/87 and 18/18 graded; **12,991 Groq billable** from the traces (strict 12,991, rubber-stamp 0; the files' 35,135 and 4,640 include local tokens), within the 180,000 approval. |
+| when opened | Fix PR (`phase4/tainted-to-teacher` → `main`), one CI run on the PR + one on the merge | ~56k (estimate) | approved by the owner (11-05) as its own line. Not opened yet: the build is pushed without a PR, on the owner's word. Starts when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; extra pushes to the open PR need a new line. |
+| after section 9 is frozen | Section 9 runs (`docs/phase4-plan.md`, section 9 once frozen): routed group S strict ×3 + rubber-stamp ×1, the same-week drift control, routed main suite R=5 | ~463k (estimate, rule A) | approved by the owner (11-05), up to **600,000 billable over at most 4 Groq days**. Nothing starts until section 9 is frozen. If group S fails, the main suite is not run. Each command's `--token-budget` = that day's free quota. |
+| 11-08 onward | Section 9 as frozen (`0071e54`, `docs/phase4-section9-proposal.md`): the CI run on the `phase4/tainted-to-teacher` PR (#79: 31,604 measured); a second CI run on #79 after section 8's bench fixes are merged into the branch (~31k); run 1, group S strict ×3 (~73k); run 2, group S rubber-stamp ×3 (~57k); run 3, the same-week drift control (~50k); run 4, routed main suite R=1 (~64k) | **~303k** (trace-based estimates; was ~272k before the second CI run) | **approved by the owner (2026-11-07; raised from ~272k to ~303k the same night), within the 600,000 approval above.** Why the second CI run: the tagged commit lacked section 8's bench fixes (`fix/bench-audit-line-separator`: the U+2028 audit reader, lone-surrogate-safe results, a save after every run, no overwrite, the RUN STOPPED line), which never reached `main`; they are merged into the branch before any section 9 run, and pushing to the open PR re-runs its CI. Runs 1, 2 and 4 at the tag `phase4-s9-runs` on the PR head after `main` is merged into it (agent code and dependencies then equal `main` after the merge; routed fingerprint `2ae99cffdbbc` from a dry run there); the PR isn't merged before the runs. Results `s9-safety-S-strict-x3.json`, `s9-safety-S-rubber-attacks-x3.json`, `s9-main-r1.json`. Stop rule 9.3: runs 3-4 only if group S holds. `--wait-for-quota`; each `--token-budget` from `scripts/groq_quota.py`. |
 
 ## Owner decisions open
 
@@ -226,7 +301,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 
 ## Docs on unmerged branches
 
-A new decision or issue keeps a slug until its branch merges; `main` assigns the number then. The numbers the branches use today:
+A new decision or issue keeps a slug until its branch merges; `main` assigns the number then. The numbers the branches use today (since 2026-11-08 the memory branches, `phase4/results-kit` and `bench/student-alone-label` are archive tags, listed under Branches):
 
 | Pending name | Branch(es) | Number used there |
 |---|---|---|
@@ -252,6 +327,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-safety-prompts-pinned … -router-tiers-v2 (12 issues) | phase4 (rebased 10-30) | **final 66–77** (was 30–36, 38–42; #36 → #72, #42 → #77 closed) |
 | KI-pending-student-no-memory | phase4 (rebased 10-30) | **final 78** (was 51) |
 | KI-pending-gpu-smoke-own-loop, -ollama-tool-tag, -router-text-tool-call, -wake-greeting-timeout | in `main` (PR #53) | **final 80, 81, 82, 83** (80 and 82 closed; numbered 2026-11-03) |
+| KI-pending-budget-counts-local-tokens, -routed-resume-fingerprint, -ollama-auto-update | in `main` (docs PRs of 11-05) | not numbered yet |
 | KI-pending-training-on-bench, -secret-scrub-v0 | trace-dataset-v0 | **25, 26** |
 
 Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**. Update 2026-11-02: PR #50 merged (decision 29 with it); its pending names are numbered in PR #52 as decisions 30, 31 and issue 79, so **the next free numbers on `main` are decision 32 and issue 80**.
@@ -269,5 +345,7 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | Option a collection and training set: results file, `distill.db`, the dataset (89 examples) | `..\kestrel-runs\evals\results\distill-d1.2-groq-gpt-oss-120b.*`, `..\kestrel-runs\logs\distill.db`, `..\kestrel-runs\data\distill\d1.2-groq-gpt-oss-120b\` | yes, 2026-11-02 backup |
 | Option c evidence: teacher selection, pass 1 collection, its dataset (evidence only), scratch DB | `..\kestrel-runs\evals\results\teacher-selection-5ec57a709a43\`, `...\collect-5cce69cdee15\`, `..\kestrel-runs\data\distill\d1.2-pass1\`, `%TEMP%\distill-d1.2-pass1.db` | yes, 2026-10-31 backup |
 | Student-alone runs F1-F3 (results, reports) and their traces | `..\kestrel-runs\evals\results\student-*`, `..\kestrel-runs\logs\bench.db` | yes, 2026-11-03 (the two safety JSON also pinned in git) |
+| Routed main suite: results, report, 5 logs and traces | `..\kestrel-runs\evals\results\routed-main-r5.*`, `..\kestrel-runs\routed-2026*.log`, `..\kestrel-runs\logs\bench.db` | yes, `C:\kestrel-backup\2026-11-04\` (written 11-05); results also pinned in git |
+| Routed safety group S: results, reports, 2 logs, the cost report and traces | `..\kestrel-runs\evals\results\routed-safety-S-*`, `..\kestrel-runs\routed-safety-S-*.log`, `..\kestrel-runs\logs\bench.db` | yes, `C:\kestrel-backup\2026-11-05\` (10 files, 32 MB, `MANIFEST.txt`); results also pinned in git |
 
 Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-02\` (6 files, 2.2 MB, option a collection and training set, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here. `C:\kestrel-backup\2026-11-03\` (7 files, 24.8 MB: the student-alone results and `bench.db`, `MANIFEST.txt`).

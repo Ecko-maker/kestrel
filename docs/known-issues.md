@@ -43,6 +43,7 @@ A prompt injection can't make Kestrel *send* anything without approval, but it c
 **Labels:** `security`, `medium`
 When Claude Code (or another MCP client) calls `kestrel-mcp`'s `create_note`, Kestrel's gate can't run; the client's own permission prompt is the approval. The call is logged as `approved-by-mcp-client`. Impact is limited (it only adds new files under `workspace/notes/`), but it's a different trust model.
 **Done when:** the server asks via MCP elicitation where the client supports it, or `create_note` is removed from the exposed set.
+**Status (owner decision 2026-11-03, D-pending-mcp-read-only):** remove `create_note` from `kestrel-mcp`, so it exposes read-only tools only. Code change after the Phase 4 routed runs (it touches `src/kestrel/`, so its PR runs the CI evals on Groq).
 
 ### 6. Content-off mode doesn't cover the approval audit log
 **Labels:** `privacy`, `medium`
@@ -163,6 +164,12 @@ The owner labelled 74 answers by 2026-11-03 (result below), but the "done when" 
   - Its 2 disagreements are too lenient: `act-packing-list` and `convo-second-city`, both failed by the owner.
 - **Reading:** each half lacks one of the two outcomes on one side, so kappa is 0 in both. Agreement is high, and the judge errs both ways, as the Phase 2 pass review found.
 - **Status: stays open.** The "done when" below (kappa ≥ 0.6) is not met, and it is not changed after seeing this result.
+
+**Re-check and report (2026-11-08):** `evals/reports/judge-calibration.md`.
+- **Run:** `kestrel bench calibrate --split heldout` on `main` `1cdc693`, stored verdicts only (no re-grading, no model calls). It gives the same numbers as 2026-11-03: held-out 32 labelled answers, agreement 91% (95% CI 78–100%), kappa 0.0, confusion 29 / 3 too strict / 0 too lenient / 0; dev 42.
+- **Verdict:** both halves have 20+ labels, and **kappa 0.0 does not reach 0.6**, so the judge is not calibrated.
+- **Next:** held-out answers the owner would fail are needed before kappa can move, or a different judge re-graded on the labels (Groq quota, owner's OK).
+- **Found:** 32 labels (14 held-out, 18 dev) name the git-ignored `evals/results/run2-v1.1-judge-v2.json`, so on a clean clone `calibrate` skips them as "not found". Their answers and verdicts (score and reason) match the pinned `evals/baselines/run2-v1.1-judge-v2-final.json` 32/32. **Fixed the same day:** the 32 labels now name the pinned copy (`results_file` only), and `calibrate`'s output is identical before and after, and on a clean clone.
 
 **Done when:** the owner has labelled answers in both halves (aim for 20+ per half; label repeats to get more than the 43 rubric tasks), and the README reports held-out agreement and kappa, with kappa ≥ 0.6, or the judge prompt (improved on dev only) or judge model is changed until it is.
 
@@ -545,6 +552,50 @@ The routed main suite's second attempt (2026-11-04, runs folder at `46c54d8`) st
 - Fixed, with `--wait-for-quota` only (other runs keep their exact files): the results file is written before the first token is spent and recording the attempt (`meta.attempts`), then saved after every finished run, atomically (temp file + `os.replace`). A save that fails mid-run warns and the run goes on; one that fails at the start stops before any tokens. `RUN STOPPED: ...` is printed on a line of its own for any exception or Ctrl+C. The same command can't overwrite an existing results file; it points to `--resume`.
 - Tests: `tests/test_bench_killed_run.py` (a child process killed with `os._exit`, at the first call and after a finished run, then `--resume`). Agent, grading and both fingerprints unchanged (default `35fac5ba6277`, routed `4da8f4b3c792`).
 **Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs), and the routed run has passed `act-packing-list` repeat 2.
+
+### KI-pending-budget-counts-local-tokens. `--token-budget` and "billable" count the student's free local tokens
+**Labels:** `evals`, `phase4`, `medium`
+`billable_tokens()` adds up every provider, so on a routed run the student's Ollama tokens count as if they were Groq's. The routed main suite stopped at 320 of 500 runs with `token budget reached (125,576 of 125,446)` when only 42,064 of those were Groq (2026-11-04). Nothing was lost: `--resume` ran the rest. The completed file's `billable_tokens_total` says 202,084 for 68,348 Groq tokens.
+- Effect: a routed run can stop early with quota to spare, and its "billable" total can't be read as Groq use. Never the other way round: the budget can't let a run overspend Groq.
+- Use Groq's number from the traces: `scripts/groq_quota.py` and `bench cost` per provider. Unrouted runs are unaffected (one provider).
+- Not fixed yet, so the code stays the same through the section 8 runs (`docs/phase4-plan.md` 8.7, 2026-11-05).
+**Done when:** the budget and the Groq figure count paid providers only, with a test on a routed run, after the section 8 runs.
+
+### KI-pending-routed-resume-fingerprint. A routed run started with `--model` can't resume
+**Labels:** `evals`, `phase4`, `medium`
+`bench run` checks a resume against a fingerprint hashed with `--model` (`kestrel-student`), but results files record one hashed with the router's label (`kestrel-student -> openai/gpt-oss-120b`). So every such resume stops with "was run by agent 502b95cc0fb8, this one is 4da8f4b3c792 ... resuming would mix two agents", although the agent is the same. The check fails safe: two refused starts on 2026-11-05 cost 0 Groq and wrote nothing.
+- **Workaround (owner's OK, 2026-11-05):** leave out `--model`. With `KESTREL_ROUTER_STUDENT_MODEL` set, the router uses it first, so the same student runs and the label matches; without it the resume is refused.
+- The hint in the refusal is misleading: it blames the prompt, tools or settings.
+**Done when:** the resume check hashes the same label the file records, with a test that resumes a routed run, after the section 8 runs.
+
+### KI-pending-ollama-auto-update. Ollama updated itself in the middle of a measurement
+**Labels:** `evals`, `phase4`, `medium`
+Ollama's Windows app installs updates on its own. It moved from 0.40.13 to 0.40.14 at 15:08 EST on 2026-11-05, between the routed main suite's two segments, and nothing in the bench records the server's version, so it was found only by reading Ollama's logs afterwards. The student's prompt format is checked byte for byte against a named Ollama version (`distill/EXPORT.md`, `scripts/template_parity.py`), and those checks were last run on 0.40.13.
+- Effect: the first 320 routed main runs and the last 180 plus group S ran on different server versions, and **the version changed the student's sampling**: from 0.40.14, Ollama's OpenAI-compatible chat endpoint no longer sets `temperature` and `top_p` to 1.0 when the client sends none, so the Modelfile's 0.7 and 0.8 apply. Read from Ollama's source, not measured. Disclosed in `docs/phase4-plan.md` 8.7, 2026-11-05.
+- Prompts aren't affected: 20/20 on the running 0.40.14 server, 2026-11-05 (`distill/EXPORT.md`).
+- Stopping it: turn off "Auto-download updates" in the Ollama app's settings; the pre-run check in `distill/EVAL.md` step 0 stops a run on any other version.
+- Kestrel still sends no sampling settings, so what the student samples at depends on the Ollama version. The fingerprint's "provider default" doesn't record which.
+**Done when:** bench results record the Ollama server version and a run refuses to resume across a change, and measurements run with the auto-update off or a pinned install.
+
+### KI-pending-fetch-private-addresses. `fetch__fetch` can reach loopback, private and link-local addresses
+**Labels:** `security`, `medium`, `phase-3`
+Found in the 2026-11-03 audit. Nothing in `src/` on any branch checks the address a fetch goes to: `kestrel.mcp.json` lists `fetch__fetch` in `safe_tools` (capabilities `network_egress` only, `mcp_client.py`), and `permissions.required_approval()` gives it no card until a local read has tainted the conversation. So an injected or mistaken fetch of `http://127.0.0.1:11434/api/tags` (Ollama), a LAN device's admin page or `http://169.254.169.254/` runs at once and its response goes to the model. Tiers v2's taint and content check (#4) are about data leaving; this is about reaching things that should never be reached. Not checked: the upstream `mcp-server-fetch==2026.8.18` package's own behaviour (redirects, any address filter).
+- Owner decision 2026-11-03 (D-pending-fetch-private-addresses): **forbid**, never a card.
+- Planned fix, after the Phase 4 routed runs: before the call, refuse a URL whose host is `localhost`, an IP literal or a name that resolves to any address in 127.0.0.0/8, 10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10, 0.0.0.0/8, ::1, fc00::/7, fe80::/10 (Python's `ipaddress`: not `is_global`). Tests for literals, decimal/hex/IPv4-mapped forms, a name resolving to loopback, and a public URL.
+- Still open after that fix: a public host that redirects to a private one, or DNS that changes between the check and the fetch (the fetch server resolves again). Closing those needs the fetch done by Kestrel itself (no redirects, connect to the checked address) or a filtering proxy; decide with the fix.
+**Done when:** the check is in `main` with its tests, and the redirect / re-resolution gap is either closed or recorded with the owner's decision.
+
+### KI-pending-csp-images-only. The console's Content-Security-Policy covers images only
+**Labels:** `security`, `low`, `console`
+Found in the 2026-11-03 audit. `web/app.py` sends `Content-Security-Policy: img-src 'self' [allowlist]` on every response (tiers v2 defense d, tested in `tests/test_console_images.py`). It has no `default-src`, `script-src`, `connect-src`, `frame-ancestors` or `base-uri`, so it is no second line of defense if a script or style injection ever got into the page (React escapes answer text and `Markdown.tsx` renders no raw HTML today, so there is no known hole).
+- Planned fix, after the Phase 4 routed runs: `default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' [allowlist]; style-src 'self' 'unsafe-inline'` (only if the built console needs inline styles: check), `frame-ancestors 'none'; base-uri 'none'; form-action 'self'`. Check the built console and `npm run dev` (Vite's dev server origin is already in `DEV_ORIGINS`) in a browser, and extend `tests/test_console_images.py`.
+**Done when:** the full policy is in `main`, tested, and the console works under it.
+
+### KI-pending-execute-fixed-tier. `ToolRegistry.execute()` checks the tool's fixed tier, not the conversation's
+**Labels:** `security`, `low`
+Found in the 2026-11-03 audit. `execute()` refuses a `confirm` tool without `approved=True`, but it only knows the tool's tier before anything is read (`base_level`). The tiers v2 escalation (a search or fetch that needs a card after a local read, `permissions.required_approval()`) is enforced only in `ApprovalGate`. Every agent path goes through the gate (`agent.py`), so nothing is open today; a new caller that calls `execute()` directly would skip the escalation. Current direct callers: `mcp_server.py` (no session: nothing is read in it) and `bench/preview.py` (offline previews).
+- Planned fix, after the Phase 4 routed runs: `execute()` takes the gate's `Requirement` (or the `Session`) and refuses when the call needs a card it wasn't given; callers without a session say so explicitly. Agent behaviour unchanged; check the agent fingerprint.
+**Done when:** `execute()` can't run a call that `required_approval()` says needs approval, with a test.
 
 ---
 
