@@ -132,3 +132,31 @@ Within 5 points of A (95% confidence): no, or not yet shown with this many tasks
 Warning: the agent differs between the runs (model, provider, router): the difference is NOT run-to-run variance
 Warning: different judges (groq/openai/gpt-oss-120b@v2 vs none): part of the difference may come from grading; re-judge one file with `kestrel bench rejudge` first
 ```
+
+## Derived numbers quoted in the README (added 2026-11-08)
+
+Two summary numbers in the README are computed from the pinned files. Neither is part of the verdict. Each command runs from the repo root, makes no model calls, and works as written in bash and PowerShell.
+
+**94.8% lower list cost** (1 − 0.030/0.574):
+- It comes from the pinned cost report `evals/reports/routed-main-r5.cost.md`, whose per-task table holds both sides' list-price cost.
+- The unrounded figures are $0.0297 against $0.5741 per 1,000 tasks.
+
+```
+uv run python -c "import re;rows=[l.split('|') for l in open('evals/reports/routed-main-r5.cost.md',encoding='utf-8') if re.match(r'\| [a-z]',l) and l.count('|')==7];v=lambda c:float(c.strip().lstrip(chr(36)));r=sum(v(c[3]) for c in rows)/len(rows);t=sum(v(c[6]) for c in rows)/len(rows);print(f'{len(rows)} tasks: routed {r:.4f}, teacher {t:.4f} USD per 1,000 runs; list cost lower by {1-r/t:.1%}')"
+```
+
+Output: `100 tasks: routed 0.0297, teacher 0.5741 USD per 1,000 runs; list cost lower by 94.8%`.
+
+That table was made by `kestrel bench cost evals/after-runs/routed-main-r5.json --db <bench.db> --teacher evals/after-runs/main-after-v21-x3.json --teacher-db <bench.db>` from the runs' traces. `bench.db` isn't in git; it is backed up in `C:\kestrel-backup\2026-11-04\` and `2026-11-05\`.
+
+**Quality ratio 0.970 (89.6% vs 92.3%):**
+- It is the check-pass rate, section 8's primary metric: per task, then averaged over the 100 tasks; routed errors count as fails.
+- It comes from the pinned `evals/after-runs/routed-main-r5.json` (routed) and `evals/after-runs/main-after-v21-x3.json` (teacher), through the same `per_task_score` the pre-registered statistic uses. It agrees with the verdict's 89.6 − 0.95 × 92.3 = +0.0188.
+
+```
+uv run python -c "import json;from kestrel.bench.stats import per_task_score as s;L=lambda p:json.load(open(p,encoding='utf-8'))['tasks'];m=lambda d:sum(sum(v)/len(v) for v in d.values())/len(d);t=m(s(L('evals/after-runs/main-after-v21-x3.json'),'checks',errors_fail=False));r=m(s(L('evals/after-runs/routed-main-r5.json'),'checks',errors_fail=True));print(f'check-pass routed {r:.1%} teacher {t:.1%}; quality ratio {r/t:.3f}')"
+```
+
+Output: `check-pass routed 89.6% teacher 92.3%; quality ratio 0.970`.
+
+**Not the same as the cross-check's "Quality B/A 0.999":** that line compares overall pass status, where the teacher's passes include its judge, while the routed run used `--judge none`. The 0.970 above uses deterministic checks only on both sides, as section 8 does.
