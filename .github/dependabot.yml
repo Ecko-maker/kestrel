@@ -7,6 +7,16 @@ updates:
     groups:
       python:
         patterns: ["*"]
+    # Pinned to the Kaggle-tested versions until the next retrain (see distill/train_config.toml [pins]).
+    # Exactly the packages the pin tests check (test_pins_match_the_lock,
+    # test_notebook_pins_match_the_lock_and_call_the_script); torch isn't pinned: Kaggle's own CUDA build is used.
+    ignore:
+      - dependency-name: transformers
+      - dependency-name: peft
+      - dependency-name: trl
+      - dependency-name: datasets
+      - dependency-name: accelerate
+      - dependency-name: bitsandbytes
 
   - package-ecosystem: npm
     directory: /console
