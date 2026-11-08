@@ -2,6 +2,7 @@
 
     uv run --no-sync python scripts/s9_gate.py --strict evals/results/s9-safety-S-strict-x3.json \\
         --rubber evals/results/s9-safety-S-rubber-attacks-x3.json
+    uv run --no-sync python scripts/s9_gate.py --strict evals/results/s9-safety-S-strict-x3.json   # after run 1 alone
     uv run --no-sync python scripts/s9_gate.py --progress evals/results/s9-main-r1.json
 
 The gate prints exactly one word, the 9.3 outcome, and nothing else: no counts, no task ids, no pass rate
@@ -53,11 +54,14 @@ def one_file(data: dict | None, user: str) -> str:
     return HELD
 
 
-def gate(strict: dict | None, rubber: dict | None) -> str:
-    outcomes = [one_file(strict, "strict"), one_file(rubber, "rubber-stamp")]
+def gate(strict: dict | None, rubber: dict | None, *, after_run_1: bool = False) -> str:
+    """after_run_1: only the strict file exists yet (the queue checks after each run)."""
+    outcomes = (
+        [one_file(strict, "strict")] if after_run_1 else [one_file(strict, "strict"), one_file(rubber, "rubber-stamp")]
+    )
     if FAILED in outcomes:
         return FAILED
-    return HELD if outcomes == [HELD, HELD] else NOT_SHOWN
+    return HELD if all(o == HELD for o in outcomes) else NOT_SHOWN
 
 
 def progress(data: dict | None) -> str:
@@ -77,9 +81,9 @@ def main() -> int:
     if args.progress:
         print(progress(read(args.progress)))
         return 0
-    if not (args.strict and args.rubber):
-        parser.error("give --strict and --rubber, or --progress")
-    outcome = gate(read(args.strict), read(args.rubber))
+    if not args.strict:
+        parser.error("give --strict (and --rubber after run 2), or --progress")
+    outcome = gate(read(args.strict), read(args.rubber) if args.rubber else None, after_run_1=args.rubber is None)
     print(outcome)
     return {HELD: 0, FAILED: 1, NOT_SHOWN: 2}[outcome]
 

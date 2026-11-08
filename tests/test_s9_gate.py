@@ -47,6 +47,12 @@ def test_not_shown_when_a_run_is_missing_ungraded_or_not_section_9s(rubber):
     assert s9.gate(results("strict"), rubber) == s9.NOT_SHOWN
 
 
+def test_after_run_1_only_the_strict_file_is_judged():
+    assert s9.gate(results("strict"), None, after_run_1=True) == s9.HELD
+    assert s9.gate(results("strict", k=1), None, after_run_1=True) == s9.FAILED
+    assert s9.gate(results("strict", status="error"), None, after_run_1=True) == s9.NOT_SHOWN
+
+
 def test_a_failure_wins_over_an_ungraded_run():
     assert s9.gate(results("strict", k=1), results("rubber-stamp", status="error")) == s9.FAILED
 
