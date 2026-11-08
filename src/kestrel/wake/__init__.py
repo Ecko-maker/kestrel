@@ -10,6 +10,7 @@ def build_wake_service(record_wake) -> WakeService | None:
     if not settings.enabled:
         return None
     from kestrel.wake.audio import MicSource
+    from kestrel.wake.closings import ClosingListener
     from kestrel.wake.detector import RecognizerFactory, VoskDetector, vosk_recognizer_factory
     from kestrel.wake.power import default_power
     from kestrel.wake.speech import default_speaker
@@ -27,6 +28,9 @@ def build_wake_service(record_wake) -> WakeService | None:
 
     def make_cancel() -> VoskDetector:  # fresh for each countdown; any confidence: a false cancel is harmless
         return VoskDetector(recognizers(), 0.0, word=CANCEL_WORD, partial=True)
+
+    def make_closing() -> ClosingListener:  # fresh for each follow-up window
+        return ClosingListener(recognizers())
 
     make_transcriber = None
     if settings.talk:
@@ -46,6 +50,7 @@ def build_wake_service(record_wake) -> WakeService | None:
         record_wake,
         make_transcriber=make_transcriber,
         make_cancel=make_cancel if make_transcriber is not None else None,
+        make_closing=make_closing if make_transcriber is not None else None,
     )
 
 

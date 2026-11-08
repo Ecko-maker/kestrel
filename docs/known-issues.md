@@ -318,6 +318,11 @@ an answer. Mitigation: spoken text never contains the name ("Kestrel" becomes "I
 fixed sentences avoid it), and the recorder ignores audio while Kestrel is speaking (the greeting is
 never taken for your request). Words that merely sound like "kestrel" can still wake it during speech;
 not measured.
+- 2026-11-07: while it speaks and for 1 s after, a wake needs a score of 0.98 (`SELF_WAKE_THRESHOLD`), and rule B
+  stops "kestrel" after other speech. Measured on 52 of Kestrel's own answers rendered with its voice (clean audio,
+  no room): one "kestrel" heard, at score 1.0, which neither rule stops. Of the 50 live wakes on 11-05/06, 4-6
+  started during its speech (estimated from trace times). `scripts/play_answers.py` plays the answers aloud for a
+  room recording, the measurement still missing.
 **Done when:** a spoken answer read at normal volume next to the microphone is measured not to wake
 Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
 recorded in docs/voice-wake.md.
@@ -587,6 +592,13 @@ Since 2026-11-07 (`src/kestrel/netguard.py`, the code for KI-pending-fetch-priva
 - **Measured:** the 209 fetch calls in the pinned results files (81 benign, 128 attack; the main suite fetches nothing) replayed through the check: 0 refused. The CI subset on the PR is the live check.
 - **Full fix:** fetch through Kestrel itself (connect to the checked address, no redirects or each hop re-checked), or run the fetch server in a sandbox with no route to private networks.
 **Done when:** redirects and re-resolution can't reach a private address, with a test, or the owner decides the URL check is enough.
+
+### KI-pending-followup-background-speech. The follow-up window takes a podcast or a TV for a request
+**Labels:** `voice`, `high`
+The window has no wake word, so any speech in the room starts the normal path. On 1.00 h of podcast in the room (2026-11-05, `scripts/closings_eval.py`, 200 windows at random points, seed 2026): 0 false closings (0/200, 95% CI 0-1.8%), but **176 false requests (88%, 95% CI 83-92%)**, 15 checks, 8 dropped, 1 silence. A false request is sent after the 2-second countdown unless cancelled, spoken back, and that answer opens another window, so it can **chain with no one talking, spending model calls** (Groq quota on a real provider). Podcast audio out loud is the worst case; a quiet room isn't measured yet.
+- Options for the owner, none built: only one follow-up per wake (a follow-up's answer opens no window); no window when the room's noise floor shows speech; a follow-up always asks on screen ("check") instead of the countdown. They can be combined.
+- Until decided: `KESTREL_TALK_FOLLOWUP_SECONDS=0` when something is playing.
+**Done when:** the owner picks a rule, it is built, and `closings_eval.py` shows the result on the same audio.
 
 ---
 

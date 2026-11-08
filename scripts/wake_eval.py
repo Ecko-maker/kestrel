@@ -6,7 +6,7 @@
 - False wakes per hour: on background audio with no "Kestrel" in it (a podcast, TV), counting the
   10-second cooldown the live service applies.
 - Old and new grammar side by side: "kestrel" + "[unk]" (before 2026-10-26) and with the greetings
-  added (now). The wake rule is the same for both: "kestrel" anywhere in the utterance.
+  added (now). The wake rule is the same for both: rule B, "kestrel" with nothing unknown before it.
 - CPU: process time per second of audio (new grammar).
 
 Every threshold is reported, so the threshold (KESTREL_WAKE_THRESHOLD) can be chosen from the
@@ -152,7 +152,8 @@ def main() -> int:
 
     share = 100 * cpu / max(audio_s, 1e-9)
     print(f"{n} clips with 'Kestrel', {hours:.2f} h of background; CPU {share:.1f}% of one core")
-    print("new = grammar with greetings (now); old = 'kestrel' + [unk] only. Wake rule: 'kestrel' anywhere.")
+    print("new = grammar with greetings (now); old = 'kestrel' + [unk] only.")
+    print("Wake rule (both): B, nothing unknown before 'kestrel'.")
     print(
         f"{'threshold':>9}  {'detected (new)':>14}  {'95% CI':>9}  {'old':>6}  {'false/h new':>11}  {'false/h old':>11}"
     )

@@ -510,6 +510,14 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** the failure's cause is narrow and named in advance, and a new frozen measurement keeps any later claim honest. Section 8's result is reported beside whatever section 9 finds.
 
+## D-pending-wake-rule-b. Rule B for the wake word, a stricter wake while Kestrel speaks, and one Speaker switch (owner, 2026-11-07)
+
+**Decision:** "kestrel" wakes Kestrel only with nothing but known greetings before it in the utterance (rule B), replacing "kestrel anywhere". While Kestrel speaks and for 1 s after, a wake needs a score of 0.98. The console's Speaker switch is one setting the server holds for every console and applies at once; off silences everything Kestrel says.
+
+**Alternatives:** a higher threshold everywhere (measured: no help, the false wakes scored like real ones); no wakes at all while speaking (loses saying "Kestrel" to interrupt); speaker verification (later, if these aren't enough).
+
+**Why:** 32 of 50 live wakes on 11-05/06 had no answer before them, and rule B took the podcast hour from 2 false wakes to 0 without losing a clip. The switch did nothing until the next spoken request, so it couldn't stop a greeting or an answer already playing.
+
 ## D-pending-fetch-private-addresses. Fetches to private, loopback and link-local addresses are forbidden
 
 **Decision (owner, 2026-11-03, after the audit):** a `fetch__fetch` call whose host is `localhost`, an IP literal or a name resolving to a non-global address (loopback, RFC 1918, link-local, CGNAT, unique-local) is refused outright, like `deletes_local`: no approval card can let it through. Known issue KI-pending-fetch-private-addresses has the address list and the planned check.
@@ -527,3 +535,13 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** MCP elicitation where the client supports it and refuse otherwise (more code, depends on each client); keep the client's prompt as the approval (#5 stays open).
 
 **Why:** Kestrel's gate is the one place approval is decided; a tool that is approved somewhere else is a second trust model to explain and test. Claude Code loses the ability to add notes through `kestrel-mcp`.
+
+## D-pending-followup-closings. A follow-up window after spoken answers, and closings handled only by a Vosk grammar
+
+**Decision (owner, 2026-11-05):** after a spoken answer, listen for 5 s without the wake word. A small Vosk grammar hears closings first and gets a fixed local reply, with no model, chat message or tool. Anything else takes the normal path. "Thank you" stays on Whisper's filler list.
+
+**How it works:** `wake/closings.py` holds the grammar, the replies and `FollowupWindow`, the same code in the live service and `scripts/closings_eval.py`. A closing must be the whole utterance, decided at its end, never on a partial result.
+
+**Alternatives:** take "thank you" off the filler list and let Whisper hear closings (Whisper invents it on silence, the reason it is a filler); act on Vosk's partial result as the spoken "cancel" does (faster, but "thanks, now list my files" would be taken for a closing, and a false cancel is harmless where a lost request isn't).
+
+**Why:** a thank-you is the commonest thing said after an answer, and it shouldn't cost a model call or put a message in the chat. Open: the window takes speech in the room for a request (KI-pending-followup-background-speech).
