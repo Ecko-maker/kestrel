@@ -4,13 +4,17 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-05 night, from the after-section-8 session (log below).
+2026-11-08, from the demo-video docs session (log below).
 
 ## Now
 
 **Tiers v2.1, the console, voice and the Phase 4 tooling are all in `main`:** tiers v2.1 (PR #27, `02c1d2e`), `console/hud-theme` (PR #29, `7664103`, no evals), voice (PR #31, `d746e9c`, 2026-10-29 21:22 EDT) `phase4/trace-dataset` (PR #37, `4290fc6`, 2026-10-30 17:45 EDT) `phase4/kaggle-teacher` + `phase4/student-eval` (PR #50, `43d5522`, 2026-11-02 19:55 UTC) and `phase4/export-readiness` (PR #53, `2cb2a4b`, 2026-11-03 00:55 UTC: the first trained student's export path, the Ollama tool-call tag fix, the router's `text_tool_call` escalation). The same-day drift control for known issue #58 ran (gross drift not shown; #58 stays open). Memory stays parked until after Phase 4. Nothing is running. **Section 8's outcome, applied as frozen: FAIL.** The Phase 4 gate is not passed. Report: `evals/reports/phase4-result.md`.
 
 **The single next step:** build decision 9's fix on `phase4/tainted-to-teacher` (rule A + explicit sampling + the two bench bugs, owner's OK 11-05; push only, no PR), then the owner reviews section 9 with its power results (`docs/phase4-section9-proposal.md`, a draft) before freezing it. Secondary metric: "not run yet".
+
+## 2026-11-08 (demo-video docs session; no Groq from the session)
+
+1. **Demo video published:** [Demo (1:50)](https://youtu.be/kglrGnkzt_I), linked near the top of README.md. Scene 3 uses a scripted model to show the approval gate stopping a prompt injection; the closing slide's numbers are the measured ones, each linked in README's Results section. Phase 5's demo video is done; the posts are not.
 
 ## 2026-11-05 night (after-section-8 session; no Groq from the session)
 
@@ -170,7 +174,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 2 Evals | done, except judge calibration (#21: 35 labels, dev 20 / held-out 15, PR #47) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
 | 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29, decision 17); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); `phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) |
 | 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate), gate not passed (`evals/reports/phase4-result.md`) | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
-| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video and posts not started | `voice/talk` (`docs/voice-wake.md`); CI green |
+| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); posts not started | `voice/talk` (`docs/voice-wake.md`); CI green; [demo video](https://youtu.be/kglrGnkzt_I) |
 
 ## Branches
 
