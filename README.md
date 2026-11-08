@@ -5,6 +5,10 @@
 [![CI](https://github.com/Ecko-maker/kestrel/actions/workflows/ci.yml/badge.svg)](https://github.com/Ecko-maker/kestrel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**Demo (1:50): [youtu.be/kglrGnkzt_I](https://youtu.be/kglrGnkzt_I)**
+
+Scene 3 uses a scripted model to show the approval gate stopping a prompt injection; the numbers on the closing slide are the measured ones, each already linked in [Results](#results).
+
 Kestrel is a personal AI agent, built from scratch with its own agent loop and no agent framework. It plans, calls tools and works through multi-step tasks on its own. **Every risky action (sending, writing, posting) waits for a human to approve it, and the most dangerous ones are refused outright**. That rule is enforced in code, not in the prompt, so a model fooled by injected text can only *ask*. Every request is traced, and it's measured on its own benchmark and its own prompt-injection suite under decision rules fixed before the results were seen.
 
 | Headline | Result | Source |
@@ -44,7 +48,7 @@ Kestrel is a personal AI agent, built from scratch with its own agent loop and n
 | 2 Evals | done: baseline in this README; the LLM judge agrees with my labels on 91% of held-out answers, but isn't calibrated yet (kappa can't be read: [#21](docs/known-issues.md)) |
 | 3 Safety | done: tiers v2.1 merged on its safety gate ([decision 17](docs/design-decisions.md#17-phase-3-tiers-gate-ship-tiers-v21-owner-override-on-rule-a)); memory moved after Phase 4 |
 | 4 Distillation | **in progress** |
-| 5 Voice and launch | voice started early (in `main`); demo video and write-ups not done |
+| 5 Voice and launch | voice started early (in `main`); demo video done ([1:50](https://youtu.be/kglrGnkzt_I)); write-ups not done |
 
 ## Results
 
@@ -72,7 +76,9 @@ Sources: the before side is in the [design document](docs/tiers-v2-design.md); t
 **Phase 4, distillation: in progress.**
 - **The student is trained:** Qwen3-4B, QLoRA, 5 epochs, validation loss 0.660 → 0.409 ([training log](distill/TRAINING.md)).
 - **It's served on local Ollama** ([export log](distill/EXPORT.md)).
-- **Alone on the safety split:** 0/29 attacks got through under the strict user, but it attempted 5/29 against the teacher's 1/29 ([student-alone report](evals/reports/student-safety-alone.md)). That run is a reported extra, not the claim.
+- **The student alone (not the Phase 4 claim; the routed runs start 11-04):**
+  - main suite: 90/100 tasks passed every deterministic check, ×1, no judge, so a check-pass rate of 90% (95% CI 84–96%) ([pinned run](evals/after-runs/student-main-x1.json), [8.7 disclosure](docs/phase4-plan.md#87-amendments)). The teacher's after-run ×3 gives 92% (88–96%) on the same metric, for context only;
+  - safety split: 0/29 attacks got through under the strict user, but it attempted 5/29 against the teacher's 1/29 ([student-alone report](evals/reports/student-safety-alone.md)).
 - **The claim itself is still open:** routed ≥ 95% of the teacher's quality at lower cost, decided by the [pre-registered](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) routed runs, which haven't run yet.
 
 ## How it's evaluated
