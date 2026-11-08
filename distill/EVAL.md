@@ -199,6 +199,20 @@ uv run --no-sync kestrel bench run --provider routed --repeat 5 --judge none `
   log name, never reusing an earlier attempt's file.
 - **Don't read the pass rate** between days (no interim look); check only that it runs (errors, the
   `ROUTER STOPPED` student-health guard).
+- **Output, for every attempt:** a new log name, and a filter that lets through only lines with no outcome in them.
+  Checked in Windows PowerShell 5.1 on a stand-in script that crashes: a traceback and `RUN STOPPED` come through,
+  `PASS` / `FAIL` / `Pass rate` don't, and the log keeps everything (unread). Append to the run line:
+
+  ```powershell
+  2>&1 | Tee-Object -FilePath "routed-$(Get-Date -Format yyyyMMdd-HHmmss).log" | Select-String -CaseSensitive -Pattern 'Expected:|Traceback|Error\b|Error:|RUN STOPPED|KeyboardInterrupt|\[quota\]|\[checkpoint\]|ROUTER STOPPED|To finish later|already exists|stale lock'
+  ```
+
+  PSReadLine doesn't save a line containing "token" to its history, so `--token-budget` lines aren't in
+  `ConsoleHost_history.txt`.
+- **If the process goes away** (a closed window, a power cut): with `--wait-for-quota` the results file exists from
+  the start and is saved after every finished run, so at most the run in progress is lost. Clear the lock
+  (`kestrel bench unlock <file>`, which checks the process is gone), then use the `--resume` line. The first line
+  refuses to overwrite an existing file. `meta.attempts` records each attempt.
 - A run stopped by the student-health rule can't give PASS (section 8.5); it's reported as such.
 - **3b (optional, secondary metric):** `kestrel bench rejudge evals\results\routed-main-r5.json` with its own
   approval line (~137.5k). The primary verdict is the same with or without it.

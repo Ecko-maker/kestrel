@@ -84,7 +84,7 @@ BILLABLE_SHARE = 0.75
 PINNED_REFERENCE = RESULTS_DIR.parent / "baselines" / "run2-v1.1-judge-v2-final.json"
 GROQ_FREE_DAILY = {"tokens": 200_000, "requests": 1_000}  # gpt-oss-120b free tier, cached tokens excluded
 DONE = ("pass", "fail", "excluded")  # results a resumed run keeps
-WAITING = "not run yet: waiting for the daily limit (checkpoint; --resume continues)"
+WAITING = "not run yet (checkpoint; --resume continues)"
 SPLITS = ("main", "safety")  # what `validate` checks
 RUN_SPLITS = (*SPLITS, "distill")  # what `run` runs
 REUSABLE = ("pass", "fail")
@@ -463,11 +463,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{label}.json"
     if args.dry_run:
         return _run(args)
+    if args.wait_for_quota and not args.resume and args.out.exists():  # it may hold a killed run's finished work
+        sys.exit(f"{args.out} already exists. Continue it with --resume {args.out}, or choose another --out.")
     try:
         with results_lock(args.out, args.resume):
             return _run(args)
     except LockError as e:
         sys.exit(str(e))
+    except (Exception, KeyboardInterrupt) as e:  # one line with no outcome in it, for a filter to let through
+        kept = f" Finished runs are in {args.out}; continue with --resume." if args.wait_for_quota else ""
+        print(f"RUN STOPPED: {type(e).__name__}: {ascii(str(e))[:300]}.{kept}", flush=True)
+        raise
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -502,9 +508,11 @@ def _run(args: argparse.Namespace) -> int:
     agent = agent_fingerprint(args.provider, resolved, registry)
     previous: dict[tuple[str, int, str | None], TaskResult] = {}  # (task, repeat, user)
     tasks_dir, workspace = _split_dirs(args)
+    earlier_attempts: list[dict[str, Any]] = []
     if args.resume:
         old = _load(args.resume)
         old_meta = old.get("meta", {})
+        earlier_attempts = old_meta.get("attempts", [])
         if old_meta.get("split", "main") != args.split:
             sys.exit(f"{args.resume.name} is a {old_meta.get('split', 'main')} split run, not {args.split}.")
         if old_meta.get("split") == "safety" and old_meta.get("user") != args.user:  # strict / rubber-stamp / both
@@ -661,6 +669,21 @@ def _run(args: argparse.Namespace) -> int:
         sections = {"safety": score_dict(score([r.to_dict() for r in rows]))} if safety else None
         write_results(out, rows, meta, extra=sections)
 
+    def finished_run(user: str | None, done: list[TaskResult], r: TaskResult) -> None:
+        """Save first, then print: a closed window kills the process with no chance to save afterwards."""
+        done.append(r)
+        if r.status != "skipped":
+            try:
+                checkpoint(user, done)
+            except OSError as e:  # e.g. a virus scanner holding the file: the next finished run saves it all
+                print(f"[checkpoint] could not save, the next run tries again: {ascii(str(e))[:200]}", flush=True)
+        _progress(r)
+
+    if args.wait_for_quota:  # only then, so every other run keeps its exact meta and file timing
+        started = datetime.now().astimezone().isoformat(timespec="seconds")
+        meta["attempts"] = [*earlier_attempts, {"started": started, "git": meta["git"], "pid": os.getpid()}]
+        checkpoint(None, [])  # the file exists before the first token is spent, and records this attempt
+
     tracer = Tracer(DISTILL_DB if args.split == "distill" else BENCH_DB)
     for user in users:  # one pass per scripted user (main split: one pass)
         jobs = [(t, k) for t, k, u in todo if u == user]
@@ -684,7 +707,7 @@ def _run(args: argparse.Namespace) -> int:
             judge,
             tracer,
             pause=args.pause,
-            on_result=_progress,
+            on_result=functools.partial(finished_run, user, []) if args.wait_for_quota else _progress,
             expected_provider=None if args.scripted else args.provider,
             token_budget=None if args.token_budget is None else max(0, args.token_budget - spent),
             repeats=[k for _, k in jobs],
@@ -708,13 +731,13 @@ def _run(args: argparse.Namespace) -> int:
         scored = score([r.to_dict() for r in results])
         data = write_results(out, results, meta, extra={"safety": score_dict(scored)})
         report = markdown_safety(data)
-        out.with_suffix(".md").write_text(report, encoding="utf-8")
+        out.with_suffix(".md").write_text(report, encoding="utf-8", errors="backslashreplace")
         print("\n" + report + f"\nResults: {out}\nReport:  {out.with_suffix('.md')}")
         if any(r.status in ("skipped", "error") for r in results):
             print(f"To finish later: uv run kestrel bench run --split safety --resume {out} [same options]")
         return 0
     data = write_results(out, results, meta)
-    out.with_suffix(".md").write_text(markdown(data), encoding="utf-8")
+    out.with_suffix(".md").write_text(markdown(data), encoding="utf-8", errors="backslashreplace")
     s = data["summary"]
     ci = s["pass_rate_ci"]
     print(
