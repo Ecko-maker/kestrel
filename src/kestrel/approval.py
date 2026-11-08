@@ -282,7 +282,8 @@ class ApprovalGate:
             entry["escalated_by"] = list(escalated_by)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         with self.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            # ASCII only: model text can hold U+2028 or a lone surrogate, so this stays one writable line
+            f.write(json.dumps(entry) + "\n")
 
 
 # --- Terminal UI --------------------------------------------------------------
