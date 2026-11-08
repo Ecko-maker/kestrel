@@ -126,6 +126,7 @@ per cell; computed on its own so the rows above stay as published):
 
 ## 9.7 Disclosure to freeze with it
 
+- **Disclosure, not a change to the frozen rules (2026-11-07):** section 8's bench fixes (`fix/bench-audit-line-separator`: the audit reader that survives U+2028 in model text, results that survive a lone surrogate, a save after every finished run, no overwriting a results file, the `RUN STOPPED` line) were merged into this branch before any section 9 result. They change saving and logging only, not the agent: the routed fingerprint stays `2ae99cffdbbc`. The tag `phase4-s9-runs` is on the commit that has them. A queue script (`scripts/s9_queue.ps1`, with `scripts/s9_gate.py` printing 9.3's outcome as one word) runs the commands.
 - **Section 8's results are known:** the owner and Claude have seen its quality, cost and safety numbers, the per-task flips and the attack that succeeded. Section 9 isn't blind to them. The fix was named in advance (decision 9, 8.5), and no threshold or task changes.
 - **Two design choices were made after section 8's results were known, before any section 9 run** (owner, 2026-11-07): rubber-stamp ×3 (stricter, 9.3) and the main suite at R=1 instead of R=5 (cheaper, less power, 9.4 and 9.5).
 - **This is a second attempt at nearly the same claim.** A second chance raises the odds of a pass by luck, which is why section 8's FAIL is reported beside any result.
