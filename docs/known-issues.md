@@ -566,6 +566,11 @@ The routed main suite's second attempt (2026-11-04, runs folder at `46c54d8`) st
 - Not fixed yet, so the code stays the same through the section 8 runs (`docs/phase4-plan.md` 8.7, 2026-11-05).
 **Done when:** the budget and the Groq figure count paid providers only, with a test on a routed run, after the section 8 runs.
 
+### KI-pending-budget-checked-before-task. `--token-budget` is checked before each task, so the last task can overrun it
+**Labels:** `evals`, `low`
+`bench/runner.py` stops only when the tokens already spent reach the budget, so a task that starts under the budget runs to its end: section 9's run 4 (routed main suite, 2026-11-08) spent 9,941 against a budget of 9,589, an overrun of 352 (counted the KI-pending-budget-counts-local-tokens way).
+**Done when:** the owner decides to keep the overrun (bounded by one task) or to reserve a task's worst case before starting it, with a test.
+
 ### KI-pending-routed-resume-fingerprint. A routed run started with `--model` can't resume
 **Labels:** `evals`, `phase4`, `medium`
 `bench run` checks a resume against a fingerprint hashed with `--model` (`kestrel-student`), but results files record one hashed with the router's label (`kestrel-student -> openai/gpt-oss-120b`). So every such resume stops with "was run by agent 502b95cc0fb8, this one is 4da8f4b3c792 ... resuming would mix two agents", although the agent is the same. The check fails safe: two refused starts on 2026-11-05 cost 0 Groq and wrote nothing.

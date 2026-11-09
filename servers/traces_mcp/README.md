@@ -38,7 +38,7 @@ appear as `mcp__kestrel-traces__*`.
 
 **Checked with a real client (2026-11-08):**
 - **Over stdio:** started exactly as `.mcp.json` starts it, with the MCP SDK's stdio client. It listed the 4 tools; `trace_stats()` on the development `logs/traces.db` returned 1,401 characters of metadata, no error.
-- **From Claude Code:** `claude mcp list` sees it ("Pending approval"). One tool call from Claude Code waits for the owner's approval in an interactive `claude` session.
+- **From Claude Code (2026-11-09):** approved by the owner; `claude mcp list` shows it "Connected". One call from a Claude Code session (`claude -p`, allowed tools limited to this one), `mcp__kestrel-traces__trace_stats()`, succeeded: no error, metadata only (requests, latency p50/p95, tokens, cost, tool calls, approvals, error and fallback rates, ratings), no message text.
 
 For another project, the same entry with the repo's path:
 

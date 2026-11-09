@@ -34,7 +34,7 @@ uv run --directory C:\path\to\kestrel --no-sync python -m servers.kestrelbench_m
 
 **Checked with a real client (2026-11-08):**
 - **Over stdio:** started exactly as `.mcp.json` starts it, with the MCP SDK's stdio client. It listed the 5 tools; `list_runs(folder="baselines")` returned 644 characters, no error.
-- **From Claude Code:** `claude mcp list` sees it ("Pending approval"). One tool call from Claude Code waits for the owner's approval in an interactive `claude` session.
+- **From Claude Code (2026-11-09):** approved by the owner; `claude mcp list` shows it "Connected". One call from a Claude Code session (`claude -p`, allowed tools limited to this one), `mcp__kestrelbench__list_runs(folder="baselines")`, succeeded: no error, a JSON object with one key, `runs`.
 
 For another project, the same entry with the repo's path:
 
