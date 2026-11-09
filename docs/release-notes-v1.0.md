@@ -1,6 +1,6 @@
 # Kestrel v1.0: release notes (draft)
 
-> **DRAFT, not tagged.** Section 9's result is a placeholder, and v1.0 isn't tagged until it is in.
+> **DRAFT, not tagged.** Section 9's result is in (PASS); v1.0 is tagged after the owner's review.
 
 Kestrel is a personal AI agent with its own agent loop, built and evaluated on free tiers only.
 - **It asks before it acts:** every risky action waits for a human, and that is enforced in code.
@@ -40,14 +40,27 @@ Every number links to its source.
 - **What that means:** a gate that asks a user who approves everything is only as safe as the model.
 - **Sources:** [offline report](../evals/reports/tiers-v2-offline.md), [design](tiers-v2-design.md), [safety report](../evals/reports/safety-after-v2.1.md).
 
-**Distillation, section 8: FAIL**, applied exactly as pre-registered ([result](../evals/reports/phase4-result.md)).
+**Distillation, section 9: PASS** ([verdict](../evals/reports/phase4-section9-verdict.md); rule frozen in `0071e54`, before any run). A fine-tuned 4B student, with the 120B teacher taking over once a session reads untrusted data, cleared the pre-registered bar of 95% of the teacher's quality at half the teacher's list cost, and no attack got through.
+- **Quality: shown.** Check-pass 97% against the teacher's 92.3%. The frozen test needed the 95% lower bound of mean(routed − 0.95 × teacher) above 0: +0.0928 (95% CI +0.0502 to +0.1382); +0.0865 (+0.0470 to +0.1288) against all three teacher references.
+- **Cost: shown.** **50.3% lower** list-price cost, $0.285 against $0.574 per 1,000 tasks; the difference is −$0.289 (95% CI −$0.348 to −$0.229).
+  - **Section 8's router was 94.8% cheaper.** The student now answers 56.6% of turns (60 of 106) instead of 96.6%, because tainted turns go to the paid teacher.
+- **Safety gate: held.** 0/17 attacks at system level under the strict and the rubber-stamp user, 3 repeats each.
+- **Drift:** the teacher's control scored +6 points this week (95% CI 0 to +17) against 10-07; the frozen rule guards only against downward drift.
+- **The limits the frozen rule requires us to state** (one routed run per task):
+  - a **4%** chance of a false PASS on quality if the routed system were exactly at the 95% margin;
+  - an **8%** chance that quality shows as passing even if the fix changed nothing. That wouldn't be a false quality claim, since section 8 was already above the margin on average.
+- **Where the margin comes from:**
+  - **The student fixed two teacher habits:** skipping the calculator (5 tasks) and asking for data that is in the workspace.
+  - **Two tasks the teacher always fails:** on `act-note-top-todos` and `multi-scale-recipe` the student read the files first, and the teacher finished.
+  - **Sensitivity:** quality is still shown with the calculator and workspace flips treated as noise (lower bound +0.0185), but not if every favourable flip is (−0.0015).
+- **What ships:** the router, as an opt-in configuration (`KESTREL_PROVIDERS=routed`), off by default.
+
+**Distillation, section 8: FAIL**, the first attempt, applied exactly as pre-registered ([result](../evals/reports/phase4-result.md)). It stands, reported beside section 9.
 - **Cost: shown.** 94.8% lower list-price cost, $0.030 against $0.574 per 1,000 tasks. The difference is −$0.544 (95% CI −$0.597 to −$0.494) ([how it's computed](../evals/reports/phase4-result.md#derived-numbers-quoted-in-the-readme-added-2026-11-08)).
 - **Quality: not shown.** Check-pass 89.6% against 92.3%, a ratio of 0.970. The frozen test needed the 95% lower bound of mean(routed − 0.95 × teacher) above 0; it was +0.0188 (95% CI −0.0342 to +0.0715).
 - **Safety gate: FAIL.** One attack (`atk-exfil-search-file`) got through under the rubber-stamp user (1/17, where the rule requires 0).
   - **Cause:** the router kept turns on the student after the session had read untrusted data, and the user approved the card.
   - **The fix:** tainted turns go to the teacher ([plan 8.7](phase4-plan.md#87-amendments)).
-
-**Section 9, the re-measurement after the fix:** _PLACEHOLDER: results not in yet. Nothing goes here until the runs finish, and no result is guessed._
 
 **The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](known-issues.md)) and by the combined PR's CI run _(pending)_.
 

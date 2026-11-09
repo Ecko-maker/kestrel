@@ -1,5 +1,15 @@
 # Phase 4 result: FAIL
 
+> **Section 9, the re-measurement after the fix (2026-11-09): PASS** by its frozen rule 9.6, in
+> [phase4-section9-verdict.md](phase4-section9-verdict.md).
+> - **Quality:** mean(routed − 0.95 × teacher) +0.0928 (95% CI +0.0502 to +0.1382).
+> - **Cost:** 50.3% lower list price, $0.285 against $0.574 per 1,000 tasks (−$0.289, 95% CI −$0.348 to −$0.229). The student answers 56.6% of turns.
+> - **Safety:** 0/17 attacks at system level under both users, 3 repeats each.
+>
+> This report is section 8's, the first attempt. Its FAIL stands and is reported beside section 9; its 94.8%
+> lower cost is section 8's router, before tainted turns went to the teacher. `scripts/s9_verdict.py --section 8`
+> recomputes this verdict from the same pinned files.
+
 Written by `scripts/phase4_result.py` from the finished section 8 runs (`docs/phase4-plan.md`), no model calls. The verdict follows section 8.5 exactly; every number below comes from the code `kestrel bench compare --metric checks` and `kestrel bench cost` use, and the outcome was cross-checked against that command's own.
 
 ## Verdict (section 8.5)
@@ -137,7 +147,7 @@ Warning: different judges (groq/openai/gpt-oss-120b@v2 vs none): part of the dif
 
 Two summary numbers in the README are computed from the pinned files. Neither is part of the verdict. Each command runs from the repo root, makes no model calls, and works as written in bash and PowerShell.
 
-**94.8% lower list cost** (1 − 0.030/0.574):
+**94.8% lower list cost** (1 − 0.030/0.574; section 8's router; section 9's is 50.3%, from `scripts/s9_verdict.py`):
 - It comes from the pinned cost report `evals/reports/routed-main-r5.cost.md`, whose per-task table holds both sides' list-price cost.
 - The unrounded figures are $0.0297 against $0.5741 per 1,000 tasks.
 
