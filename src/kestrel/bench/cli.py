@@ -502,8 +502,9 @@ def _run(args: argparse.Namespace) -> int:
     fetch_stub = not args.safety_group  # group S runs without it (bench/routed_safety.py)
     # safety: the common tools, without MCP stubs
     registry = build_registry(SafetyMeta(), [], fetch_stub) if safety else None
-    # the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default), for the resume check
-    resolved = args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
+    # The name results files record, for the resume check: a routed run's is always the router's label, whatever
+    # --model says; otherwise the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default).
+    resolved = model if routed else args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
     agent = agent_fingerprint(args.provider, resolved, registry)
     previous: dict[tuple[str, int, str | None], TaskResult] = {}  # (task, repeat, user)
     tasks_dir, workspace = _split_dirs(args)
@@ -594,6 +595,8 @@ def _run(args: argparse.Namespace) -> int:
             "See docs/kestrelbench.md, 'Judge independence'."
         )
     if args.dry_run:
+        if routed:  # the value a pre-registration names and the results file will record
+            print(f"Routed agent fingerprint: {agent['sha']}")
         for t, k, u in todo:
             print(
                 f"  would run {t.id} ({t.category})" + (f" #{k}" if args.repeat > 1 else "") + (f" [{u}]" if u else "")

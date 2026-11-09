@@ -84,7 +84,7 @@ Where each phase stands, the live run, branches, Groq calendar and open owner de
 - **Parked work, archived as tags (2026-11-08), not merged until after the Phase 4 measurements:**
   - memory: `archive/phase3/memory-rag` (design, `docs/memory-rag-design.md`), `archive/phase3/memory`, `archive/phase3/memory-evals`, `archive/phase3/search-spike`;
   - Phase 4: `archive/phase4/results-kit`, `archive/bench/student-alone-label`;
-  - Phase 5's 2 MCP servers, future work: `archive/phase5/mcp-servers`.
+  - Phase 5's 2 MCP servers: `archive/phase5/mcp-servers` (tag kept); the code comes back via the combined PR after #79 (owner, 2026-11-08).
   - Restore one with `git switch -c <branch> archive/<branch>`.
 
 ### Phase 1 steps

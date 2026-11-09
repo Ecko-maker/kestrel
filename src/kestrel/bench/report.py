@@ -101,7 +101,13 @@ def summarize(results: list[TaskResult] | list[dict[str, Any]]) -> dict[str, Any
         "tokens_total": sum(r["tokens"] for r in rows),
         "judge_tokens_total": sum(r.get("judge_tokens", 0) for r in rows),
         "cached_tokens_total": sum(r.get("cached_tokens", 0) for r in rows),
-        "billable_tokens_total": sum(r["tokens"] + r.get("judge_tokens", 0) - r.get("cached_tokens", 0) for r in rows),
+        "billable_tokens_total": sum(
+            r["tokens"]
+            + r.get("judge_tokens", 0)
+            - r.get("cached_tokens", 0)
+            - (r.get("routing") or {}).get("free_tokens", 0)
+            for r in rows
+        ),
         "tokens_per_task": round(statistics.mean(r["tokens"] for r in graded)) if graded else None,
         "latency_p50_ms": round(statistics.median(latencies)) if latencies else None,
     }

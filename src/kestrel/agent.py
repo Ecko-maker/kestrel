@@ -154,7 +154,7 @@ class Agent:
         self.session.note_user(user_text)
         steps, providers, tools_used = 0, [], Counter[str]()
         if begin_turn := getattr(self.llm, "begin_turn", None):  # the Phase 4 router only
-            begin_turn(self.tools.prepare)
+            begin_turn(self.tools.prepare, self.session)
         limit = self.max_steps
 
         try:
