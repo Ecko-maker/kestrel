@@ -182,7 +182,7 @@ In compare mode there is one manifest per candidate folder.
 
 Needs: the owner's OK for about 1 GPU-hour and the ~8 GB base-model download (on Kaggle's side). Details and
 gotchas: `TRAINING.md`. The two uploads, built on the laptop (no model calls), in
-`C:\Users\noahi\Documents\kestrel-kaggle-upload\`:
+`<home>\Documents\kestrel-kaggle-upload\`:
 
 ```powershell
 $up = "$HOME\Documents\kestrel-kaggle-upload"
