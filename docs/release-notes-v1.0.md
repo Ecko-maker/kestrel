@@ -49,6 +49,8 @@ Every number links to its source.
 
 **Section 9, the re-measurement after the fix:** _PLACEHOLDER: results not in yet. Nothing goes here until the runs finish, and no result is guessed._
 
+**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](known-issues.md)) and by the combined PR's CI run _(pending)_.
+
 **LLM judge calibration** ([report](../evals/reports/judge-calibration.md)).
 - **Agreement:** 91% (95% CI 78–100%) on 32 held-out answers.
 - **Disagreements:** all 3 were the judge being too strict.
