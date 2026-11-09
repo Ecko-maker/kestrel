@@ -1,6 +1,6 @@
 # Section 9 of `docs/phase4-plan.md`: proposal
 
-**PROPOSAL ONLY, NOT FROZEN. No run may rely on this text.** It becomes section 9 only when the owner freezes it, before any of its runs. Written 2026-11-05 after section 8's FAIL (8.7). Section 8 stands as FAIL and isn't changed. The owner's decisions of 2026-11-05 (8.7) are applied below.
+**Frozen in 0071e54 (2026-11-07), owner's OK.** It becomes section 9 only when the owner freezes it, before any of its runs. Written 2026-11-05 after section 8's FAIL (8.7). Section 8 stands as FAIL and isn't changed. The owner's decisions of 2026-11-05 (8.7) are applied below.
 
 ## 9.1 The claim
 
