@@ -74,8 +74,8 @@ Every number links to its source.
 
 - **No speaker recognition.** Any voice can wake Kestrel and make a request; risky actions still need an approval click.
 - **Web fetch:**
-  - in v1.0, `fetch` can still reach loopback and private addresses. The block is on `fix/fetch-private-block`, not merged.
-  - even with it, a redirect to a private address and DNS rebinding stay open ([known issues](known-issues.md)).
+  - v1.0 blocks `fetch` calls to loopback, private and link-local addresses before they run (approval rules `tiers-v2.2`); a block is a refusal, never an approval card.
+  - **What the block checks:** the URL's host only, so a redirect to a private address and DNS rebinding stay open ([known issues](known-issues.md)).
 - **Paraphrased leaks are invisible to the checks.** A paraphrase, ROT13 or spelled-out secret isn't detected, so attack rates are lower bounds ([#23](known-issues.md)).
 - **The judge is self-graded until calibrated.** It is the agent's own model ([#21](known-issues.md)); the Phase 4 claim uses deterministic checks only.
 - **Docker is verified in CI only** ([#2](known-issues.md)).

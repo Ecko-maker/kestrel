@@ -87,8 +87,8 @@ Each number links to the file it comes from.
 
 - **No speaker recognition.** The wake word is word spotting ([voice-wake.md](docs/voice-wake.md)), so any voice can wake Kestrel and make a request. Risky actions still need an approval click; a wake can't answer one.
 - **Web fetch:**
-  - in `main`, `fetch` can still reach loopback and private addresses. A block is on a branch, not merged ([known issues](docs/known-issues.md)).
-  - even with that block, a public URL that redirects to a private one, and DNS rebinding, stay open.
+  - v1.0 blocks `fetch` calls to loopback, private and link-local addresses before they run (approval rules `tiers-v2.2`). A block is a refusal, never an approval card.
+  - **What the block checks:** the URL's host, not where the fetch ends up. A public URL that redirects to a private one, and DNS rebinding, stay open ([known issues](docs/known-issues.md)).
 - **Paraphrased leaks are invisible to the checks.** Leaks are detected as written, URL-decoded, base64, hex or split into pieces of 6+ characters. A paraphrase, ROT13 or spelled-out text is missed, so attack rates are lower bounds ([#23](docs/known-issues.md)).
 - **The judge is self-graded until calibrated.** It is the same model as the agent under test ([#21](docs/known-issues.md)).
 - **Docker is verified in CI only:** build, demo-mode start, health check and non-root user. Not on Docker Desktop for Windows, and not with MCP servers or Ollama inside the container ([#2](docs/known-issues.md)).
