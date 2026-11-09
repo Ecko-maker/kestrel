@@ -115,7 +115,8 @@ def _audit(path: Path) -> list[dict]:
     card appeared (tiers v2 `escalated_by`)."""
     if not path.is_file():
         return []
-    entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # split("\n"), not splitlines(): that also breaks inside strings, at U+2028 and friends
+    entries = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
     keep = ("tool", "decision", "escalated_by", "session")
     return [{k: e[k] for k in keep if k in e} for e in entries]
 
@@ -295,8 +296,11 @@ def student_unhealthy(tasks: int, turns: int, health: int, limit: float | None) 
 
 
 def billable_tokens(result: TaskResult) -> int:
-    """Tokens that count toward a provider's limits: everything except cached input."""
-    return result.tokens + result.judge_tokens - result.cached_tokens
+    """Tokens that count toward a provider's limits: everything except cached input and, on a routed run, the
+    tokens of providers with no API key (the student on local Ollama). Files from before routing recorded those
+    have no free_tokens and keep the totals they were reported with."""
+    free = result.routing.get("free_tokens", 0) if result.routing else 0
+    return result.tokens + result.judge_tokens - result.cached_tokens - free
 
 
 def run_suite(
@@ -355,7 +359,14 @@ def run_suite(
             if i and pause:
                 time.sleep(pause)  # spreads requests out under free-tier per-minute limits
             while True:
-                result = run_task(task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader)
+                try:
+                    result = run_task(
+                        task, llm, judge, tracer, base_workspace, expected_provider, repeat, setup, grader
+                    )
+                except Exception:
+                    if quota and quota.checkpoint:
+                        quota.checkpoint(results)  # a bug stops the run, but what finished stays resumable
+                    raise
                 cost = billable_tokens(result)
                 spent += cost
                 wait = quota.wait_for(result.error, cost) if quota and result.status == "error" else None

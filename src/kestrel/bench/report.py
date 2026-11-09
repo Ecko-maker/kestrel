@@ -5,6 +5,7 @@ get confidence intervals too, without being rewritten.
 """
 
 import json
+import os
 import statistics
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -100,7 +101,13 @@ def summarize(results: list[TaskResult] | list[dict[str, Any]]) -> dict[str, Any
         "tokens_total": sum(r["tokens"] for r in rows),
         "judge_tokens_total": sum(r.get("judge_tokens", 0) for r in rows),
         "cached_tokens_total": sum(r.get("cached_tokens", 0) for r in rows),
-        "billable_tokens_total": sum(r["tokens"] + r.get("judge_tokens", 0) - r.get("cached_tokens", 0) for r in rows),
+        "billable_tokens_total": sum(
+            r["tokens"]
+            + r.get("judge_tokens", 0)
+            - r.get("cached_tokens", 0)
+            - (r.get("routing") or {}).get("free_tokens", 0)
+            for r in rows
+        ),
         "tokens_per_task": round(statistics.mean(r["tokens"] for r in graded)) if graded else None,
         "latency_p50_ms": round(statistics.median(latencies)) if latencies else None,
     }
@@ -120,7 +127,10 @@ def write_results(
         "tasks": [r.to_dict() for r in results],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    # backslashreplace: a lone surrogate from model text becomes the JSON escape \ud83d, not a crash at the end of a run
+    tmp = path.with_name(f"{path.name}.tmp")
+    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8", errors="backslashreplace")
+    os.replace(tmp, path)  # all or nothing: a process killed while saving leaves the last good file
     return data
 
 

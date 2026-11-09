@@ -151,7 +151,7 @@ issue #73). Full details: `distill/EXPORT.md`.
    **If they aren't set in the session:**
    - **Without `KESTREL_ROUTER_STUDENT_MODEL`,** `--model kestrel-student` still makes the router call the student. But the run is labelled with Ollama's default model: `routed/qwen3:4b -> …` in the dry run, in the results' `meta.model` and in every report (found 2026-11-03).
    - **The other router variables** fall back to defaults (teacher model, context) or stop the run (lineage).
-   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and the routed fingerprint `4da8f4b3c792` (results files record the same agent as `502b95cc0fb8`: the hash covers the model label, `docs/phase4-plan.md` 8.7, 11-05).
+   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and it prints `Routed agent fingerprint:`, the value the results file will record. Section 9's is `2ae99cffdbbc` (the taint rule and explicit sampling). Section 8's runs were `502b95cc0fb8`, quoted as `4da8f4b3c792` before the resume fix (`docs/phase4-plan.md` 8.7, 11-05).
 
 5. **Record the hardware** with the run (section 3), in the run log:
 
@@ -187,7 +187,7 @@ uv run --no-sync kestrel bench run --provider routed --model kestrel-student --r
     --wait-for-quota --token-budget <day budget> --out evals\results\routed-main-r5.json
 ```
 
-Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file). **No `--model` here:** with it the resume is refused (KI-pending-routed-resume-fingerprint), and `KESTREL_ROUTER_STUDENT_MODEL` already names the student:
+Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file). `KESTREL_ROUTER_STUDENT_MODEL` names the student; `--model` isn't needed (section 8's resume was refused with it, fixed since: KI-pending-routed-resume-fingerprint):
 
 ```powershell
 uv run --no-sync kestrel bench run --provider routed --repeat 5 --judge none `
@@ -199,6 +199,20 @@ uv run --no-sync kestrel bench run --provider routed --repeat 5 --judge none `
   log name, never reusing an earlier attempt's file.
 - **Don't read the pass rate** between days (no interim look); check only that it runs (errors, the
   `ROUTER STOPPED` student-health guard).
+- **Output, for every attempt:** a new log name, and a filter that lets through only lines with no outcome in them.
+  Checked in Windows PowerShell 5.1 on a stand-in script that crashes: a traceback and `RUN STOPPED` come through,
+  `PASS` / `FAIL` / `Pass rate` don't, and the log keeps everything (unread). Append to the run line:
+
+  ```powershell
+  2>&1 | Tee-Object -FilePath "routed-$(Get-Date -Format yyyyMMdd-HHmmss).log" | Select-String -CaseSensitive -Pattern 'Expected:|Traceback|Error\b|Error:|RUN STOPPED|KeyboardInterrupt|\[quota\]|\[checkpoint\]|ROUTER STOPPED|To finish later|already exists|stale lock'
+  ```
+
+  PSReadLine doesn't save a line containing "token" to its history, so `--token-budget` lines aren't in
+  `ConsoleHost_history.txt`.
+- **If the process goes away** (a closed window, a power cut): with `--wait-for-quota` the results file exists from
+  the start and is saved after every finished run, so at most the run in progress is lost. Clear the lock
+  (`kestrel bench unlock <file>`, which checks the process is gone), then use the `--resume` line. The first line
+  refuses to overwrite an existing file. `meta.attempts` records each attempt.
 - A run stopped by the student-health rule can't give PASS (section 8.5); it's reported as such.
 - **3b (optional, secondary metric):** `kestrel bench rejudge evals\results\routed-main-r5.json` with its own
   approval line (~137.5k). The primary verdict is the same with or without it.
@@ -224,7 +238,7 @@ uv run --no-sync python -c "from kestrel.bench.safety import SAFETY_DIR, load_sa
 ### 4a. Routed, group S (Groq for escalations; approval line)
 
 As tiers v2.1's after side (`KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`); the safety split has no
-judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks. **No `--model`, on the first run or a resume** (KI-pending-routed-resume-fingerprint); the router variables in step 1 name the student:
+judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks. The router variables in step 1 name the student, so `--model` isn't needed:
 
 ```powershell
 $env:KESTREL_IMAGE_POLICY = "allowlist"; $env:KESTREL_MCP = "off"

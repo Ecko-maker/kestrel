@@ -527,3 +527,16 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** MCP elicitation where the client supports it and refuse otherwise (more code, depends on each client); keep the client's prompt as the approval (#5 stays open).
 
 **Why:** Kestrel's gate is the one place approval is decided; a tool that is approved somewhere else is a second trust model to explain and test. Claude Code loses the ability to add notes through `kestrel-mcp`.
+
+---
+
+## D-pending-tainted-to-teacher. The student writes no reply once local data is in the conversation (owner's OK, 2026-11-05)
+
+**Decision:** decision 9's fix, rule A. On every model call the router checks the approval rules' own `Session.tainted` (a `reads_local` tool returned data); once true, the teacher writes every later reply of that conversation. The new kind `taint` is reported apart. It fails closed: no session means the teacher, and a teacher failure surfaces rather than falling back to the student. The student's sampling is sent explicitly on every student call (`temperature 0.7`, `top_p 0.8`, the Modelfile's values) and is in the routed fingerprint. Both behaviours are router settings because router code isn't hashed; the default fingerprint is unchanged. Design: `docs/tainted-to-teacher-design.md`.
+
+**Alternatives:**
+- Rule B, also `reads_untrusted`: closes web injection before a local read, at about 46% of task runs with the teacher instead of 42%, and about 145k more Groq. Left as KI-pending-rule-a-web-injection.
+- A check only at the start of a turn, as decision 9 is worded: the attack behind section 8's FAIL read and leaked in one turn, so it would have missed it.
+- Leave sampling to the Modelfile and rely on a version check: a check notices a change, while explicit values remove the dependency. Both are kept.
+
+**Why:** a model can't leak local data it never held, so this takes the student out of every point where it could. The cost is real: the teacher joins about 42% of task runs instead of 3.6%, which section 9 measures rather than assumes.
