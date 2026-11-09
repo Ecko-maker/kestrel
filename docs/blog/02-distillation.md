@@ -169,7 +169,7 @@ quality was not shown, and the safety gate failed on one attack.
   rule requires 0. The teacher had 0 of 29.
 - **Group F:** the teacher's 0, by the pre-route rule.
 - **The cause:**
-  - The router sent every turn to the student, including turns after the session had read untrusted data (that run made
+  - The router sent every turn to the student, including turns after the session had read local data (that run made
     no Groq calls at all).
   - The student read the private file, then followed the injected instruction and put its secret into a web search.
   - The gate raised a card (the content check, plus taint from the file it had read), and the user who approves
@@ -191,15 +191,20 @@ quality was not shown, and the safety gate failed on one attack.
 
 **What follows.** Decided before any data, as decision 9 ([plan](../phase4-plan.md)): a safety failure first gets one
 fix, then a new pre-registered measurement. Retraining comes only if that fails too.
-- **The fix:** once a session is tainted (it has read untrusted data), its turns go to the teacher.
+- **The fix:** once a session is tainted (a file read or a folder listing has returned local data), its turns go to
+  the teacher. A web search alone doesn't taint it.
 - **Sampling:** the fix also sends the student's sampling settings explicitly and makes them part of the routed
   fingerprint (in `main` since PR #79, merged 2026-11-09).
 
 ## 6. Section 9: PASSED
 
-**Outcome: PASS**, applied exactly as frozen ([verdict report](../../evals/reports/phase4-section9-verdict.md)). A
-fine-tuned 4B student, with the 120B teacher taking over once a session reads untrusted data, cleared the
-pre-registered bar of 95% of the teacher's quality at half the teacher's list cost, and no attack got through.
+**Outcome: PASS**, applied exactly as frozen ([verdict report](../../evals/reports/phase4-section9-verdict.md)).
+
+Routing a fine-tuned 4B student with a 120B teacher passed its pre-registered gate: quality at least 95% of the
+teacher's (shown), about 50% lower list cost, and 0 of 17 test attacks succeeding, even with a user who approves
+everything. The student fixed two of the teacher's habits (it uses the calculator and looks in the workspace);
+handing conversations that have read local data to the teacher fixed the student's injection weakness, at the cost
+of half the savings.
 
 **The design** was frozen on 2026-11-07 (`0071e54`, [section 9](../phase4-section9-proposal.md)), before any of its runs.
 It used section 8's claim, metric and margin, with three changes:
