@@ -285,6 +285,39 @@ def test_the_window_can_be_off(tmp_path, settings):
         service.stop()
 
 
+def test_the_window_is_off_by_default_and_opt_in(monkeypatch):
+    """KI-pending-followup-background-speech: speech in the room becomes requests, so the window is opt-in."""
+    monkeypatch.delenv("KESTREL_TALK_FOLLOWUP_SECONDS", raising=False)
+    assert WakeSettings().followup_seconds == 0.0
+    assert WakeSettings.from_env().followup_seconds == 0.0
+    monkeypatch.setenv("KESTREL_TALK_FOLLOWUP_SECONDS", "5")
+    assert WakeSettings.from_env().followup_seconds == 5.0
+    monkeypatch.setenv("KESTREL_TALK_FOLLOWUP_SECONDS", "99")
+    assert WakeSettings.from_env().followup_seconds == 30.0  # capped
+
+
+def test_with_the_default_settings_a_spoken_answer_opens_no_window(tmp_path):
+    voice = FakeVoice()
+    service = WakeService(
+        WakeSettings(enabled=True, model_dir=tmp_path, send_countdown_s=0.05),
+        FakeDetector,
+        lambda: ScriptedMic([QUIET] * 10),
+        NullPower(),
+        voice,
+        lambda at, **details: None,
+        make_transcriber=lambda: FakeRecogniser(),
+    )
+    events: list[dict] = []
+    service.emit = events.append
+    service.start()
+    try:
+        service.say_answer("It is noon.")
+        time.sleep(0.15)
+        assert not opened(events) and not service._followup_due and voice.said == ["It is noon."]
+    finally:
+        service.stop()
+
+
 def test_without_the_closings_grammar_speech_still_reaches_whisper(tmp_path):
     recogniser = FakeRecogniser("And in Paris?", 0.8)
     service, _v, _r, _m, events, requests = build(tmp_path, recogniser=recogniser, closings=False)

@@ -30,6 +30,7 @@ from kestrel.wake.audio import CHUNK_FRAMES
 from kestrel.wake.closings import (
     CLOSINGS,
     DEFAULT_CLOSING_THRESHOLD,
+    SUGGESTED_FOLLOWUP_S,
     ClosingListener,
     FollowupWindow,
     WindowEnd,
@@ -128,7 +129,7 @@ def main() -> int:
     parser.add_argument("--closings", type=Path, nargs="*", default=[], help="wake_record.py --phrases --set closings")
     parser.add_argument("--background", type=Path, nargs="*", default=[], help="audio with no one talking to Kestrel")
     parser.add_argument("--windows", type=int, default=200, help="random windows over the whole background")
-    parser.add_argument("--seconds", type=float, default=5.0, help="the window's length")
+    parser.add_argument("--seconds", type=float, default=SUGGESTED_FOLLOWUP_S, help="the window's length")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--model", type=Path, default=default_model_dir())
     parser.add_argument("--talk-model", default=DEFAULT_TALK_MODEL)
