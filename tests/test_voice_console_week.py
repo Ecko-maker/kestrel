@@ -248,7 +248,8 @@ def test_a_new_conversation_is_a_new_session_with_no_history_and_the_traces_stay
 
 
 def test_the_agent_fingerprint_is_unchanged():
-    assert agent_fingerprint("groq", "openai/gpt-oss-120b")["sha"] == "35fac5ba6277"
+    # 8a8174d8f17d = 35fac5ba6277 with the rules' version tiers-v2.2 (the fetch block); voice changes nothing.
+    assert agent_fingerprint("groq", "openai/gpt-oss-120b")["sha"] == "8a8174d8f17d"
 
 
 # --- the playback script ------------------------------------------------------------------------------------

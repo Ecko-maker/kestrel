@@ -175,5 +175,9 @@ def test_a_public_fetch_runs_as_before(fetch_registry, tmp_path):
     assert fetch_registry.fetched == [{"url": f"http://{PUBLIC}/"}]
 
 
-def test_the_agent_fingerprint_is_unchanged():
-    assert agent_fingerprint("groq", "openai/gpt-oss-120b")["sha"] == "35fac5ba6277"
+def test_the_block_moves_the_fingerprint_only_through_the_rules_version():
+    """The block is an approval rule, so RULES_VERSION went to tiers-v2.2 (35fac5ba6277 -> 8a8174d8f17d);
+    the prompt and tools the model sees are unchanged."""
+    fp = agent_fingerprint("groq", "openai/gpt-oss-120b")
+    assert fp["approval_rules"] == "tiers-v2.2" and fp["sha"] == "8a8174d8f17d"
+    assert (fp["system_prompt"], fp["tools"]) == ("36d57c7e8a82", "ede3efa38c54")

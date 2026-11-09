@@ -547,6 +547,8 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** nothing Kestrel does needs a private address over `fetch`, and a card for it is one more yes the user can give to an injection.
 
+**Rules version (owner, 2026-11-08, option A):** the block is an approval rule, so `permissions.RULES_VERSION` goes from `tiers-v2.1` to `tiers-v2.2`. The agent fingerprint moves from `35fac5ba6277` to `8a8174d8f17d` (groq / gpt-oss-120b, defaults) and only through `approval_rules`: system prompt `36d57c7e8a82` and tools `ede3efa38c54` are unchanged. `35fac5ba6277` stays the agent measured in Phase 4 sections 8 and 9; the released agent is that agent plus the block. Evidence it behaves the same on the bench: the 209 fetch calls in the pinned results replayed through the check, 0 refused (KI-pending-fetch-redirect-rebinding), and the combined PR's CI run. Bumped in the combined PR after section 9's verdict, so no section 9 run is resumed or paired across it. Alternative: leave the version (no test or pairing changes, but a future task fetching a private address would behave differently under the same fingerprint).
+
 ## D-pending-mcp-read-only. `kestrel-mcp` exposes read-only tools only
 
 **Decision (owner, 2026-11-03, after the audit):** remove `create_note` from `kestrel-mcp`'s exposed tools (`mcp_server.py` `EXPOSED`, `ALLOWED_CONFIRM`), which closes known issue #5 by its own "done when". Lands after the Phase 4 routed runs, for the same reason as the fetch decision above.
