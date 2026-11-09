@@ -27,11 +27,21 @@ PINNED = {
         "routed-main-r5.json": "02af56169f68e55fef608c199a20c942e1824ca4afd45dbd2c345d608f786376",
         "routed-safety-S-strict-x3.json": "f131edaa95989ea8ea7c47681414a88a464817874d261341a6c1b733ce212310",
         "routed-safety-S-rubber-attacks.json": "f51274f6ff00c1166aaa77a9b1cc856a8f655794018ce9d03ba6f9550431c3c4",
+        # section 9's routed runs (docs/phase4-section9-proposal.md 9.4): the inputs of
+        # evals/reports/phase4-section9-verdict.md, read by scripts/s9_verdict.py
+        "s9-safety-S-strict-x3.json": "68773f5b34bfc6dbeda6e21b0214548fd98645d996960ec6e56d8df3970f9409",
+        "s9-safety-S-rubber-attacks-x3.json": "d4f87abdcfb189f1e77bcd3f948beb24032097d55277ac133f6b35f53fea3705",
+        "s9-main-r1.json": "579b0680ece60046c5e25aeb58d07bae50a4e15f39b33713c2d1fa840ba0c30f",
+        # per-run list-price cost from the traces (scripts/s9_verdict.py --extract-costs), both sections
+        "s9-main-r1.cost-runs.json": "ea1c2bb01c0c3409b94da92af0e8b8cccaa0e81efc0b606966a5f3e937238c6b",
+        "routed-main-r5.cost-runs.json": "e4ffe9bafc9d806831494a4cadbd2b36582d7ad0a36e09bf44bc28a8ce81b6f5",
     },
     "controls": {
         "control-old-ci-2026-10-29.json": "0c48e60decdfb3a368ba2736fec5bf810f1656a72d2b694d57018b9dec3d2b8c",
         # the same-week drift control of docs/phase4-plan.md 8.3 (#58's reading pre-registered 2026-11-01)
         "control-old-ci-2026-11-03.json": "5a587c8c37b3d921b1843959dfd502eb1c625671d0b83367c60f9530fbf83d20",
+        # section 9's same-week drift control (run 3, docs/phase4-section9-proposal.md 9.4)
+        "control-old-ci-2026-11-08.json": "14e8f42098dd1b93d507e88d4005928ae7b4341d4bf7a322ce0c38f6afd1a46b",
     },
     # Phase 3's safety runs and the tiers v2 main-suite after-run, each with its report
     "after-runs/phase3": {
@@ -123,6 +133,45 @@ def test_the_routed_pins_are_section_8s_runs(name, split, user, kinds, group, re
     assert all(r["status"] in ("pass", "fail") for r in rows)
     if group:  # 8.7: without the fetch stub, as tiers v2.1's after side
         assert m["fetch_stub"] is False and m["answer_policy"]["image_policy"] == "allowlist"
+
+
+S9_RUNS = [
+    # file, split, user, kinds, safety group, repeats, distinct tasks
+    ("s9-main-r1.json", "main", None, None, None, 1, 100),
+    ("s9-safety-S-strict-x3.json", "safety", "strict", "all", "S", 3, 29),
+    ("s9-safety-S-rubber-attacks-x3.json", "safety", "rubber-stamp", "attack", "S", 3, 18),
+]
+
+
+@pytest.mark.parametrize(("name", "split", "user", "kinds", "group", "repeat", "tasks"), S9_RUNS)
+def test_the_s9_pins_are_section_9s_runs(name, split, user, kinds, group, repeat, tasks):
+    """The routed system with rule A at the tag phase4-s9-runs (497643a), agent 2ae99cffdbbc, no judge, the 60 s
+    timeout, every run graded and none missing. Runs 1 and 2 began at dfbd455 (the tag minus the queue scripts)."""
+    data = json.loads((EVALS / "after-runs" / name).read_text(encoding="utf-8"))
+    m = data["meta"]
+    assert (m["provider"], m["model"], m["git"]) == ("routed", "kestrel-student -> openai/gpt-oss-120b", "497643a")
+    assert (m["agent"]["sha"], m["agent"]["request_timeout_s"], m["judge"]) == ("2ae99cffdbbc", 60.0, None)
+    assert {a["git"] for a in m["attempts"]} <= {"dfbd455", "497643a"}
+    assert (m["split"], m.get("user"), m.get("kinds"), m.get("safety_group"), m["repeat"]) == (
+        split,
+        user,
+        kinds,
+        group,
+        repeat,
+    )
+    rows = data["tasks"]
+    assert len({r["id"] for r in rows}) == tasks
+    assert len({(r["id"], r["repeat"]) for r in rows}) == len(rows) == tasks * repeat
+    assert all(r["status"] in ("pass", "fail") for r in rows)
+    if group:  # 9.4: as section 8's group S runs
+        assert m["fetch_stub"] is False and m["answer_policy"]["image_policy"] == "allowlist"
+
+
+def test_the_s9_drift_control_is_the_old_agent_at_c7c0d4f():
+    data = json.loads((EVALS / "controls" / "control-old-ci-2026-11-08.json").read_text(encoding="utf-8"))
+    m = data["meta"]
+    assert (m["agent"]["sha"], m["git"], m["repeat"], m["subset"]) == ("cc5c16377662", "c7c0d4f", 2, "ci")
+    assert len(data["tasks"]) == 32 and all(r["status"] in ("pass", "fail") for r in data["tasks"])
 
 
 def test_the_routed_main_pin_records_its_two_segments():
