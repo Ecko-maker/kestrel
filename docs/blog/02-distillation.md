@@ -1,7 +1,7 @@
 # Can a 4B model do most of an agent's work?
 
-*Draft, 2026-11-08. Every number is linked to its source. Section 5 is section 8's result, applied as frozen: it
-FAILED. Section 6 is the re-measurement after the fix, and stays a marked placeholder until its runs are done.*
+*Draft, 2026-11-09. Every number is linked to its source. Section 5 is section 8's result, applied as frozen: it
+FAILED. Section 6 is the re-measurement after the fix, applied as frozen: it PASSED.*
 
 ## 1. The question
 
@@ -195,18 +195,79 @@ fix, then a new pre-registered measurement. Retraining comes only if that fails 
 - **Sampling:** the fix also sends the student's sampling settings explicitly and makes them part of the routed
   fingerprint (on `phase4/tainted-to-teacher`, not in `main` yet).
 
-## 6. Section 9: the re-measurement after the fix
+## 6. Section 9: PASSED
 
-> **PLACEHOLDER: section 9's runs aren't finished. Nothing goes here until they are, and no result is guessed.**
-> **The frozen design:** section 9, frozen 2026-11-07 (`0071e54`), in `docs/phase4-section9-proposal.md` on
-> `phase4/tainted-to-teacher`; it isn't in `main` yet. It runs:
-> - routed group S, strict ×3 and rubber-stamp ×3;
-> - a same-week drift control;
-> - the routed main suite R=1.
->
-> A stop rule applies after the safety runs.
+**Outcome: PASS**, applied exactly as frozen ([verdict report](../../evals/reports/phase4-section9-verdict.md)). A
+fine-tuned 4B student, with the 120B teacher taking over once a session reads untrusted data, cleared the
+pre-registered bar of 95% of the teacher's quality at half the teacher's list cost, and no attack got through.
 
-{{SECTION9_RESULT}}
+**The design** was frozen on 2026-11-07 (`0071e54`, [section 9](../phase4-section9-proposal.md)), before any of its runs.
+It used section 8's claim, metric and margin, with three changes:
+- **The fix:** tainted turns go to the teacher.
+- **Stricter safety:** rubber-stamp ×3 instead of ×1.
+- **A cheaper main suite:** one routed run per task (R=1) instead of 5.
+
+The last two were chosen after I had seen section 8's results, and I say so.
+
+| | Teacher alone | Routed, section 8 | Routed, section 9 |
+|---|---|---|---|
+| Check-pass rate (95% CI) | 92% (88–96%), ×3 | 90% (84–94%), ×5 | **97% (93–100%)**, ×1 |
+| List-price cost per 1,000 tasks | $0.574 | $0.030 | **$0.285** |
+| Groq billable tokens per 100 tasks | 147,667 | 13,670 | 86,027 |
+| Turns the student answered | | 96.6% | **56.6%** |
+| Latency p50 / p95 per task run | 9.9 s / 27.0 s | 10.3 s / 33.2 s | 7.3 s / 32.2 s |
+| Attacks through, rubber-stamp user, group S | | 1/17, ×1 | **0/17, ×3** |
+
+**Quality: shown.** The frozen test needed the 95% lower bound of mean(routed − 0.95 × teacher) above 0:
+- primary: **+0.0928 (95% CI +0.0502 to +0.1382)**;
+- against all three references: +0.0865 (+0.0470 to +0.1288).
+
+**Cost: shown, but the saving halved.**
+- **The difference:** routed − teacher is −$0.289 per 1,000 tasks (95% CI −$0.348 to −$0.229), **50.3% lower list cost**. In section 8 it was 94.8%.
+- **Why:** the fix sends every tainted turn to the paid teacher. The student now answers 56.6% of turns (60 of 106), down from 96.6%: 42 of the 46 escalations are for taint.
+
+**Safety gate: held.** 0/17 attacks got through at system level under the strict user and under the rubber-stamp user,
+three repeats each, where any one success in any repeat would have failed the gate.
+
+**What a PASS at R=1 can't rule out.** The frozen rule makes me state two numbers:
+- **4%:** the chance of a false PASS on quality if the routed system were exactly at the 95% margin.
+- **8%:** the chance that quality shows as passing even if the fix changed nothing. That wouldn't be a false quality
+  claim, since section 8 was already above the margin on average; the safety gate still had to pass on its own.
+
+**Where the margin comes from.** I compared the tasks where the routed run and the teacher's after-run disagree
+(16 of 100).
+- **The student fixed two teacher habits:**
+  - **The calculator:** it used it on five tasks where the teacher sometimes did the arithmetic in its head and failed the check.
+  - **The workspace:** it looked there before asking.
+- **Two tasks the teacher always fails:** on `act-note-top-todos` and `multi-scale-recipe` the teacher failed every
+  run, asking me for a todo list and a recipe that are in the workspace. The student read the files first; that read
+  tainted the session, and the teacher finished from there.
+- **The other direction:** the routed run lost three tasks. One was a drafted email that wasn't sent, one a narrow
+  reading of "the action items", one an approval never requested.
+
+**How much of that is noise?** Quality is still shown with the calculator and workspace flips treated as noise (lower
+bound +0.0185). It isn't if every flip in the routed system's favour is treated as noise (−0.0015).
+
+**Drift.**
+- **The reading:** the teacher's own control (the old agent, CI subset) scored +6 points this week (95% CI 0 to +17)
+  against 10-07.
+- **Why it didn't count:** the frozen rule guards only against downward drift, because a worse teacher would flatter
+  the routed system.
+- **Why it still matters:** an upward drift does help the routed system a little, now that the teacher answers 43% of
+  turns.
+- **What the control shows:** the same old agent gained on `convo-chained-math` (the calculator) and
+  `files-contact-email` (the workspace). Those two habits move week to week for the teacher itself, which is why the
+  sensitivity line above matters.
+
+**One thing that didn't go to plan.**
+- **The frozen command printed NOT SHOWN.** The comparison command, `kestrel bench compare`, was written for section 8,
+  and it hard-codes 5 routed repeats. Given section 9's one run per task, it reported "not the pre-registered design"
+  and NOT SHOWN.
+- **The fix:** the statistic is the same, so I wrote a small script, `scripts/s9_verdict.py`. It runs the bench's own
+  functions with the repeat count each section froze, and it reproduces section 8's FAIL from the same code.
+
+**What follows,** as the rule says: the router ships as an opt-in configuration (`KESTREL_PROVIDERS=routed`), off by
+default, and the Phase 4 gate is passed. Section 8's FAIL stays in this post beside it.
 
 ## 7. Limits
 
