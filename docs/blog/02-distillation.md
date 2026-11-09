@@ -193,7 +193,7 @@ quality was not shown, and the safety gate failed on one attack.
 fix, then a new pre-registered measurement. Retraining comes only if that fails too.
 - **The fix:** once a session is tainted (it has read untrusted data), its turns go to the teacher.
 - **Sampling:** the fix also sends the student's sampling settings explicitly and makes them part of the routed
-  fingerprint (on `phase4/tainted-to-teacher`, not in `main` yet).
+  fingerprint (in `main` since PR #79, merged 2026-11-09).
 
 ## 6. Section 9: PASSED
 
