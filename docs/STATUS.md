@@ -209,7 +209,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 2 Evals | done, except judge calibration (#21): measured 2026-11-08 on 32 held-out answers, agreement 91% (78–100%), kappa 0.0, so not calibrated (`evals/reports/judge-calibration.md`) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
 | 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29, decision 17); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); memory on the tags `archive/phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) and `archive/phase3/memory` |
 | 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate), gate not passed (`evals/reports/phase4-result.md`) | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
-| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog post 1 in `main`, post 2 drafted; the 2 MCP servers built but archived (future work) | `main` (`docs/voice-wake.md`); `fix/voice-console-week`, `voice/talk`; [demo video](https://youtu.be/kglrGnkzt_I); `archive/phase5/mcp-servers` |
+| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog post 1 in `main`, post 2 drafted; the 2 MCP servers come back via the combined PR (owner, 2026-11-08: kept, registered in `.mcp.json`) | `main` (`docs/voice-wake.md`); `fix/voice-console-week` (now includes `voice/talk`, follow-up window opt-in); [demo video](https://youtu.be/kglrGnkzt_I); `post-s9/combined` (local) |
 
 ## Branches
 
@@ -220,10 +220,10 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | `main` | everything merged, up to PR #84 (`f6535a4`) | – |
 | `phase4/tainted-to-teacher` | decision 9's fix, section 9 and its queue; PR #79 open; the tag `phase4-s9-runs` (`497643a`) is one commit past the pushed branch | PR #79 after the section 9 verdict (Tuesday) |
 | `fix/bench-audit-line-separator` | section 8's bench fixes (`bf1b68b`); already inside #79 | delete after #79 merges, as `archive/fix/bench-audit-line-separator` |
-| `phase4/integration` | the results kit (`scripts/phase4_result.py`, which wrote `phase4-result.md`), the student-alone label, the two MCP servers, and the drift-reference `-text` fix (`9ad3742`); none of these is in `main` or #79 | owner's call (11-08 proposal: keep until the section 9 verdict) |
-| `fix/fetch-private-block` | the private-address block for `fetch__fetch`; `main` merged in | PR Tuesday (CI evals; approval line first; `RULES_VERSION` decision first) |
-| `fix/voice-console-week` | rule B, the Speaker switch, the wake-off notice; `main` merged in | PR Tuesday (CI evals; approval line first) |
-| `voice/talk` | the follow-up window, local closings, the wake score on spans (`e2b6693`, `5f8f681`, pushed); not in `fix/voice-console-week` and conflicts with it in 3 files | owner's call (11-08 proposal) |
+| `phase4/integration` | the results kit (`scripts/phase4_result.py`, which wrote `phase4-result.md`), the student-alone label, the two MCP servers, and the drift-reference `-text` fix; `main` merged in (`dfca3d2`, pushed 2026-11-08); none of these is in `main` or #79 | goes into `post-s9/combined` |
+| `fix/fetch-private-block` | the private-address block for `fetch__fetch`; `main` merged in | goes into `post-s9/combined`; `RULES_VERSION` decided (owner, 2026-11-08, option A: `tiers-v2.2`, bumped on the combined branch) |
+| `fix/voice-console-week` | rule B, the Speaker switch, the wake-off notice, and `voice/talk` folded in (`87d3acf`; follow-up window opt-in, default off, `6118819`) | goes into `post-s9/combined` |
+| `post-s9/combined` | local only, not pushed: `main` + the three branches above, then `RULES_VERSION` `tiers-v2.2` (agent `35fac5ba6277` → `8a8174d8f17d`, routed `a67243f2dbaa` → `00bd8a158356`) and both MCP servers in `.mcp.json` | one PR after #79 merges: merge `main` in again, then CI evals once (~56k, approval line first) |
 | `docs/readme-v1` | the README rewrite and `docs/release-notes-v1.0.md` | PR Friday, with section 9 filled in |
 | `docs/blog-phase4` | blog post 2 | publish with v1.0 |
 
@@ -237,7 +237,8 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | `archive/phase3/search-spike` | `514a00b` |
 | `archive/phase4/results-kit` | `cfb9634` |
 | `archive/bench/student-alone-label` | `8d998d9` |
-| `archive/phase5/mcp-servers` | `dedd05d` (the 2 read-only MCP servers, future work) |
+| `archive/phase5/mcp-servers` | `dedd05d` (the 2 read-only MCP servers; the tag stays, the code comes back via the combined PR) |
+| `archive/voice/talk` | `5f8f681` (folded into `fix/voice-console-week`, 2026-11-08) |
 
 - **Restore one:** `git switch -c <branch> archive/<branch>`, for example `git switch -c phase3/memory archive/phase3/memory`.
 - **Older archive tags** (different naming): `archive/console-hud-theme-9c4bb52`, `archive/docs-merge-plan-56d1edf`, `archive/fix-quota-retry-spend-ee496a0`, `archive/phase4-trace-dataset-1f0084f`, `archive/phase4-trace-dataset-v0-289274e`, `archive/voice-talk-4155004`, `archive/voice-talk-8a4e22b`, `archive/voice-wake-word-88bb9d1`.
