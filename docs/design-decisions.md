@@ -545,3 +545,5 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** take "thank you" off the filler list and let Whisper hear closings (Whisper invents it on silence, the reason it is a filler); act on Vosk's partial result as the spoken "cancel" does (faster, but "thanks, now list my files" would be taken for a closing, and a false cancel is harmless where a lost request isn't).
 
 **Why:** a thank-you is the commonest thing said after an answer, and it shouldn't cost a model call or put a message in the chat. Open: the window takes speech in the room for a request (KI-pending-followup-background-speech).
+
+**Amended (owner, 2026-11-08):** the window is opt-in. `KESTREL_TALK_FOLLOWUP_SECONDS` defaults to 0 (off); 5 is the suggested length when turned on. Reason: 88% false requests on podcast audio, and they can chain with no one talking. The default is reconsidered only after the known issue's fix is measured.

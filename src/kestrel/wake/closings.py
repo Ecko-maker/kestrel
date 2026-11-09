@@ -1,8 +1,8 @@
 """The follow-up window and local closings (docs/voice-wake.md, "Follow-up and closings").
 
-After Kestrel finishes speaking an answer to a spoken request, it listens for a few seconds without the
-wake word. What it hears takes one of three paths, decided by FollowupWindow, the same code in the live
-service and in scripts/closings_eval.py:
+Opt-in (KESTREL_TALK_FOLLOWUP_SECONDS, default 0 = off): after Kestrel finishes speaking an answer to a
+spoken request, it listens for a few seconds without the wake word. What it hears takes one of three
+paths, decided by FollowupWindow, the same code in the live service and in scripts/closings_eval.py:
 
 - a closing ("thank you", "bye"...), heard by a small Vosk grammar, gets a fixed local reply: no model,
   no chat message, no tool. It must be the whole utterance: "thanks, now list my files" comes out as
@@ -26,7 +26,10 @@ from kestrel.wake.talk import MAX_REQUEST_S, Endpointer, NoiseFloor
 CLOSINGS = ("thank you", "thanks", "cheers", "that's all", "never mind", "bye")
 THANKS = frozenset({"thank you", "thanks", "cheers"})
 CLOSING_GRAMMAR = (*CLOSINGS, "[unk]")
-DEFAULT_FOLLOWUP_S = 5.0  # KESTREL_TALK_FOLLOWUP_SECONDS
+# KESTREL_TALK_FOLLOWUP_SECONDS. Off by default (owner, 2026-11-08): with speech in the room the window
+# takes it for a request and can chain (KI-pending-followup-background-speech). Opt in with e.g. 5.
+DEFAULT_FOLLOWUP_S = 0.0
+SUGGESTED_FOLLOWUP_S = 5.0  # the length measured by scripts/closings_eval.py and suggested in the docs
 DEFAULT_CLOSING_THRESHOLD = 0.5  # KESTREL_TALK_CLOSING_THRESHOLD; provisional until scripts/closings_eval.py
 SPEECH_ENDED = ("waiting", "speaking")  # the Endpointer's states while the window is still open
 

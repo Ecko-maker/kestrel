@@ -129,7 +129,7 @@ class WakeSettings:
     # 31 recorded requests it was worse, 17.62% vs 14.18% normalised WER). Names: KESTREL_TALK_VOCAB_FILE.
     talk_prompt: str = ""
     send_countdown_s: float = SEND_COUNTDOWN_S  # fixed; a field so tests can shorten it
-    followup_seconds: float = DEFAULT_FOLLOWUP_S  # KESTREL_TALK_FOLLOWUP_SECONDS; 0 turns the window off
+    followup_seconds: float = DEFAULT_FOLLOWUP_S  # KESTREL_TALK_FOLLOWUP_SECONDS; default 0 = off (opt-in)
     closing_threshold: float = DEFAULT_CLOSING_THRESHOLD  # KESTREL_TALK_CLOSING_THRESHOLD
 
     @classmethod

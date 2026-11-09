@@ -277,7 +277,7 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 | `KESTREL_TALK` | on | `off`: a wake only greets |
 | `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech; `small.en-q5_1` (190 MB): a little more accurate, ~3 s per request (not the default, see below) |
 | `KESTREL_TALK_MIN_CONFIDENCE` | 0.50 | below it: "check first" instead of sending (provisional, owner 2026-10-24; `talk_eval.py` sweeps it) |
-| `KESTREL_TALK_FOLLOWUP_SECONDS` | 5 | after a spoken answer, listen this long without the wake word (0-30; 0 = off). See "Follow-up and closings" |
+| `KESTREL_TALK_FOLLOWUP_SECONDS` | 0 (off) | opt-in: after a spoken answer, listen this long without the wake word (0-30; 5 suggested). Off by default because speech in the room becomes requests (KI-pending-followup-background-speech). See "Follow-up and closings" |
 | `KESTREL_TALK_CLOSING_THRESHOLD` | 0.5 | lowest word confidence for a local closing reply (provisional, no clips measured yet) |
 | `KESTREL_TALK_HINT` | off | the vocabulary hint; `on` to use it (off since 2026-10-24: it was worse, see below) |
 | `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
@@ -355,8 +355,9 @@ requests: the voice flag stays in the console and the server, never in the agent
 
 ### Follow-up and closings
 
-**The follow-up window.** When Kestrel finishes speaking the answer to a spoken request, it listens for
-`KESTREL_TALK_FOLLOWUP_SECONDS` (default 5) without the wake word, and the HUD shows "Listening…", with no
+**The follow-up window (opt-in, off by default).** Set `KESTREL_TALK_FOLLOWUP_SECONDS` (5 suggested; default
+0 = off) to turn it on. It is off because it can't tell you from a podcast or a TV (below). When on, Kestrel
+finishes speaking the answer to a spoken request, listens that long without the wake word, and the HUD shows "Listening…", with no
 fly-in and no greeting. Speech must *start* within the window; once it has, the usual end-of-speech rule
 applies, so a long request isn't cut. Silence: back to Standby, with nothing said.
 
@@ -393,8 +394,8 @@ So closings are handled only by the grammar, and only in the window. Two results
 from a podcast or a TV. Measured on 1.00 h of podcast in the room (2026-11-05, 200 windows at random points,
 seed 2026, base.en, numbers only): **0 false closings** at every threshold (0/200, 95% CI 0-1.8%), but **176
 of 200 windows (88%, 95% CI 83-92%) became a false request**, 15 a check, 8 dropped, 1 silence. Each false
-request is answered and spoken, and that answer opens another window. Until this is decided, leave the room
-quiet or set `KESTREL_TALK_FOLLOWUP_SECONDS=0` when something is playing.
+request is answered and spoken, and that answer opens another window. So the window is off by default
+(owner, 2026-11-08). If you turn it on, leave the room quiet or set it back to 0 when something is playing.
 
 ### Measuring it (no accuracy is claimed until you have recorded your requests)
 
