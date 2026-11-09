@@ -130,6 +130,7 @@ export interface WakeStatus {
   battery?: number | null; // battery percent, when Windows reports one
   talk?: boolean; // spoken requests are on (the talk model is installed)
   speaker?: boolean; // the Speaker switch, shared by every console: off means Kestrel says nothing
+  speech?: boolean; // the server has a voice to speak with (false: no speech output; absent: older server)
 }
 
 export const getWake = () => api<WakeStatus>("/api/wake");

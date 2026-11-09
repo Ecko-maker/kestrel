@@ -72,8 +72,9 @@ same hour in an earlier run. Per-phrase detection waits for `wake_record.py --ph
 **If "Kestrel" gets no answer, check the server window first.** It prints "Wake word on: listening for
 'Kestrel'" or "Wake word off: ... Set KESTREL_WAKE=on", and the console shows a grey "Wake word off" chip instead
 of the switch. `KESTREL_WAKE=on` must be in `.env` or set in the same PowerShell window before `kestrel web`
-(`$env:KESTREL_WAKE = "on"` lasts only for that window). Without it, the Speaker switch is hidden too: with the
-wake word off, nothing is spoken. Found 2026-11-07: a server started in a new window without it.
+(`$env:KESTREL_WAKE = "on"` lasts only for that window). Without it, nothing is spoken, and the Speaker switch
+is shown disabled ("Speaker unavailable"), its tooltip saying why. Found 2026-11-07: a server started in a new
+window without it.
 
 ### A console window that is already there when the display wakes
 
@@ -289,12 +290,20 @@ straight away (`{"type": "speaker", "on": ...}`), so the last console to change 
 Before, the switch only travelled with the next spoken request: turning it off during an answer, or before a
 wake, changed nothing.
 
+The switch is always in the sidebar, next to Wake word, in both looks (2026-11-09). When the server can't speak it
+is disabled, with a tooltip saying why:
+- **The wake word is off on the server:** "No speech output: start Kestrel with KESTREL_WAKE=on" ("No speech output
+  in demo mode" in demo mode).
+- **No voice on the server:** the server's status reports `speech: false` when its speaker is the silent one, as
+  on anything but Windows.
+
 The **wake word** switch (the chip next to it) closes the microphone. Each browser remembers it too, and turns
 listening off again on load after a server restart (which otherwise starts listening, `KESTREL_WAKE=on`).
 
-**New conversation** (under the chat, once there is one): the chat clears and the console reconnects, which
-gives a new agent: a new session id, no history, nothing read yet (the taint starts clean). It is disabled
-while Kestrel is answering or an approval is waiting. The traces of the old conversation stay.
+**New conversation** (in the sidebar, right under Chat, always shown in both looks since 2026-11-09): the chat
+clears and the console reconnects, which gives a new agent: a new session id, no history, nothing read yet (the
+taint starts clean). It is disabled, with a tooltip, on an empty chat (nothing to clear), while Kestrel is
+answering or an approval is waiting, and while disconnected. The traces of the old conversation stay.
 
 **How a request ends.** Each 0.1 s chunk's loudness is compared with the room's noise floor (learned
 while waiting for the wake word). The request starts at the first chunk 0.15 above it and ends after
@@ -518,6 +527,7 @@ LibriSpeech test-clean WER: base.en about 4.3%, tiny.en 8.4%, Vosk small 9.85%.
 | `src/kestrel/wake/greeting.py` | The fixed greeting, the echoed one ("Hello, {name}. ..."), and the name's cleaning |
 | `console/src/hud/useHud.ts` | `waking` phase and `arrive` pose; the fly-in plays once per wake |
 | `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator; the Speaker switch |
+| `console/src/components/Sidebar.tsx`, `console/src/sidebar.ts` | The sidebar, with New conversation and the Speaker switch always shown (tests: `console/src/sidebar.test.mjs`) |
 | `src/kestrel/wake/talk.py` | End of speech, the hallucination guard, what is spoken |
 | `src/kestrel/wake/transcribe.py` | whisper.cpp (pywhispercpp), pinned model files |
 | `src/kestrel/wake/normalize.py` | The text normaliser for word error rate |
