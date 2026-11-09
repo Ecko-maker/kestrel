@@ -28,7 +28,15 @@ From the repo, with its environment (`uv sync` once). It speaks MCP over stdin/s
 uv run --directory C:\path\to\kestrel --no-sync python -m servers.kestrelbench_mcp
 ```
 
-**Claude Code**, for this project only (`.mcp.json` at the repo root):
+**Claude Code:** this repo's `.mcp.json` registers it as `kestrelbench` (run from the repo root, so no
+`--directory`). Claude Code asks once to approve a project's servers; after that its tools appear as
+`mcp__kestrelbench__*`.
+
+**Checked with a real client (2026-11-08):**
+- **Over stdio:** started exactly as `.mcp.json` starts it, with the MCP SDK's stdio client. It listed the 5 tools; `list_runs(folder="baselines")` returned 644 characters, no error.
+- **From Claude Code:** `claude mcp list` sees it ("Pending approval"). One tool call from Claude Code waits for the owner's approval in an interactive `claude` session.
+
+For another project, the same entry with the repo's path:
 
 ```json
 {
