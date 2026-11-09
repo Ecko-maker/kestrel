@@ -553,6 +553,7 @@ def test_keep_awake_is_held_only_while_listening_and_released_when_turned_off(tm
             "battery": None,
             "talk": False,
             "speaker": True,
+            "speech": True,  # the server has a voice (a fake one here); the console's Speaker switch reads it
         }
         service.set_enabled(True)
         wait_for(lambda: power.awake)

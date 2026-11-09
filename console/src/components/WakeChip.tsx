@@ -52,17 +52,31 @@ export function WakeChip({ status, onToggle }: { status: WakeStatus; onToggle: (
 // "Speaker": on, answers to spoken requests are read out (first sentences only), with the greeting and the
 // short fixed sentences; off, Kestrel says nothing at all and stops at once. One setting for every console.
 // Typed questions are never spoken, and an approval card is only ever announced, never read.
-export function SpeakSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+// Always shown, in both looks: when the server can't speak, it is disabled and its tooltip says why.
+export function SpeakSwitch({
+  on,
+  onChange,
+  disabled = false,
+  title,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const shown = on && !disabled;
   return (
     <button
       role="switch"
-      aria-checked={on}
-      aria-label={`Speaker: ${on ? "on" : "off"}`}
+      aria-checked={shown}
+      aria-label={disabled ? `Speaker: unavailable. ${title ?? ""}`.trim() : `Speaker: ${on ? "on" : "off"}`}
+      title={title}
+      disabled={disabled}
       onClick={() => onChange(!on)}
-      className="inline-flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-1 text-[11px] font-semibold text-stone-600 ring-1 ring-inset ring-stone-200 dark:bg-stone-800/80 dark:text-stone-300 dark:ring-stone-700"
+      className="inline-flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-1 text-[11px] font-semibold text-stone-600 ring-1 ring-inset ring-stone-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-stone-800/80 dark:text-stone-300 dark:ring-stone-700"
     >
-      {on ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
-      <span className="hidden sm:inline">Speaker {on ? "on" : "off"}</span>
+      {shown ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+      <span className="hidden sm:inline">{disabled ? "Speaker unavailable" : `Speaker ${on ? "on" : "off"}`}</span>
     </button>
   );
 }

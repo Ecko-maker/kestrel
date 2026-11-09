@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, FlaskConical, Mic, RefreshCw, SquarePen, ThumbsDown, ThumbsUp, TriangleAlert, X } from "lucide-react";
+import { ArrowUp, FlaskConical, Mic, RefreshCw, ThumbsDown, ThumbsUp, TriangleAlert, X } from "lucide-react";
 import { rateTrace, type SessionInfo, type Stats } from "../api";
 import { AgentTrace } from "../components/AgentTrace";
 import { ApprovalCard } from "../components/ApprovalCard";
@@ -330,19 +330,6 @@ export function ChatPage({
                 </div>
               )}
               {chat.pendingSend && <SendingBar pending={chat.pendingSend} onCancel={() => chat.cancelSend("button")} />}
-              {chat.turns.length > 0 && chat.state === "open" && (
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={chat.newConversation}
-                    disabled={chat.running}
-                    title={chat.running ? "Wait for Kestrel to finish, or answer the approval first" : "Start over: Kestrel forgets this chat (its traces are kept)"}
-                  >
-                    <SquarePen className="size-3.5" /> New conversation
-                  </Button>
-                </div>
-              )}
               <Composer
                 key={chat.heardCheck?.key ?? "typed"}
                 chat={chat}

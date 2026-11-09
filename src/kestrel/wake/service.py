@@ -40,7 +40,7 @@ from kestrel.wake.closings import (
 from kestrel.wake.detector import Detector
 from kestrel.wake.greeting import clean_name, greeting
 from kestrel.wake.power import Decision, Power, decide
-from kestrel.wake.speech import Speaker
+from kestrel.wake.speech import NullSpeaker, Speaker
 from kestrel.wake.talk import (
     CHECK_ON_SCREEN,
     DEFAULT_MIN_CONFIDENCE,
@@ -259,6 +259,7 @@ class WakeService:
                 "battery": self._battery,
                 "talk": self.make_transcriber is not None,
                 "speaker": self._speaker_on,
+                "speech": not isinstance(self.speaker, NullSpeaker),  # a voice to speak with (the console's Speaker)
             }
 
     def set_speaker(self, on: bool) -> dict:

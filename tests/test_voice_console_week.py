@@ -152,6 +152,15 @@ def service_with(tmp_path, score, voice, script, clock=time.monotonic):
     return service, events
 
 
+def test_the_status_says_whether_the_server_has_a_voice(tmp_path):
+    """The console's Speaker switch is always shown; `speech: false` makes it disabled with its reason."""
+    from kestrel.wake.speech import NullSpeaker
+
+    with_voice, _ = service_with(tmp_path, 0.9, FakeVoice(), [])
+    without, _ = service_with(tmp_path, 0.9, NullSpeaker(), [])
+    assert with_voice.status()["speech"] is True and without.status()["speech"] is False
+
+
 def woke(events):
     return any(e["type"] == "wake" for e in events)
 
