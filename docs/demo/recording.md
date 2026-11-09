@@ -26,7 +26,7 @@
 **Windows Game Bar (built in):**
 1. Focus the Edge window and press **Win+Alt+R** to start and stop. Game Bar records one window, not the whole
    desktop.
-2. Clips go to `C:\Users\noahi\Videos\Captures`.
+2. Clips go to `<home>\Videos\Captures`.
 3. For your voice, turn on the microphone in Win+G > Capture > the mic button. Check the level in Settings > Gaming >
    Captures.
 

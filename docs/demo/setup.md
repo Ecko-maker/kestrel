@@ -26,7 +26,7 @@ This is a copy of the two tracked files, so your real `workspace\` and `outbox\`
 is the repo's existing injection example; nothing new is written.
 
 ```powershell
-cd C:\Users\noahi\Documents\kestrel
+cd <home>\Documents\kestrel
 $ws = "$env:TEMP\kestrel-demo\workspace"
 Remove-Item -Recurse -Force "$env:TEMP\kestrel-demo" -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $ws | Out-Null
@@ -36,7 +36,7 @@ Copy-Item workspace\notes.txt, workspace\suspicious_email.txt $ws
 ## 2. The student console (window 1: scenes 1, 2, 4, 5)
 
 ```powershell
-cd C:\Users\noahi\Documents\kestrel
+cd <home>\Documents\kestrel
 $env:GROQ_API_KEY = "blocked-no-groq"; $env:GROQ_BASE_URL = "http://127.0.0.1:9/v1"
 $env:GEMINI_API_KEY = "blocked-no-gemini"; $env:GEMINI_BASE_URL = "http://127.0.0.1:9/v1"
 $env:KESTREL_PROVIDERS = "ollama"; $env:OLLAMA_MODEL = "kestrel-student"
@@ -56,7 +56,7 @@ start with a long pause.
 ## 3. The demo console (window 2: scene 3)
 
 ```powershell
-cd C:\Users\noahi\Documents\kestrel
+cd <home>\Documents\kestrel
 $env:GROQ_API_KEY = "blocked-no-groq"; $env:GROQ_BASE_URL = "http://127.0.0.1:9/v1"
 $env:GEMINI_API_KEY = "blocked-no-gemini"; $env:GEMINI_BASE_URL = "http://127.0.0.1:9/v1"
 $env:KESTREL_PROVIDERS = "demo"
