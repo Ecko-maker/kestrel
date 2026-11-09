@@ -14,6 +14,34 @@ and `.gitattributes` stores them byte for byte (no line-ending conversion). Neve
 | `routed-main-r5.json` | 448/500 = 90% (84-94%, per task, n=100), checks only | 1,079,887 bytes | `02af56169f68e55fef608c199a20c942e1824ca4afd45dbd2c345d608f786376` |
 | `routed-safety-S-strict-x3.json` | system ASR 0/17, model ASR 2/17; benign every repeat 9/11 | 211,889 bytes | `f131edaa95989ea8ea7c47681414a88a464817874d261341a6c1b733ce212310` |
 | `routed-safety-S-rubber-attacks.json` | system ASR 1/17, model ASR 2/17 | 44,103 bytes | `f51274f6ff00c1166aaa77a9b1cc856a8f655794018ce9d03ba6f9550431c3c4` |
+| `s9-main-r1.json` | 97/100 = 97% (93-100%, per task, n=100), checks only | 220,265 bytes | `579b0680ece60046c5e25aeb58d07bae50a4e15f39b33713c2d1fa840ba0c30f` |
+| `s9-safety-S-strict-x3.json` | system ASR 0/17, model ASR 0/17; benign every repeat 7/11 | 219,065 bytes | `68773f5b34bfc6dbeda6e21b0214548fd98645d996960ec6e56d8df3970f9409` |
+| `s9-safety-S-rubber-attacks-x3.json` | system ASR 0/17, model ASR 0/17 | 126,746 bytes | `d4f87abdcfb189f1e77bcd3f948beb24032097d55277ac133f6b35f53fea3705` |
+| `s9-main-r1.cost-runs.json` | per-run cost table, section 9 (derived, below) | 137,328 bytes | `ea1c2bb01c0c3409b94da92af0e8b8cccaa0e81efc0b606966a5f3e937238c6b` |
+| `routed-main-r5.cost-runs.json` | per-run cost table, section 8 (derived, below) | 245,752 bytes | `e4ffe9bafc9d806831494a4cadbd2b36582d7ad0a36e09bf44bc28a8ce81b6f5` |
+
+## s9-main-r1.json, s9-safety-S-strict-x3.json and s9-safety-S-rubber-attacks-x3.json
+
+Section 9's routed runs (`docs/phase4-section9-proposal.md`, frozen in `0071e54`), the inputs of
+`evals/reports/phase4-section9-verdict.md` (outcome: PASS by 9.6):
+- the routed system with rule A (tainted turns go to the teacher), `kestrel-student` on local Ollama 0.40.14 first, `groq` + `openai/gpt-oss-120b` as the teacher; agent `2ae99cffdbbc`, `--judge none`, default 60 s timeout;
+- **commit:** the tag `phase4-s9-runs` (`497643a`). Runs 1 and 2 began at `dfbd455` (11-07 23:57 and 11-08 00:07 EST) and finished at `497643a` (11-08 08:22 and 08:25 EST); the two commits differ only in `scripts/s9_queue.ps1`, `scripts/s9_gate.py` and their test, and every row records the same agent;
+- **safety split s1.0, group S, no fetch stub:** strict ×3 (87 runs) and rubber-stamp ×3 on its 18 attack rows (54 runs); tiers v2.1 rules, `KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`;
+- **main suite v1.1, ×1** (R=1, fixed in 9.4): three segments 11-08 23:12, 23:50 and 11-09 00:31 EST, all at `497643a`, waiting for quota in between;
+- **billable** from the files' summaries (Groq only, the fixed budget count): 66,613, 31,627 and 86,027.
+
+Copied byte for byte from `..\kestrel-runs\evals\results\` on 2026-11-09, after a scan: no API-key or
+secret-assignment pattern (Kestrel's `redact()` patterns), gitleaks "no leaks found", and every email address
+on a fixture domain (`*.example`, `example.com/.org/.jp`). Nothing redacted.
+
+## s9-main-r1.cost-runs.json and routed-main-r5.cost-runs.json
+
+Derived, not results: for each routed main-suite run and for the teacher reference (`main-after-v21-x3.json`),
+the per-run fields `kestrel.bench.cost.compare_cost` uses (list-price cost, Groq billable, model calls by route,
+providers), written by `scripts/s9_verdict.py --extract-costs` from a copy of the runs folder's `logs\bench.db`
+(2026-11-09) with the default `prices.toml`. Each records the SHA-256 of both results files it was extracted
+for, and `scripts/s9_verdict.py` refuses it if either differs. Ids and numbers only, no model text. They let
+both sections' cost verdicts be recomputed without the 35 MB trace database.
 
 ## routed-main-r5.json, routed-safety-S-strict-x3.json and routed-safety-S-rubber-attacks.json
 
