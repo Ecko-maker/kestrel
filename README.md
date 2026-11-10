@@ -74,7 +74,7 @@ Each number links to the file it comes from.
   - **Cause:** the router sent every turn to the student, including turns after the session had read local data. The student followed the injected instruction, and the rubber-stamp user approved it.
   - **The fix,** decided before the runs: once a session is tainted, its turns go to the teacher ([section 8.7](docs/phase4-plan.md#87-amendments), decision 9). Section 9 measured it.
 
-**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](docs/known-issues.md)) and by the combined PR's CI run _(pending)_.
+**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](docs/known-issues.md)) and by the combined PR's CI runs (#90, 2026-11-10), both green: the CI subset on Groq passed its gate on the PR (14/15 graded runs, 1 errored; [run 42755872462](https://github.com/Ecko-maker/kestrel/actions/runs/42755872462)) and after the merge to `main` (14/16, 0 errored; [run 42759045086](https://github.com/Ecko-maker/kestrel/actions/runs/42759045086)).
 
 **The LLM judge, calibrated against my own labels.** Source: [calibration report](evals/reports/judge-calibration.md).
 - **Agreement:** 91% (95% CI 78–100%) on 32 held-out answers.

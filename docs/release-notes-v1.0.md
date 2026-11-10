@@ -62,7 +62,7 @@ Every number links to its source.
   - **Cause:** the router kept turns on the student after the session had read local data, and the user approved the card.
   - **The fix:** tainted turns go to the teacher ([plan 8.7](phase4-plan.md#87-amendments)).
 
-**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](known-issues.md)) and by the combined PR's CI run _(pending)_.
+**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](known-issues.md)) and by the combined PR's CI runs (#90, 2026-11-10), both green: the CI subset on Groq passed its gate on the PR (14/15 graded runs, 1 errored; [run 42755872462](https://github.com/Ecko-maker/kestrel/actions/runs/42755872462)) and after the merge to `main` (14/16, 0 errored; [run 42759045086](https://github.com/Ecko-maker/kestrel/actions/runs/42759045086)).
 
 **LLM judge calibration** ([report](../evals/reports/judge-calibration.md)).
 - **Agreement:** 91% (95% CI 78–100%) on 32 held-out answers.
