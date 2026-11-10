@@ -82,7 +82,7 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.14"
-packages = ["kestrel"]
+files = ["src/kestrel", "servers"]  # the package and the standalone MCP servers
 mypy_path = "src"
 check_untyped_defs = true
 warn_unused_ignores = true
@@ -99,6 +99,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "evals/analysis/tests"]
+pythonpath = ["."]  # the standalone MCP servers (servers/) live at the repo root, outside the package
 
 [tool.coverage.run]
 source = ["kestrel"]

@@ -497,6 +497,25 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** spend Groq only where the routed system can differ from the teacher, and make the split a property of the task data, so it can't be chosen by looking at results.
 
+## D-pending-standalone-mcp-servers. Two read-only MCP servers outside the package: results and traces
+
+**Decision (owner, 2026-11-03; Phase 5's "2 MCP servers"):** `servers/kestrelbench_mcp` (the pinned KestrelBench results: runs, summaries with intervals, per-task results, paired comparisons, task definitions) and `servers/traces_mcp` (traces, stats and the approval audit log). Both are built on the official `mcp` SDK (`MCPServer`, 2.3).
+- **Location:** at the repo root, outside `src/kestrel/`. They aren't part of the agent, so changing them never moves the agent fingerprint or triggers the CI evals. They import `kestrel` from the repo's environment and run with `uv run --directory <repo> python -m servers.<name>`. They aren't in the wheel (`uv_build` packages `src/kestrel` only), so they have no console scripts.
+- **Security stance, tested** (`tests/test_mcp_servers.py`):
+  - read-only (SQLite `mode=ro`; every file byte-identical after every call);
+  - no network (every tool runs with sockets blocked);
+  - names, not paths (resolved with links followed inside an allowlisted folder; `../`, absolute paths, links and `.env` refused);
+  - untrusted content (answers, tool results, task fixtures with injection text) inside `<untrusted_data>`.
+- **Traces are metadata only by default.** Text, arguments, results, errors, approval arguments and reasons, rating notes and any span attribute not on an allowlist need `KESTREL_TRACES_MCP_CONTENT=on`, and are then redacted again. Judge scores are shown (owner, 2026-11-03).
+- `kestrel-mcp` (the agent's own safe tools, `src/kestrel/mcp_server.py`) is unchanged.
+
+**Alternatives:**
+- Inside `src/kestrel/` with console scripts: simpler to install, but every change would run the CI subset on Groq.
+- Separate packages, each with its own `pyproject.toml`: cleaner to publish, but more to maintain before anyone needs them outside this repo.
+- More agent tools over MCP: they would repeat `kestrel-mcp`, and the risky ones can't be offered without Kestrel's approval gate.
+
+**Why:** they expose what's distinctive about the project, measured results and inspectable runs, to any MCP client. The stance makes them safe to point at real data: nothing writes, nothing leaves the machine, and nothing private is shown unless asked for.
+
 ---
 
 ## D-pending-after-section8. After section 8's FAIL: fix, then measure again, then retrain only if needed (owner decision, 2026-11-05)
@@ -510,6 +529,14 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** the failure's cause is narrow and named in advance, and a new frozen measurement keeps any later claim honest. Section 8's result is reported beside whatever section 9 finds.
 
+## D-pending-wake-rule-b. Rule B for the wake word, a stricter wake while Kestrel speaks, and one Speaker switch (owner, 2026-11-07)
+
+**Decision:** "kestrel" wakes Kestrel only with nothing but known greetings before it in the utterance (rule B), replacing "kestrel anywhere". While Kestrel speaks and for 1 s after, a wake needs a score of 0.98. The console's Speaker switch is one setting the server holds for every console and applies at once; off silences everything Kestrel says.
+
+**Alternatives:** a higher threshold everywhere (measured: no help, the false wakes scored like real ones); no wakes at all while speaking (loses saying "Kestrel" to interrupt); speaker verification (later, if these aren't enough).
+
+**Why:** 32 of 50 live wakes on 11-05/06 had no answer before them, and rule B took the podcast hour from 2 false wakes to 0 without losing a clip. The switch did nothing until the next spoken request, so it couldn't stop a greeting or an answer already playing.
+
 ## D-pending-fetch-private-addresses. Fetches to private, loopback and link-local addresses are forbidden
 
 **Decision (owner, 2026-11-03, after the audit):** a `fetch__fetch` call whose host is `localhost`, an IP literal or a name resolving to a non-global address (loopback, RFC 1918, link-local, CGNAT, unique-local) is refused outright, like `deletes_local`: no approval card can let it through. Known issue KI-pending-fetch-private-addresses has the address list and the planned check.
@@ -520,6 +547,8 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 
 **Why:** nothing Kestrel does needs a private address over `fetch`, and a card for it is one more yes the user can give to an injection.
 
+**Rules version (owner, 2026-11-08, option A):** the block is an approval rule, so `permissions.RULES_VERSION` goes from `tiers-v2.1` to `tiers-v2.2`. The agent fingerprint moves from `35fac5ba6277` to `8a8174d8f17d` (groq / gpt-oss-120b, defaults) and only through `approval_rules`: system prompt `36d57c7e8a82` and tools `ede3efa38c54` are unchanged. `35fac5ba6277` stays the agent measured in Phase 4 sections 8 and 9; the released agent is that agent plus the block. Evidence it behaves the same on the bench: the 209 fetch calls in the pinned results replayed through the check, 0 refused (KI-pending-fetch-redirect-rebinding), and the combined PR's CI run. Bumped in the combined PR after section 9's verdict, so no section 9 run is resumed or paired across it. Alternative: leave the version (no test or pairing changes, but a future task fetching a private address would behave differently under the same fingerprint).
+
 ## D-pending-mcp-read-only. `kestrel-mcp` exposes read-only tools only
 
 **Decision (owner, 2026-11-03, after the audit):** remove `create_note` from `kestrel-mcp`'s exposed tools (`mcp_server.py` `EXPOSED`, `ALLOWED_CONFIRM`), which closes known issue #5 by its own "done when". Lands after the Phase 4 routed runs, for the same reason as the fetch decision above.
@@ -527,3 +556,28 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** MCP elicitation where the client supports it and refuse otherwise (more code, depends on each client); keep the client's prompt as the approval (#5 stays open).
 
 **Why:** Kestrel's gate is the one place approval is decided; a tool that is approved somewhere else is a second trust model to explain and test. Claude Code loses the ability to add notes through `kestrel-mcp`.
+
+## D-pending-followup-closings. A follow-up window after spoken answers, and closings handled only by a Vosk grammar
+
+**Decision (owner, 2026-11-05):** after a spoken answer, listen for 5 s without the wake word. A small Vosk grammar hears closings first and gets a fixed local reply, with no model, chat message or tool. Anything else takes the normal path. "Thank you" stays on Whisper's filler list.
+
+**How it works:** `wake/closings.py` holds the grammar, the replies and `FollowupWindow`, the same code in the live service and `scripts/closings_eval.py`. A closing must be the whole utterance, decided at its end, never on a partial result.
+
+**Alternatives:** take "thank you" off the filler list and let Whisper hear closings (Whisper invents it on silence, the reason it is a filler); act on Vosk's partial result as the spoken "cancel" does (faster, but "thanks, now list my files" would be taken for a closing, and a false cancel is harmless where a lost request isn't).
+
+**Why:** a thank-you is the commonest thing said after an answer, and it shouldn't cost a model call or put a message in the chat. Open: the window takes speech in the room for a request (KI-pending-followup-background-speech).
+
+**Amended (owner, 2026-11-08):** the window is opt-in. `KESTREL_TALK_FOLLOWUP_SECONDS` defaults to 0 (off); 5 is the suggested length when turned on. Reason: 88% false requests on podcast audio, and they can chain with no one talking. The default is reconsidered only after the known issue's fix is measured.
+
+---
+
+## D-pending-tainted-to-teacher. The student writes no reply once local data is in the conversation (owner's OK, 2026-11-05)
+
+**Decision:** decision 9's fix, rule A. On every model call the router checks the approval rules' own `Session.tainted` (a `reads_local` tool returned data); once true, the teacher writes every later reply of that conversation. The new kind `taint` is reported apart. It fails closed: no session means the teacher, and a teacher failure surfaces rather than falling back to the student. The student's sampling is sent explicitly on every student call (`temperature 0.7`, `top_p 0.8`, the Modelfile's values) and is in the routed fingerprint. Both behaviours are router settings because router code isn't hashed; the default fingerprint is unchanged. Design: `docs/tainted-to-teacher-design.md`.
+
+**Alternatives:**
+- Rule B, also `reads_untrusted`: closes web injection before a local read, at about 46% of task runs with the teacher instead of 42%, and about 145k more Groq. Left as KI-pending-rule-a-web-injection.
+- A check only at the start of a turn, as decision 9 is worded: the attack behind section 8's FAIL read and leaked in one turn, so it would have missed it.
+- Leave sampling to the Modelfile and rely on a version check: a check notices a change, while explicit values remove the dependency. Both are kept.
+
+**Why:** a model can't leak local data it never held, so this takes the student out of every point where it could. The cost is real: the teacher joins about 42% of task runs instead of 3.6%, which section 9 measures rather than assumes.

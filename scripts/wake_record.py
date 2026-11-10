@@ -7,6 +7,7 @@ saves anything.
     uv run --no-sync python scripts/wake_record.py                    # 30 clips of 3 s, Enter before each
     uv run --no-sync python scripts/wake_record.py --count 10 --out data/wake/positives-far
     uv run --no-sync python scripts/wake_record.py --phrases           # 5 clips each of 5 phrases, 3 s
+    uv run --no-sync python scripts/wake_record.py --phrases --set closings  # 5 clips each of 6 closings, 3 s
     uv run --no-sync python scripts/wake_record.py --background        # 60 min of room audio, 10-min files
 
 Each clip: Enter, a short countdown ("3, 2, 1, now"; recording starts at "1", so an early start
@@ -17,6 +18,8 @@ the 11 clips first missed at 0.90 (docs/voice-wake.md).
 --phrases prompts a fixed list ("Kestrel", "Hi Kestrel", "Hello Kestrel", "Hey Kestrel", "Shalom
 Kestrel"), --count clips each (default 5), into data/wake/phrases/ as hi-kestrel-000.wav etc., for
 wake_eval.py --phrases (detection per phrase, and whether the greeting was heard right).
+--set closings prompts the follow-up window's closings ("Thank you", "Thanks", "Cheers", "That's all",
+"Never mind", "Bye") into data/wake/closings/ as thank-you-000.wav etc., for scripts/closings_eval.py.
 
 --background records continuously (no Enter between files) into room-NNN.wav files of --chunk-minutes
 each, 16 kHz mono 16-bit, showing "recording, minute X of N". Ctrl+C stops early: the files already
@@ -69,11 +72,12 @@ def clip_problem(pcm: bytes) -> str | None:
 
 
 PHRASES = ("Kestrel", "Hi Kestrel", "Hello Kestrel", "Hey Kestrel", "Shalom Kestrel")
+CLOSING_PHRASES = ("Thank you", "Thanks", "Cheers", "That's all", "Never mind", "Bye")
 
 
 def slug(phrase: str) -> str:
-    """'Hi Kestrel' -> 'hi-kestrel' (the file prefix wake_eval.py reads the phrase back from)."""
-    return "-".join(phrase.lower().split())
+    """'Hi Kestrel' -> 'hi-kestrel', "That's all" -> 'thats-all' (the file prefix the evals read the phrase from)."""
+    return "-".join(phrase.lower().replace("'", "").split())
 
 
 def countdown(
@@ -171,6 +175,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="default data/wake/positives (or .../phrases, .../background)")
     parser.add_argument("--count", type=int, help="clips (default 30; with --phrases, 5 per phrase)")
     parser.add_argument("--phrases", action="store_true", help="5 phrases ('Hi Kestrel'...), --count clips each")
+    parser.add_argument("--set", choices=("wake", "closings"), default="wake", help="--phrases: which phrases")
     parser.add_argument("--seconds", type=float, default=3.0)
     parser.add_argument("--background", action="store_true", help="record continuously: room audio, no Enter")
     parser.add_argument("--minutes", type=float, default=60.0, help="--background: how long in all")
@@ -191,10 +196,11 @@ def main() -> int:
         return 0
 
     if args.phrases:
-        out = args.out or Path("data") / "wake" / "phrases"
+        phrases = CLOSING_PHRASES if args.set == "closings" else PHRASES
+        out = args.out or Path("data") / "wake" / ("closings" if args.set == "closings" else "phrases")
         count = args.count or 5
-        print(f"{len(PHRASES)} phrases x {count} clips of {args.seconds:g} s into {out}. Say each one naturally.")
-        for phrase in PHRASES:
+        print(f"{len(phrases)} phrases x {count} clips of {args.seconds:g} s into {out}. Say each one naturally.")
+        for phrase in phrases:
             print(f"\n== {phrase} ==")
             if not record_clips(out, slug(phrase), phrase, count, args.seconds):
                 break

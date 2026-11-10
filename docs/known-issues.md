@@ -318,6 +318,11 @@ an answer. Mitigation: spoken text never contains the name ("Kestrel" becomes "I
 fixed sentences avoid it), and the recorder ignores audio while Kestrel is speaking (the greeting is
 never taken for your request). Words that merely sound like "kestrel" can still wake it during speech;
 not measured.
+- 2026-11-07: while it speaks and for 1 s after, a wake needs a score of 0.98 (`SELF_WAKE_THRESHOLD`), and rule B
+  stops "kestrel" after other speech. Measured on 52 of Kestrel's own answers rendered with its voice (clean audio,
+  no room): one "kestrel" heard, at score 1.0, which neither rule stops. Of the 50 live wakes on 11-05/06, 4-6
+  started during its speech (estimated from trace times). `scripts/play_answers.py` plays the answers aloud for a
+  room recording, the measurement still missing.
 **Done when:** a spoken answer read at normal volume next to the microphone is measured not to wake
 Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
 recorded in docs/voice-wake.md.
@@ -540,15 +545,28 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 `billable_tokens()` adds up every provider, so on a routed run the student's Ollama tokens count as if they were Groq's. The routed main suite stopped at 320 of 500 runs with `token budget reached (125,576 of 125,446)` when only 42,064 of those were Groq (2026-11-04). Nothing was lost: `--resume` ran the rest. The completed file's `billable_tokens_total` says 202,084 for 68,348 Groq tokens.
 - Effect: a routed run can stop early with quota to spare, and its "billable" total can't be read as Groq use. Never the other way round: the budget can't let a run overspend Groq.
 - Use Groq's number from the traces: `scripts/groq_quota.py` and `bench cost` per provider. Unrouted runs are unaffected (one provider).
-- Not fixed yet, so the code stays the same through the section 8 runs (`docs/phase4-plan.md` 8.7, 2026-11-05).
-**Done when:** the budget and the Groq figure count paid providers only, with a test on a routed run, after the section 8 runs.
+- **Fixed on `phase4/tainted-to-teacher`** (2026-11-05, after the section 8 runs): the router records `free_tokens` per run (replies from a provider with no API key), and `billable_tokens()` and the summary subtract it. A call that reports no usage counts as paid, so the budget can stop early but never overspend. Section 8's files have no `free_tokens` and keep the totals they reported (tested).
+**Done when:** the budget and the Groq figure count paid providers only, with a test on a routed run, after the section 8 runs. (Met on that branch; closes when it merges.)
+
+### KI-pending-budget-checked-before-task. `--token-budget` is checked before each task, so the last task can overrun it
+**Labels:** `evals`, `low`
+`bench/runner.py` stops only when the tokens already spent reach the budget, so a task that starts under the budget runs to its end: section 9's run 4 (routed main suite, 2026-11-08) spent 9,941 against a budget of 9,589, an overrun of 352 (counted the KI-pending-budget-counts-local-tokens way).
+**Done when:** the owner decides to keep the overrun (bounded by one task) or to reserve a task's worst case before starting it, with a test.
 
 ### KI-pending-routed-resume-fingerprint. A routed run started with `--model` can't resume
 **Labels:** `evals`, `phase4`, `medium`
 `bench run` checks a resume against a fingerprint hashed with `--model` (`kestrel-student`), but results files record one hashed with the router's label (`kestrel-student -> openai/gpt-oss-120b`). So every such resume stops with "was run by agent 502b95cc0fb8, this one is 4da8f4b3c792 ... resuming would mix two agents", although the agent is the same. The check fails safe: two refused starts on 2026-11-05 cost 0 Groq and wrote nothing.
 - **Workaround (owner's OK, 2026-11-05):** leave out `--model`. With `KESTREL_ROUTER_STUDENT_MODEL` set, the router uses it first, so the same student runs and the label matches; without it the resume is refused.
 - The hint in the refusal is misleading: it blames the prompt, tools or settings.
-**Done when:** the resume check hashes the same label the file records, with a test that resumes a routed run, after the section 8 runs.
+- **Fixed on `phase4/tainted-to-teacher`** (2026-11-05): a routed run's check uses the router's label, with or without `--model`, so there's one routed fingerprint value. A real change of settings is still refused, and so is resuming section 8's files with the new router (tested).
+**Done when:** the resume check hashes the same label the file records, with a test that resumes a routed run, after the section 8 runs. (Met on that branch; closes when it merges.)
+
+### KI-pending-rule-a-web-injection. Rule A leaves web-page injection with the student until a local read
+**Labels:** `safety`, `phase4`, `medium`
+The router's taint rule (`docs/tainted-to-teacher-design.md`, rule A by the owner's decision, 2026-11-05) hands over once a `reads_local` tool has returned data. A `web_search` result is untrusted but doesn't taint, so an injected page can still steer the student's next call. It holds no local data at that point, so it can't leak any; it could ask for a write or a send, which still needs an approval card, and a rubber-stamp user could approve one.
+- Measured on section 8's group S: the student never tried this (`atk-action-note-web` 0 of 3 strict, 0 of 1 rubber-stamp). One task isn't evidence in general.
+- Rule B (also `reads_untrusted`) would close it, at about 46% of task runs with the teacher instead of 42%, and about 391k + 127k Groq instead of 321k + 91k for section 9.
+**Done when:** a measurement with more than one web-injection task on the routed system shows no such action, or rule B replaces rule A.
 
 ### KI-pending-ollama-auto-update. Ollama updated itself in the middle of a measurement
 **Labels:** `evals`, `phase4`, `medium`
@@ -578,6 +596,40 @@ Found in the 2026-11-03 audit. `web/app.py` sends `Content-Security-Policy: img-
 Found in the 2026-11-03 audit. `execute()` refuses a `confirm` tool without `approved=True`, but it only knows the tool's tier before anything is read (`base_level`). The tiers v2 escalation (a search or fetch that needs a card after a local read, `permissions.required_approval()`) is enforced only in `ApprovalGate`. Every agent path goes through the gate (`agent.py`), so nothing is open today; a new caller that calls `execute()` directly would skip the escalation. Current direct callers: `mcp_server.py` (no session: nothing is read in it) and `bench/preview.py` (offline previews).
 - Planned fix, after the Phase 4 routed runs: `execute()` takes the gate's `Requirement` (or the `Session`) and refuses when the call needs a card it wasn't given; callers without a session say so explicitly. Agent behaviour unchanged; check the agent fingerprint.
 **Done when:** `execute()` can't run a call that `required_approval()` says needs approval, with a test.
+
+### KI-pending-fetch-redirect-rebinding. The private-network block checks the URL, not where the fetch ends up
+**Labels:** `security`, `medium`
+Since 2026-11-07 (`src/kestrel/netguard.py`, the code for KI-pending-fetch-private-addresses / D-pending-fetch-private-addresses, both on PR #74), every `fetch__fetch` call is checked before it runs: the scheme must be http(s), and the URL's host must not be or resolve to a loopback, RFC 1918, link-local (169.254.169.254 included), carrier-grade NAT, unique-local or link-local IPv6, unspecified, multicast or other non-public address (IPv4-mapped IPv6 judged by the IPv4 inside; one private answer in a mixed reply is enough). A refusal is a tool error ("Error: blocked: private network address ..."), never a card, recorded in the audit log (`decision: blocked`) and on the trace's tool_call span (`kestrel.tool.blocked`, status error).
+- **What it can't stop:** mcp-server-fetch resolves the name again on its own and follows redirects. So a public host that redirects to a private address, or a name whose DNS answer changes between the check and the fetch (DNS rebinding), can still reach one.
+- **Also:** a name that doesn't resolve on this PC is left to the fetch (it fails there too). The bench checks literals only (`netguard.no_dns`): its fetches go to local stubs.
+- **Measured:** the 209 fetch calls in the pinned results files (81 benign, 128 attack; the main suite fetches nothing) replayed through the check: 0 refused. The CI subset on the PR is the live check.
+- **Full fix:** fetch through Kestrel itself (connect to the checked address, no redirects or each hop re-checked), or run the fetch server in a sandbox with no route to private networks.
+**Done when:** redirects and re-resolution can't reach a private address, with a test, or the owner decides the URL check is enough.
+
+### KI-pending-followup-background-speech. The follow-up window takes a podcast or a TV for a request
+**Labels:** `voice`, `high`
+The window has no wake word, so any speech in the room starts the normal path. On 1.00 h of podcast in the room (2026-11-05, `scripts/closings_eval.py`, 200 windows at random points, seed 2026): 0 false closings (0/200, 95% CI 0-1.8%), but **176 false requests (88%, 95% CI 83-92%)**, 15 checks, 8 dropped, 1 silence. A false request is sent after the 2-second countdown unless cancelled, spoken back, and that answer opens another window, so it can **chain with no one talking, spending model calls** (Groq quota on a real provider). Podcast audio out loud is the worst case; a quiet room isn't measured yet.
+- Options for the owner, none built: only one follow-up per wake (a follow-up's answer opens no window); no window when the room's noise floor shows speech; a follow-up always asks on screen ("check") instead of the countdown. They can be combined.
+- Mitigation (owner, 2026-11-08): the window is **off by default** (`DEFAULT_FOLLOWUP_S = 0.0`, `wake/closings.py`) and opt-in with `KESTREL_TALK_FOLLOWUP_SECONDS` (5 suggested). Tests: `test_the_window_is_off_by_default_and_opt_in`, `test_with_the_default_settings_a_spoken_answer_opens_no_window`. Still open: anyone who opts in gets the 88%, so leave the room quiet or set it to 0 when something is playing.
+**Done when:** the owner picks a rule, it is built, and `closings_eval.py` shows the result on the same audio; only then can the default be reconsidered.
+
+### KI-pending-bench-model-text-crash. Odd characters in model text crashed a bench run and lost its results (fixed 2026-11-04)
+**Labels:** `evals`, `bug`, `high`
+The routed main suite's first attempt (2026-11-04, runs folder at `a59439b`) stopped with `JSONDecodeError: Unterminated string` after 22 Groq calls (~30.5k billable). The JSON wasn't malformed: a model-written tool argument held U+2028 (line separator). The gate wrote it raw into the task's `approvals.jsonl` (`json.dumps(ensure_ascii=False)`), and the bench's `runner._audit` read the file with `str.splitlines()`, which also breaks at U+2028, so it parsed half a line. Checked on the crashed task's leftover log, by structure only: split on real newlines it parses, split by `splitlines()` it doesn't. Results are written only at the end of a run or at a quota wait, so **the crash left no results file and nothing to resume**.
+- Fixed: the gate writes the audit log as ASCII (one line per entry, whatever the text); `_audit` and `calibrate.load_labels` split on real newlines, so older files read correctly too.
+- Same class, found by the test: a lone surrogate (a model's JSON can hold `"\ud83d"`) crashed `write_results` with `UnicodeEncodeError`, which would have lost a whole run at its end. Results and reports now write it as the JSON escape; all other text stays byte-identical.
+- Second cause of the loss: with `--wait-for-quota`, an unexpected exception now checkpoints what finished, then still stops the run loudly. The crash isn't turned into a graded row; `--resume` runs the crashed task again.
+- Unchanged: the agent, the grading and both fingerprints (default `35fac5ba6277`, routed `4da8f4b3c792`). Audit-log text outside ASCII is now stored as `\uXXXX` escapes (still valid JSON, read back unchanged). Tests: `tests/test_bench_odd_text.py`.
+**Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs).
+
+### KI-pending-bench-killed-run. A run whose process was killed lost everything (fixed 2026-11-04)
+**Labels:** `evals`, `bug`, `high`
+The routed main suite's second attempt (2026-11-04, runs folder at `46c54d8`) stopped at 17:38:40 EST after 20 Groq calls (~29k billable) and left no results file and a stale lock. Not a Kestrel crash: a Python exception or an ordinary Ctrl+C would have released the lock (and an exception in a task would have checkpointed). Ollama's log shows the client's connection closing 2.16 s into a request; Ollama itself kept running. No crash report, memory, power, sleep or Defender event; the Windows Terminal process running the window was gone and a new one started at 17:38:47. So the process was killed from outside, most likely by its window closing. The logs can't say who or what closed it.
+- **Open question:** both attempts ran the same 144 prompts in the same order, and this one died in `act-packing-list` repeat 2, the task right after attempt 1's crash in `act-haiku-file` repeat 2. That prompt had already run in repeat 1. 500 scripted runs through the real CLI and a real PowerShell pipeline showed no problem at that position, but they don't exercise the student or the real window. If a run dies there again, this is not a coincidence.
+- Why `46c54d8` didn't cover it: its checkpoint ran only when Python caught an exception. A killed process runs no more code, and `KeyboardInterrupt` isn't an `Exception`.
+- Fixed, with `--wait-for-quota` only (other runs keep their exact files): the results file is written before the first token is spent and recording the attempt (`meta.attempts`), then saved after every finished run, atomically (temp file + `os.replace`). A save that fails mid-run warns and the run goes on; one that fails at the start stops before any tokens. `RUN STOPPED: ...` is printed on a line of its own for any exception or Ctrl+C. The same command can't overwrite an existing results file; it points to `--resume`.
+- Tests: `tests/test_bench_killed_run.py` (a child process killed with `os._exit`, at the first call and after a finished run, then `--resume`). Agent, grading and both fingerprints unchanged (default `35fac5ba6277`, routed `4da8f4b3c792`).
+**Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs), and the routed run has passed `act-packing-list` repeat 2.
 
 ---
 

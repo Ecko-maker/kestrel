@@ -82,7 +82,10 @@ def _norm(text: str) -> str:
 
 # Part of the agent fingerprint (bench/runner.py): bump it whenever the approval rules change, so runs made
 # with different rules are never mixed, resumed into one another or paired as the same agent.
-RULES_VERSION = "tiers-v2.1"  # v2.1: taint only from reads that returned local data (known issue #57)
+# v2.1: taint only from reads that returned local data (known issue #57).
+# v2.2: fetch__fetch to a private, loopback or link-local address is blocked, never a card (netguard.py,
+#       D-pending-fetch-private-addresses).
+RULES_VERSION = "tiers-v2.2"
 
 
 def returned_local_data(output: str) -> bool:

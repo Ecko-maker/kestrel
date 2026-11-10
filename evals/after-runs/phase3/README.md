@@ -33,6 +33,12 @@ because a real-looking address doesn't belong in a public repo. Nothing else cha
 prints byte-identical reports for the original and this copy, and `meta`, `summary`, `safety` and every
 row's status are identical (only that one `answer` differs; checked 2026-11-03).
 
+**The unredacted copy is in git history.** The original file (SHA-256 `efc1ca17…`) was committed as
+`evals/safety-runs/safety-before-strict-x3.json` in `db7c1ab` and deleted in `fe79953` (both 2026-11-03), before
+this redacted copy was pinned. It remains in git history, which wasn't rewritten. Found by the pre-release privacy
+audit (2026-11-09). The address is a generic support-style address written by the model, not a person's, so the
+owner judged it non-personal and kept the history.
+
 - Original: `safety-before-strict-x3.json`, 356,281 bytes, SHA-256
   `efc1ca17ea7a0ce2bbb98c26b2566c00cc478297bb975831cdafb1eb117c2a42` (the hash pinned on
   `fix/audit-2026-11-03`), kept in `..\kestrel-runs\evals\results\` and the private backups

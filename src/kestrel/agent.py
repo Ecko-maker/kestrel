@@ -154,7 +154,7 @@ class Agent:
         self.session.note_user(user_text)
         steps, providers, tools_used = 0, [], Counter[str]()
         if begin_turn := getattr(self.llm, "begin_turn", None):  # the Phase 4 router only
-            begin_turn(self.tools.prepare)
+            begin_turn(self.tools.prepare, self.session)
         limit = self.max_steps
 
         try:
@@ -380,10 +380,13 @@ class Agent:
                 approval.set("kestrel.approval.reason", verdict.reason)
                 approval.end()
 
-            if verdict.args is None:  # rejected, forbidden or refused: it does not run
+            if verdict.args is None:  # rejected, forbidden, refused or blocked: it does not run
                 results[i] = verdict.message
                 span.set("kestrel.tool.ran", False)
                 span.set("gen_ai.tool.call.result", verdict.message)
+                if verdict.decision == "blocked":  # the private-network block (netguard): kept in the trace
+                    span.set("kestrel.tool.blocked", verdict.reason)
+                    span.fail(verdict.message)
                 span.end()
                 result_event(i, results[i], False, span, verdict.decision)
             elif need.level == "safe":

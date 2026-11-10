@@ -23,6 +23,9 @@ from kestrel.tracing import Tracer
 DIM, YELLOW, RESET = "\033[2m", "\033[33m", "\033[0m"
 
 
+WAKE_OFF_NOTICE = "Wake word off: 'Kestrel' isn't heard. Set KESTREL_WAKE=on (docs/voice-wake.md) to use it."
+
+
 def dim(text: str) -> None:
     print(f"{DIM}{text}{RESET}")
 
@@ -251,6 +254,8 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     print(f"Kestrel console: {config.url()}", flush=True)
     if wake is not None:
         dim(f"Wake word on: listening for 'Kestrel' (model {wake.settings.model_dir}). Audio stays in memory.")
+    else:
+        dim(WAKE_OFF_NOTICE)
     if demo:
         print(f"{YELLOW}{DEMO_NOTICE}{RESET}", flush=True)
     dim("Only this machine can connect; the token in the link is your key. Ctrl+C to stop.")
