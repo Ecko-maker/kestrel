@@ -1,22 +1,71 @@
 # Kestrel
 
-**Hunts on its own. Comes back when called. Gets sharper every night.**
+**A personal AI agent with its own agent loop and a human-approval gate enforced in code, where a fine-tuned 4B model routed in front of its 120B teacher passed a pre-registered quality, cost and safety gate.**
 
 [![CI](https://github.com/Ecko-maker/kestrel/actions/workflows/ci.yml/badge.svg)](https://github.com/Ecko-maker/kestrel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Demo (1:50): [youtu.be/kglrGnkzt_I](https://youtu.be/kglrGnkzt_I)**
+<!-- DEMO GIF: put a ~10-second loop at docs/media/demo.gif (ask -> plan -> approval card -> answer), then
+     replace the line below with: ![Kestrel asks before it sends an email](docs/media/demo.gif) -->
+> **Demo GIF coming soon.** Until then: the full demo video (1:50), [youtu.be/kglrGnkzt_I](https://youtu.be/kglrGnkzt_I).
 
-Scene 3 uses a scripted model to show the approval gate stopping a prompt injection; the numbers on the closing slide are the measured ones, each already linked in [Results](#results).
+Kestrel plans, calls tools and works through multi-step tasks on its own, with no agent framework. **Every risky action (sending, writing, posting) waits for a human to approve it, and the most dangerous ones are refused outright.** That rule lives in code, not in the prompt, so a model fooled by injected text can only *ask*. Every claim below is measured on its own benchmark under a decision rule written down before the runs, and each number links to the report it comes from.
 
-Kestrel is a personal AI agent, built from scratch with its own agent loop and no agent framework. It plans, calls tools and works through multi-step tasks on its own. **Every risky action (sending, writing, posting) waits for a human to approve it, and the most dangerous ones are refused outright**. That rule is enforced in code, not in the prompt, so a model fooled by injected text can only *ask*. Every request is traced, and it's measured on its own benchmark and its own prompt-injection suite under decision rules fixed before the results were seen.
+## Evidence
 
-| Headline | Result | Source |
+| What was measured | Result (95% CI) | Outcome |
 |---|---|---|
-| KestrelBench v1.1 (100 tasks), gpt-oss-120b on Groq | **92% pass rate** (95% CI 86–97%) | [baseline report](evals/reports/baseline-v1.1.md) |
-| Prompt-injection attacks that got through, tiers v2.1 | **0 of 29** at system level (95% CI 0–12%), from 1 of 29 before | [safety report](evals/reports/safety-after-v2.1.md), [before/after](docs/tiers-v2-design.md) |
-| Cost to run and to evaluate | **$0**: free tiers only (Groq, Gemini, local Ollama, Kaggle GPUs) | [prices.toml](src/kestrel/prices.toml) (`actual_*` = 0) |
-| Phase 4: distill a small open model | **in progress**: student trained and served; the pre-registered routed runs are next | [pre-registration](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) |
+| **Benchmark baseline:** KestrelBench v1.1, 100 tasks, gpt-oss-120b (the teacher) | [**92%** pass rate](evals/reports/baseline-v1.1.md) (86–97%); [pinned results](evals/baselines/baseline-v1.1-judge-v2-final.json) | baseline |
+| **Prompt-injection gate:** 29 attacks, permission tiers v2.1 | [**0/29** got through](evals/reports/safety-after-v2.1.md) under the strict user (0–12%), and 0/29 when every card is approved (0–12%) | gate passed |
+| **Distillation, quality:** a QLoRA-tuned Qwen3-4B student routed in front of the teacher, mean(routed − 0.95 × teacher) per task, deterministic checks | [**+0.093**](evals/reports/phase4-section9-verdict.md) (+0.050 to +0.138), so at least 95% of the teacher's quality | PASS |
+| **Distillation, cost:** routed − teacher, list price | [**−$0.289** per 1,000 tasks](evals/reports/phase4-section9-verdict.md) (−$0.348 to −$0.229) | PASS |
+| **Distillation, safety:** the routed system on the attacks it can be sent, strict ×3 and rubber-stamp ×3 | [**0/17** got through](evals/reports/phase4-section9-verdict.md) under both users (0–20%) | PASS |
+| **The first attempt (section 8), reported beside it:** the same claim before the fix | [**1/17** attacks got through](evals/reports/phase4-result.md) when every card was approved (0–29%); quality +0.019 (−0.034 to +0.072) | FAIL |
+| **The LLM judge against my own labels**, held-out half | [**91%** agreement](evals/reports/judge-calibration.md) (78–100%, n=32); Cohen's kappa 0.0 | not calibrated: rubric scores stay provisional |
+
+**How to read the distillation PASS:** it ran at R=1 (one run per task), and the pre-registration requires these two numbers next to it:
+- **4%** is the chance of a false PASS on quality if the routed system were exactly at the 95% margin. That is the error rate of the quality claim itself.
+- **8%** is the chance quality shows as passing if the fix changed nothing. That wouldn't be a false claim, since the first attempt was already above the margin on average; the safety conditions must still pass separately ([section 9.6](docs/phase4-section9-proposal.md)).
+
+The fix between the two attempts is narrow and was named before the second one: once local data is in the conversation, the student writes no more replies and the teacher answers ([decision](docs/design-decisions.md), [verdict](evals/reports/phase4-section9-verdict.md)). Running it all costs **$0**: free tiers only (Groq, Gemini, local Ollama, Kaggle GPUs).
+
+## Try it in 2 minutes
+
+The demo provider needs no API key. Its model replies are scripted for a few sample prompts; the tools, approval cards, prompt-injection handling and traces are real.
+
+**With Docker:**
+
+```bash
+git clone https://github.com/Ecko-maker/kestrel && cd kestrel
+KESTREL_PROVIDERS=demo docker compose up      # PowerShell: $env:KESTREL_PROVIDERS="demo"; docker compose up
+```
+
+Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`) and try one of the sample prompts.
+
+**With [uv](https://docs.astral.sh/uv/)** (Python 3.14):
+
+```bash
+git clone https://github.com/Ecko-maker/kestrel && cd kestrel
+uv sync
+uv run kestrel --provider demo                           # chat in the terminal
+KESTREL_PROVIDERS=demo uv run kestrel web --build        # or the web console (needs Node.js 24 to build it)
+```
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    U[You: console, terminal, voice] --> A[Agent loop]
+    A --> R{Router}
+    R -->|no local data read yet: 57% of turns| S[Student: fine-tuned Qwen3-4B on Ollama]
+    R -->|after local data is read, or the student fails: 43%| T[Teacher: gpt-oss-120b on Groq]
+    A --> G{Approval gate, enforced in code}
+    G -->|risky: you approve, edit or reject| U
+    G --> Tools[Tools: workspace files, web, MCP servers]
+    A --> TR[(Traces in SQLite)] --> D[Training data and KestrelBench]
+```
+
+Every decision, with the alternatives that were considered, is in [design decisions](docs/design-decisions.md). Every open problem and limit is in [known issues](docs/known-issues.md). The detailed architecture is [below](#architecture).
 
 | Approve, edit or reject every action | See every step as a timeline |
 |---|---|
