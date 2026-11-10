@@ -40,6 +40,16 @@ def test_modelfile() -> None:
         export.modelfile('x """ y', "m.gguf")
 
 
+def test_the_exported_students_name_is_the_one_the_safety_report_knows() -> None:
+    """A safety run of the served student is labelled the student-alone measurement by its Ollama name."""
+    import re
+
+    from kestrel.bench.safety_report import STUDENT_MODELS
+
+    default = re.search(r'"--name", default="([^"]+)"', (ROOT / "distill" / "export.py").read_text(encoding="utf-8"))
+    assert default is not None and default.group(1) in STUDENT_MODELS
+
+
 def test_llama_cpp_is_pinned() -> None:
     assert export.LLAMA_CPP_BUILD.startswith("b") and export.LLAMA_CPP_BUILD[1:].isdigit()
     assert export.default_llama_cpp().name == f"llama.cpp-{export.LLAMA_CPP_BUILD}"

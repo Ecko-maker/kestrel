@@ -136,6 +136,19 @@ test("wake: shows over idle and done only, never over work, an approval or an er
   }
 });
 
+test("follow-up window: Listening without the fly-in, and work still wins", async () => {
+  const { arrivingOf, attendingOf, hudPhase, PHASE_LABEL } = await import("./useHud.ts");
+  assert.equal(arrivingOf(true, false), true);
+  assert.equal(arrivingOf(true, true), false, "no fly-in after a spoken answer");
+  const attending = attendingOf({ windowOpen: true, dismissed: false, sentSinceWake: false });
+  const window = { micOn: true, arriving: arrivingOf(true, true), attending, settling: true };
+  assert.equal(hudPhase("done", window), "attending");
+  assert.equal(PHASE_LABEL.attending, "Listening…");
+  assert.equal(hudPhase("thinking", window), "thinking");
+  const over = attendingOf({ windowOpen: true, dismissed: true, sentSinceWake: false }); // wake_end
+  assert.equal(hudPhase("done", { ...window, attending: over, settling: false }), "standby");
+});
+
 test("wake: the falcon arrives, and the label greets", async () => {
   const { PHASE_LABEL } = await import("./useHud.ts");
   assert.equal(FALCON_POSE.waking, "arrive");

@@ -52,7 +52,7 @@ def main() -> int:
         MicSource,
         power,
         default_speaker(),
-        record_wake=lambda at: print(f"  wake heard at {time.strftime('%H:%M:%S', time.localtime(at))}"),
+        record_wake=lambda at, **_: print(f"  wake heard at {time.strftime('%H:%M:%S', time.localtime(at))}"),
     )
     service.emit = lambda e: print(f"  event: {e}") if e["type"] == "wake" else None
     print(f"power: {power.state()}; KESTREL_WAKE_ON_BATTERY: {settings.on_battery}, min {settings.min_battery}%")

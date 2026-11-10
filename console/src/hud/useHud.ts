@@ -183,6 +183,11 @@ export const WAKE_MS = 1600;
 export const SETTLE_MS = 1400; // "done" (the swoop back and the answer burst), then Standby or Ready
 
 // Listening lasts the wake's window (KESTREL_WAKE_LISTEN_SECONDS) unless you start typing or send a message.
+// The fly-in is for a wake. The follow-up window after a spoken answer goes straight to Listening.
+export function arrivingOf(flyIn: boolean, followup: boolean): boolean {
+  return flyIn && !followup;
+}
+
 export function attendingOf(o: { windowOpen: boolean; dismissed: boolean; sentSinceWake: boolean }): boolean {
   return o.windowOpen && !o.dismissed && !o.sentSinceWake;
 }
@@ -308,7 +313,7 @@ function fmtShort(ms: number | null | undefined): string {
 }
 
 export interface WakeInput {
-  wake: { key: string; greeting: string; receivedAt: number; listenSeconds: number } | null;
+  wake: { key: string; greeting: string; receivedAt: number; listenSeconds: number; followup?: boolean } | null;
   micOn: boolean; // the wake word's microphone is open (wake_status.listening)
   dismissed: boolean; // typing ended this wake's Listening mode
   sending?: boolean; // a spoken request is in its send countdown
@@ -323,7 +328,8 @@ export function useHud(
   const { wake, micOn, dismissed, sending = false } = input;
   const burst = useOneShot(answerKey(turns), reducedMotion, BURST_MS);
   const settling = useOneShot(answerKey(turns), false, SETTLE_MS) !== null;
-  const arriving = useOneShot(wake?.key ?? null, false, WAKE_MS) !== null;
+  const flyIn = useOneShot(wake?.key ?? null, false, WAKE_MS) !== null;
+  const arriving = arrivingOf(flyIn, wake?.followup ?? false);
   const windowOpen = useOneShot(wake?.key ?? null, false, (wake?.listenSeconds ?? 8) * 1000) !== null;
   const lastStart = turns.at(-1)?.startedAt ?? 0;
   const base = useMemo(() => {

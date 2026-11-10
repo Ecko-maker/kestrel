@@ -3,6 +3,15 @@
     "kestrel": {
       "command": "uv",
       "args": ["run", "kestrel-mcp"]
+    },
+    "kestrelbench": {
+      "command": "uv",
+      "args": ["run", "--no-sync", "python", "-m", "servers.kestrelbench_mcp"]
+    },
+    "kestrel-traces": {
+      "command": "uv",
+      "args": ["run", "--no-sync", "python", "-m", "servers.traces_mcp"],
+      "env": {"KESTREL_TRACES_MCP_CONTENT": "off"}
     }
   }
 }

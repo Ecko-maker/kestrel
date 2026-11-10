@@ -195,7 +195,10 @@ def test_the_tiers_v2_agent_fingerprint_is_pinned(monkeypatch):
     """The main-suite agent for the next graded tiers-v2 after-run (groq / gpt-oss-120b). The before agent is
     cc5c16377662 (CLAUDE.md, D4). It moved from cc5c16377662 to 2cac3804ef92 only because capabilities are
     hashed (the 2026-10-21 main-suite after-run), then to 35fac5ba6277 because the approval rules' version
-    is hashed too (tiers-v2.1: taint only from reads that returned local data, known issue #57). The same
+    is hashed too (tiers-v2.1: taint only from reads that returned local data, known issue #57), then to
+    8a8174d8f17d (2026-11-08) only because the rules' version is now tiers-v2.2: the private-address block
+    for fetch__fetch (netguard.py, D-pending-fetch-private-addresses). 35fac5ba6277 stays the agent measured in
+    Phase 4 sections 8 and 9; the released agent is it plus the block. The same
     tools hashed without capabilities still give the before run's tools hash, and the system prompt hash is
     unchanged, so the model sees byte-identical tools and prompt. If either moves, update CLAUDE.md and
     decision 16."""
@@ -204,8 +207,10 @@ def test_the_tiers_v2_agent_fingerprint_is_pinned(monkeypatch):
 
     monkeypatch.delenv("KESTREL_REQUEST_TIMEOUT", raising=False)
     after = agent_fingerprint("groq", "openai/gpt-oss-120b")
-    assert RULES_VERSION == "tiers-v2.1"
-    assert after["sha"] == "35fac5ba6277"
+    assert RULES_VERSION == "tiers-v2.2"
+    assert after["approval_rules"] == "tiers-v2.2"
+    assert after["sha"] == "8a8174d8f17d"
+    assert after["tools"] == "ede3efa38c54"  # the same as 35fac5ba6277: only the rules' version moved
     assert after["system_prompt"] == "36d57c7e8a82"  # the same as the before agent cc5c16377662
     model_facing = sorted(
         ({"schema": t.schema, "risk": t.risk} for t in tools.registry.tools.values()),

@@ -298,7 +298,7 @@ def test_the_wake_threshold_default_is_0_90(monkeypatch):
 
 
 def test_the_threshold_is_applied_to_the_wake_words_confidence():
-    result = json.dumps({"result": [{"word": "[unk]", "conf": 1.0}, {"word": "kestrel", "conf": 0.42}]})
+    result = json.dumps({"result": [{"word": "kestrel", "conf": 0.42}, {"word": "[unk]", "conf": 1.0}]})
     assert wake_confidence(result) == 0.42
     assert wake_confidence(json.dumps({"result": [{"word": "[unk]", "conf": 1.0}]})) is None
     assert wake_confidence("") is None
@@ -552,6 +552,8 @@ def test_keep_awake_is_held_only_while_listening_and_released_when_turned_off(tm
             "on_ac": True,
             "battery": None,
             "talk": False,
+            "speaker": True,
+            "speech": True,  # the server has a voice (a fake one here); the console's Speaker switch reads it
         }
         service.set_enabled(True)
         wait_for(lambda: power.awake)
@@ -913,7 +915,7 @@ def test_a_slow_trace_write_or_windows_call_does_not_shorten_listening(tmp_path)
     service, _, events, _, power, *_ = make_service(tmp_path, clock=lambda: now[0], listen_seconds=0.4)
 
     def slow(seconds):
-        def call(*args):
+        def call(*args, **_):
             now[0] += seconds
             return True
 
@@ -1002,7 +1004,6 @@ class GrammarRecognizer:
         ("Hey Kestrel", "hey"),
         ("Shalom Kestrel", "shalom"),
         ("Good morning Kestrel", "good morning"),
-        ("Howdy Kestrel", None),  # not in the grammar: "[unk] kestrel" still wakes, plain greeting
     ],
 )
 def test_each_phrase_wakes(said, greeting_heard):
@@ -1011,20 +1012,21 @@ def test_each_phrase_wakes(said, greeting_heard):
     assert detector.greeting == greeting_heard
 
 
-def test_the_wake_rule_is_kestrel_anywhere_in_the_utterance():
-    """What Vosk returns for "hi kestrel" said with an unknown greeting, and for a known one."""
+def test_the_wake_rule_is_rule_b_nothing_unknown_before_kestrel():
+    """Rule B (2026-11-07; was "kestrel anywhere"): a known greeting before it wakes, an unknown word doesn't."""
     unk_then_kestrel = json.dumps({"result": [{"word": "[unk]", "conf": 1.0}, {"word": "kestrel", "conf": 0.93}]})
     hello_kestrel = json.dumps({"result": [{"word": "hello", "conf": 1.0}, {"word": "kestrel", "conf": 0.97}]})
-    assert wake_confidence(unk_then_kestrel) == 0.93
+    assert wake_confidence(unk_then_kestrel) is None
     assert wake_confidence(hello_kestrel) == 0.97
     assert heard_greeting(unk_then_kestrel) is None and heard_greeting(hello_kestrel) == "hello"
 
 
-def test_kestrel_inside_a_longer_sentence_still_wakes():
-    """Accepted behaviour (docs/voice-wake.md): the word anywhere in an utterance wakes Kestrel."""
+def test_kestrel_inside_a_longer_sentence_no_longer_wakes():
+    """Rule B (2026-11-07): the old accepted behaviour was most of the podcast's false wakes."""
     detector = VoskDetector(GrammarRecognizer, threshold=0.9)
-    assert detector.feed(b"I saw a kestrel over the field today") == 0.95
-    assert detector.greeting is None
+    assert detector.feed(b"I saw a kestrel over the field today") is None
+    assert detector.feed(b"Howdy Kestrel") is None  # an unknown greeting: also [unk] before it
+    assert detector.feed(b"Kestrel what time is it") == 0.95  # the request in one breath still wakes
 
 
 def test_a_greeting_without_kestrel_never_wakes():

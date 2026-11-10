@@ -19,9 +19,24 @@ on `[unk]`. When one of them is heard with the wake word, Kestrel greets back wi
 "Hello, {name}. I'm here, what do you need?" ("Hi", "Hey", "Shalom", "Good morning"; no name set:
 "Hello. I'm here, what do you need?"). Otherwise the normal greeting. A greeting alone never wakes it.
 
-**Accepted behaviour:** "kestrel" inside a longer sentence ("I saw a kestrel over the field") wakes it
-too. That is the same rule, and it is on purpose: requiring the word on its own or at the start
-would also reject "hi Kestrel". The cost shows up as false wakes per hour in `wake_eval.py`.
+**Rule B (2026-11-07), replacing "kestrel anywhere":** "kestrel" wakes it only when nothing but the known
+greetings comes before it in the utterance. So "Kestrel", "Kestrel, what time is it?" in one breath, "Hi
+Kestrel" and "Good morning Kestrel" wake it; "[unk] kestrel" doesn't: an unknown greeting ("Howdy Kestrel"), and
+"kestrel" in the middle of other speech ("I saw a kestrel over the field", a podcast). Those were most of the
+false wakes with a podcast playing: 32 of the 50 wakes on 11-05/06 had no answer in the 20 s before them. One
+function decides it for the live detector and the evals alike (`detector.wake_confidence`).
+
+| Measured offline, threshold 0.9 | Before (anywhere) | After (rule B) |
+|---|---|---|
+| False wakes on the 1.00 h podcast background | 2 per hour | **0 per hour** |
+| `positives-v2` (30 "Kestrel" clips) | 29/30 | **29/30** |
+| `positives` (30 older clips) | 19/30 | 19/30 |
+
+**While Kestrel speaks, and for 1 s after,** a wake needs a score of 0.98 instead of the threshold
+(`service.SELF_WAKE_THRESHOLD`, provisional), because the microphone hears its voice (known issue #62). Saying
+"Kestrel" to interrupt still works: `positives-v2` is 29/30 at 0.98 too. Kestrel's own answers, rendered with the
+same voice (52 answers, 12.9 min, clean audio, no room): one "kestrel" heard, **at score 1.0**, so this rule doesn't
+stop that one. A room recording of the answers (`scripts/play_answers.py`) is the measurement that settles #62.
 
 **Old vs new grammar on your existing recordings** (2026-10-26, 30 plain "Kestrel" clips of 2 s,
 1.00 h of podcast in the room; no greeting clips recorded yet):
@@ -53,6 +68,13 @@ same hour in an earlier run. Per-phrase detection waits for `wake_record.py --ph
 
 4. Start the console: `uv run kestrel web`. The nav shows a microphone switch; red "Listening" means
    the microphone is open.
+
+**If "Kestrel" gets no answer, check the server window first.** It prints "Wake word on: listening for
+'Kestrel'" or "Wake word off: ... Set KESTREL_WAKE=on", and the console shows a grey "Wake word off" chip instead
+of the switch. `KESTREL_WAKE=on` must be in `.env` or set in the same PowerShell window before `kestrel web`
+(`$env:KESTREL_WAKE = "on"` lasts only for that window). Without it, nothing is spoken, and the Speaker switch
+is shown disabled ("Speaker unavailable"), its tooltip saying why. Found 2026-11-07: a server started in a new
+window without it.
 
 ### A console window that is already there when the display wakes
 
@@ -160,7 +182,7 @@ mouse move of zero pixels (`SendInput`). Never a click, a key press or a real mo
 | Audio is never saved | Chunks go from PortAudio's callback to a bounded in-memory queue to the detector, then are dropped | `test_audio_is_never_written_to_disk` |
 | Audio is never sent | The wake modules import no network library | `test_wake_code_imports_no_network_agent_model_or_tool_module` |
 | Only a loudness number reaches the console, only while Listening | `wake_level` carries `type` and `level` and nothing else; none in Standby or after Listening ends | `test_level_events_carry_one_number_and_only_while_listening`, `test_typing_or_sending_ends_the_listening_window` |
-| A wake records only its time | One span named `wake`, attributes `{"kestrel.wake": "detected"}` | `test_a_wake_records_only_its_time` |
+| A wake records its time, score and path, no words | One span named `wake`, attributes `{"kestrel.wake": "detected", "kestrel.wake.score": <0-1>, "kestrel.wake.path": <category>}`. The path is where "kestrel" sat (`alone`, `greeting`, `first`, `after_speech`) or `followup` (a follow-up window's speech, no wake word, no score); anything else is not stored | `test_a_wake_records_only_its_time`, `test_the_span_holds_a_time_a_number_and_a_known_category_and_no_free_text` |
 | Wake records never become data | No row in `traces`, so not in Traces, Stats, `kestrel export` or `kestrel distill build` | `test_wake_records_are_hidden_from_traces_stats_and_export`, `test_wake_records_never_reach_the_table_the_distillation_dataset_reads` |
 | No model call, no tool, no approval | The service holds no agent, model or tool | `test_a_wake_makes_no_model_call_runs_no_tool_and_leaves_approvals_to_clicks` |
 
@@ -256,10 +278,32 @@ and the model present, spoken requests are on; `KESTREL_TALK=off` keeps a wake t
 | `KESTREL_TALK` | on | `off`: a wake only greets |
 | `KESTREL_TALK_MODEL` | `base.en-q5_1` | `tiny.en-q5_1`: about 3x faster, about twice the errors on real speech; `small.en-q5_1` (190 MB): a little more accurate, ~3 s per request (not the default, see below) |
 | `KESTREL_TALK_MIN_CONFIDENCE` | 0.50 | below it: "check first" instead of sending (provisional, owner 2026-10-24; `talk_eval.py` sweeps it) |
+| `KESTREL_TALK_FOLLOWUP_SECONDS` | 0 (off) | opt-in: after a spoken answer, listen this long without the wake word (0-30; 5 suggested). Off by default because speech in the room becomes requests (KI-pending-followup-background-speech). See "Follow-up and closings" |
+| `KESTREL_TALK_CLOSING_THRESHOLD` | 0.5 | lowest word confidence for a local closing reply (provisional, no clips measured yet) |
 | `KESTREL_TALK_HINT` | off | the vocabulary hint; `on` to use it (off since 2026-10-24: it was worse, see below) |
 | `KESTREL_TALK_VOCAB_FILE` | `data/talk/vocab.txt` | names for the hint, one per line, `#` comments (git-ignored; you add them) |
 
-The console's **Speak answers** switch (remembered per browser) turns the spoken answers off.
+The console's **Speaker** switch (2026-11-07; was "Speak answers") is one setting for every console: off,
+Kestrel says nothing at all (no greeting, answers or fixed sentences) and stops what it is saying at once; on,
+it speaks again. Each browser remembers its choice and sends it when it connects, and every change is sent
+straight away (`{"type": "speaker", "on": ...}`), so the last console to change it wins and all of them show it.
+Before, the switch only travelled with the next spoken request: turning it off during an answer, or before a
+wake, changed nothing.
+
+The switch is always in the sidebar, next to Wake word, in both looks (2026-11-09). When the server can't speak it
+is disabled, with a tooltip saying why:
+- **The wake word is off on the server:** "No speech output: start Kestrel with KESTREL_WAKE=on" ("No speech output
+  in demo mode" in demo mode).
+- **No voice on the server:** the server's status reports `speech: false` when its speaker is the silent one, as
+  on anything but Windows.
+
+The **wake word** switch (the chip next to it) closes the microphone. Each browser remembers it too, and turns
+listening off again on load after a server restart (which otherwise starts listening, `KESTREL_WAKE=on`).
+
+**New conversation** (in the sidebar, right under Chat, always shown in both looks since 2026-11-09): the chat
+clears and the console reconnects, which gives a new agent: a new session id, no history, nothing read yet (the
+taint starts clean). It is disabled, with a tooltip, on an empty chat (nothing to clear), while Kestrel is
+answering or an approval is waiting, and while disconnected. The traces of the old conversation stay.
 
 **How a request ends.** Each 0.1 s chunk's loudness is compared with the room's noise floor (learned
 while waiting for the wake word). The request starts at the first chunk 0.15 above it and ends after
@@ -318,7 +362,59 @@ logged or sent (tests: `tests/test_talk.py`). The model sees the same input for 
 requests: the voice flag stays in the console and the server, never in the agent's messages
 (`test_the_model_sees_the_same_input_typed_or_spoken`; the agent's code and fingerprint are unchanged).
 
+### Follow-up and closings
+
+**The follow-up window (opt-in, off by default).** Set `KESTREL_TALK_FOLLOWUP_SECONDS` (5 suggested; default
+0 = off) to turn it on. It is off because it can't tell you from a podcast or a TV (below). When on, Kestrel
+finishes speaking the answer to a spoken request, listens that long without the wake word, and the HUD shows "Listening…", with no
+fly-in and no greeting. Speech must *start* within the window; once it has, the usual end-of-speech rule
+applies, so a long request isn't cut. Silence: back to Standby, with nothing said.
+
+It opens only after a spoken answer. Never after a typed question, never after the approval sentence, and
+not with **Speak answers** off (nothing is spoken, so nothing can finish). Typing ends it. "Kestrel" during
+the answer still stops the speech (barge-in), and "Kestrel" in the window takes over as a normal wake; both
+cancel the window. The microphone was already open: the window only changes what is done with its audio,
+which stays in memory as everywhere else in the wake flow.
+
+**Local closings.** In the window, a second Vosk recognizer runs a small grammar: "thank you", "thanks",
+"cheers", "that's all", "never mind", "bye" and `[unk]`. All the words are in the small model's vocabulary,
+"that's" as one word (checked with `vosk_model_find_word`, 2026-11-05: thank, you, thanks, cheers, that's,
+all, never, mind, bye). A closing gets a fixed local reply, with no model call, no chat message and no tool
+call, and then Standby:
+- "thank you", "thanks", "cheers": "You're welcome, {name}." and "Anytime, {name}.", in turn;
+- "that's all", "never mind", "bye": "Okay, I'm here if you need me."
+
+A closing must be the **whole utterance**. "Thanks, now list my files" comes out as `thanks [unk] ...`, is
+not a closing, and goes to Whisper; so the grammar waits for the end of the utterance and never acts on a
+partial result. Only closings together ("thank you, bye") count: the first one picks the reply.
+
+**Anything else said in the window** takes the normal path: Whisper, the guard, the 2-second countdown and
+"cancel". That includes "I didn't catch that" when the guard drops it.
+
+**Whisper's filler list is unchanged.** "Thank you" stays a filler, because Whisper invents it on silence.
+So closings are handled only by the grammar, and only in the window. Two results of that, both on purpose:
+- **"Kestrel, thank you" outside the window is dropped as a filler** ("I didn't catch that"): the grammar
+  isn't running then;
+- a closing the grammar misses goes to Whisper. "Thank you", "thanks" and "bye" are fillers there, so they
+  are dropped. **"Never mind", "that's all" and "cheers" are not fillers, so a missed one reaches the send
+  countdown as a request.** `closings_eval.py` counts this per phrase.
+
+**With speech in the room (known issue KI-pending-followup-background-speech).** The window can't tell you
+from a podcast or a TV. Measured on 1.00 h of podcast in the room (2026-11-05, 200 windows at random points,
+seed 2026, base.en, numbers only): **0 false closings** at every threshold (0/200, 95% CI 0-1.8%), but **176
+of 200 windows (88%, 95% CI 83-92%) became a false request**, 15 a check, 8 dropped, 1 silence. Each false
+request is answered and spoken, and that answer opens another window. So the window is off by default
+(owner, 2026-11-08). If you turn it on, leave the room quiet or set it back to 0 when something is playing.
+
 ### Measuring it (no accuracy is claimed until you have recorded your requests)
+
+Closings, on the same code as the live window (`wake/closings.py`):
+`uv run --no-sync python scripts/wake_record.py --phrases --set closings` records each closing x 5, 3 s clips, into
+`data/wake/closings/` (git-ignored). Then `uv run --no-sync python scripts/closings_eval.py --closings data/wake/closings
+--background data/wake/background` reports detection per phrase and threshold, what each miss turns into on the live
+path (sent, checked or dropped), and false closings and false requests when the window opens at random points (seeded,
+200 by default) in the background, per 100 windows and per hour of audio heard inside windows. A window only opens
+after a spoken answer, so these are rates while one is open, not per hour of the day. No transcript is printed or saved.
 
 1. `uv run python scripts/talk_record.py`: 20 built-in requests (or `--prompts file.txt`); each one is
    shown, you press Enter, read it at your normal distance and pace, press Enter. WAVs and `refs.tsv`
@@ -430,7 +526,8 @@ LibriSpeech test-clean WER: base.en about 4.3%, tiny.en 8.4%, Vosk small 9.85%.
 | `src/kestrel/wake/speech.py` | The greeting through SAPI 5 (comtypes) on its own thread |
 | `src/kestrel/wake/greeting.py` | The fixed greeting, the echoed one ("Hello, {name}. ..."), and the name's cleaning |
 | `console/src/hud/useHud.ts` | `waking` phase and `arrive` pose; the fly-in plays once per wake |
-| `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator; "Speak answers" |
+| `console/src/components/WakeChip.tsx` | The switch and the "Listening" indicator; the Speaker switch |
+| `console/src/components/Sidebar.tsx`, `console/src/sidebar.ts` | The sidebar, with New conversation and the Speaker switch always shown (tests: `console/src/sidebar.test.mjs`) |
 | `src/kestrel/wake/talk.py` | End of speech, the hallucination guard, what is spoken |
 | `src/kestrel/wake/transcribe.py` | whisper.cpp (pywhispercpp), pinned model files |
 | `src/kestrel/wake/normalize.py` | The text normaliser for word error rate |

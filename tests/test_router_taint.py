@@ -26,7 +26,9 @@ from kestrel.router import TAINT, RoutedLLM, RouterConfig, summarize_turns
 from kestrel.tools import ToolRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_FINGERPRINT = "35fac5ba6277"
+# Rule A leaves the default fingerprint alone (the router isn't in it). It is 8a8174d8f17d, not 35fac5ba6277, only
+# because the approval rules are tiers-v2.2 since the private-address fetch block (owner decision 2026-11-08).
+DEFAULT_FINGERPRINT = "8a8174d8f17d"
 SPLIT = load_safety(SAFETY_DIR)
 
 
@@ -346,8 +348,11 @@ def test_the_routed_fingerprint_differs_from_section_8s_only_by_the_new_router_s
     new["router"]["trained_tools_sha256"] = old["router"]["trained_tools_sha256"]  # lineage is local, not in git
     added = {"route_tainted": True, "student_temperature": 0.7, "student_top_p": 0.8}
     assert new["router"] == old["router"] | added
-    assert {k: v for k, v in new.items() if k not in ("router", "sha")} == {
-        k: v for k, v in old.items() if k not in ("router", "sha")
+    # Outside the router, the only difference is the approval rules' version (tiers-v2.1 -> tiers-v2.2, the
+    # private-address fetch block, owner decision 2026-11-08); everything else equals section 8's agent.
+    assert (old["approval_rules"], new["approval_rules"]) == ("tiers-v2.1", "tiers-v2.2")
+    assert {k: v for k, v in new.items() if k not in ("router", "sha", "approval_rules")} == {
+        k: v for k, v in old.items() if k not in ("router", "sha", "approval_rules")
     }
     assert new["sha"] != old["sha"]
 

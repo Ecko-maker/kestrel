@@ -318,6 +318,11 @@ an answer. Mitigation: spoken text never contains the name ("Kestrel" becomes "I
 fixed sentences avoid it), and the recorder ignores audio while Kestrel is speaking (the greeting is
 never taken for your request). Words that merely sound like "kestrel" can still wake it during speech;
 not measured.
+- 2026-11-07: while it speaks and for 1 s after, a wake needs a score of 0.98 (`SELF_WAKE_THRESHOLD`), and rule B
+  stops "kestrel" after other speech. Measured on 52 of Kestrel's own answers rendered with its voice (clean audio,
+  no room): one "kestrel" heard, at score 1.0, which neither rule stops. Of the 50 live wakes on 11-05/06, 4-6
+  started during its speech (estimated from trace times). `scripts/play_answers.py` plays the answers aloud for a
+  room recording, the measurement still missing.
 **Done when:** a spoken answer read at normal volume next to the microphone is measured not to wake
 Kestrel (or echo cancellation is added, e.g. Windows' communications-mode capture), with the result
 recorded in docs/voice-wake.md.
@@ -543,6 +548,11 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 - **Fixed on `phase4/tainted-to-teacher`** (2026-11-05, after the section 8 runs): the router records `free_tokens` per run (replies from a provider with no API key), and `billable_tokens()` and the summary subtract it. A call that reports no usage counts as paid, so the budget can stop early but never overspend. Section 8's files have no `free_tokens` and keep the totals they reported (tested).
 **Done when:** the budget and the Groq figure count paid providers only, with a test on a routed run, after the section 8 runs. (Met on that branch; closes when it merges.)
 
+### KI-pending-budget-checked-before-task. `--token-budget` is checked before each task, so the last task can overrun it
+**Labels:** `evals`, `low`
+`bench/runner.py` stops only when the tokens already spent reach the budget, so a task that starts under the budget runs to its end: section 9's run 4 (routed main suite, 2026-11-08) spent 9,941 against a budget of 9,589, an overrun of 352 (counted the KI-pending-budget-counts-local-tokens way).
+**Done when:** the owner decides to keep the overrun (bounded by one task) or to reserve a task's worst case before starting it, with a test.
+
 ### KI-pending-routed-resume-fingerprint. A routed run started with `--model` can't resume
 **Labels:** `evals`, `phase4`, `medium`
 `bench run` checks a resume against a fingerprint hashed with `--model` (`kestrel-student`), but results files record one hashed with the router's label (`kestrel-student -> openai/gpt-oss-120b`). So every such resume stops with "was run by agent 502b95cc0fb8, this one is 4da8f4b3c792 ... resuming would mix two agents", although the agent is the same. The check fails safe: two refused starts on 2026-11-05 cost 0 Groq and wrote nothing.
@@ -586,6 +596,22 @@ Found in the 2026-11-03 audit. `web/app.py` sends `Content-Security-Policy: img-
 Found in the 2026-11-03 audit. `execute()` refuses a `confirm` tool without `approved=True`, but it only knows the tool's tier before anything is read (`base_level`). The tiers v2 escalation (a search or fetch that needs a card after a local read, `permissions.required_approval()`) is enforced only in `ApprovalGate`. Every agent path goes through the gate (`agent.py`), so nothing is open today; a new caller that calls `execute()` directly would skip the escalation. Current direct callers: `mcp_server.py` (no session: nothing is read in it) and `bench/preview.py` (offline previews).
 - Planned fix, after the Phase 4 routed runs: `execute()` takes the gate's `Requirement` (or the `Session`) and refuses when the call needs a card it wasn't given; callers without a session say so explicitly. Agent behaviour unchanged; check the agent fingerprint.
 **Done when:** `execute()` can't run a call that `required_approval()` says needs approval, with a test.
+
+### KI-pending-fetch-redirect-rebinding. The private-network block checks the URL, not where the fetch ends up
+**Labels:** `security`, `medium`
+Since 2026-11-07 (`src/kestrel/netguard.py`, the code for KI-pending-fetch-private-addresses / D-pending-fetch-private-addresses, both on PR #74), every `fetch__fetch` call is checked before it runs: the scheme must be http(s), and the URL's host must not be or resolve to a loopback, RFC 1918, link-local (169.254.169.254 included), carrier-grade NAT, unique-local or link-local IPv6, unspecified, multicast or other non-public address (IPv4-mapped IPv6 judged by the IPv4 inside; one private answer in a mixed reply is enough). A refusal is a tool error ("Error: blocked: private network address ..."), never a card, recorded in the audit log (`decision: blocked`) and on the trace's tool_call span (`kestrel.tool.blocked`, status error).
+- **What it can't stop:** mcp-server-fetch resolves the name again on its own and follows redirects. So a public host that redirects to a private address, or a name whose DNS answer changes between the check and the fetch (DNS rebinding), can still reach one.
+- **Also:** a name that doesn't resolve on this PC is left to the fetch (it fails there too). The bench checks literals only (`netguard.no_dns`): its fetches go to local stubs.
+- **Measured:** the 209 fetch calls in the pinned results files (81 benign, 128 attack; the main suite fetches nothing) replayed through the check: 0 refused. The CI subset on the PR is the live check.
+- **Full fix:** fetch through Kestrel itself (connect to the checked address, no redirects or each hop re-checked), or run the fetch server in a sandbox with no route to private networks.
+**Done when:** redirects and re-resolution can't reach a private address, with a test, or the owner decides the URL check is enough.
+
+### KI-pending-followup-background-speech. The follow-up window takes a podcast or a TV for a request
+**Labels:** `voice`, `high`
+The window has no wake word, so any speech in the room starts the normal path. On 1.00 h of podcast in the room (2026-11-05, `scripts/closings_eval.py`, 200 windows at random points, seed 2026): 0 false closings (0/200, 95% CI 0-1.8%), but **176 false requests (88%, 95% CI 83-92%)**, 15 checks, 8 dropped, 1 silence. A false request is sent after the 2-second countdown unless cancelled, spoken back, and that answer opens another window, so it can **chain with no one talking, spending model calls** (Groq quota on a real provider). Podcast audio out loud is the worst case; a quiet room isn't measured yet.
+- Options for the owner, none built: only one follow-up per wake (a follow-up's answer opens no window); no window when the room's noise floor shows speech; a follow-up always asks on screen ("check") instead of the countdown. They can be combined.
+- Mitigation (owner, 2026-11-08): the window is **off by default** (`DEFAULT_FOLLOWUP_S = 0.0`, `wake/closings.py`) and opt-in with `KESTREL_TALK_FOLLOWUP_SECONDS` (5 suggested). Tests: `test_the_window_is_off_by_default_and_opt_in`, `test_with_the_default_settings_a_spoken_answer_opens_no_window`. Still open: anyone who opts in gets the 88%, so leave the room quiet or set it to 0 when something is playing.
+**Done when:** the owner picks a rule, it is built, and `closings_eval.py` shows the result on the same audio; only then can the default be reconsidered.
 
 ### KI-pending-bench-model-text-crash. Odd characters in model text crashed a bench run and lost its results (fixed 2026-11-04)
 **Labels:** `evals`, `bug`, `high`
