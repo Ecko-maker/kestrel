@@ -1,16 +1,27 @@
 // The wake word's switch and privacy indicator, in the nav in both looks. Whenever the microphone
 // is open it says so in red ("Listening"); the server sends that status before the stream opens and
-// again after it closes. Nothing here when KESTREL_WAKE is off on the server.
+// again after it closes. When KESTREL_WAKE is off on the server, a plain "Wake word off" says so and how to fix it.
 
 import { useEffect, useState } from "react";
 import { Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import type { WakeStatus } from "../api";
 import type { Wake } from "../useChat";
-import { wakeLabel } from "../wakeLabel";
+import { WAKE_OFF_ON_SERVER, wakeLabel } from "../wakeLabel";
 import { cx } from "./ui";
 
 export function WakeChip({ status, onToggle }: { status: WakeStatus; onToggle: (enabled: boolean) => void }) {
-  if (!status.available) return null;
+  if (!status.available) {
+    return (
+      <span
+        title={WAKE_OFF_ON_SERVER}
+        aria-label={WAKE_OFF_ON_SERVER}
+        className="inline-flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-1 text-[11px] font-semibold text-stone-500 ring-1 ring-inset ring-stone-200 dark:bg-stone-800/80 dark:text-stone-400 dark:ring-stone-700"
+      >
+        <MicOff className="size-3.5" />
+        <span className="hidden sm:inline">Wake word off</span>
+      </span>
+    );
+  }
   const label = wakeLabel(status);
   return (
     <div className="flex flex-col gap-0.5 text-[11px]">
@@ -38,19 +49,34 @@ export function WakeChip({ status, onToggle }: { status: WakeStatus; onToggle: (
   );
 }
 
-// "Speak answers": answers to spoken requests are read out (first sentences only). Typed questions
-// are never spoken, and an approval card is only ever announced, never read.
-export function SpeakSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+// "Speaker": on, answers to spoken requests are read out (first sentences only), with the greeting and the
+// short fixed sentences; off, Kestrel says nothing at all and stops at once. One setting for every console.
+// Typed questions are never spoken, and an approval card is only ever announced, never read.
+// Always shown, in both looks: when the server can't speak, it is disabled and its tooltip says why.
+export function SpeakSwitch({
+  on,
+  onChange,
+  disabled = false,
+  title,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const shown = on && !disabled;
   return (
     <button
       role="switch"
-      aria-checked={on}
-      aria-label={`Speak answers: ${on ? "on" : "off"}`}
+      aria-checked={shown}
+      aria-label={disabled ? `Speaker: unavailable. ${title ?? ""}`.trim() : `Speaker: ${on ? "on" : "off"}`}
+      title={title}
+      disabled={disabled}
       onClick={() => onChange(!on)}
-      className="inline-flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-1 text-[11px] font-semibold text-stone-600 ring-1 ring-inset ring-stone-200 dark:bg-stone-800/80 dark:text-stone-300 dark:ring-stone-700"
+      className="inline-flex items-center gap-1.5 rounded-md bg-stone-100 px-2 py-1 text-[11px] font-semibold text-stone-600 ring-1 ring-inset ring-stone-200 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-stone-800/80 dark:text-stone-300 dark:ring-stone-700"
     >
-      {on ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
-      <span className="hidden sm:inline">Speak answers {on ? "on" : "off"}</span>
+      {shown ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+      <span className="hidden sm:inline">{disabled ? "Speaker unavailable" : `Speaker ${on ? "on" : "off"}`}</span>
     </button>
   );
 }
@@ -71,4 +97,5 @@ export function Caption({ item }: { item: { key: string; text: string } | null }
   );
 }
 
-export const greetingCaption = (wake: Wake | null) => (wake ? { key: wake.key, text: wake.greeting } : null);
+export const greetingCaption = (wake: Wake | null) =>
+  wake?.greeting ? { key: wake.key, text: wake.greeting } : null;

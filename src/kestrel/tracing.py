@@ -45,7 +45,9 @@ CONTENT_ATTRS = frozenset(
     }
 )
 
-WAKE_ATTRIBUTES = {"kestrel.wake": "detected"}  # all a wake record holds, besides its time
+# Where "kestrel" sat in the utterance, or a follow-up window's speech with no wake word at all.
+WAKE_PATHS = frozenset({"alone", "greeting", "first", "after_speech", "followup"})
+WAKE_ATTRIBUTES: dict[str, str | float] = {"kestrel.wake": "detected"}  # all a wake record holds, besides its time
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS traces (
@@ -298,17 +300,23 @@ class Tracer:
                 print(f"[trace] could not save trace: {type(e).__name__}: {e}", file=sys.stderr)
                 self._warned = True
 
-    def record_wake(self, at: float) -> None:
-        """The wake word was heard: one span named "wake" with its time and nothing else (no audio,
-        no text). It gets no row in `traces`, the table the Traces page, stats, `kestrel export` and
-        the distillation dataset read, so a wake can never show up there or become training data."""
+    def record_wake(self, at: float, score: float | None = None, path: str | None = None) -> None:
+        """The wake word was heard: one span named "wake" with its time, Vosk's score and how it started
+        (the WAKE_PATHS category), and nothing else (no audio, no text). It gets no row in `traces`, the
+        table the Traces page, stats, `kestrel export` and the distillation dataset read, so a wake can
+        never show up there or become training data."""
         if self.db_path is None:
             return
+        attributes = dict(WAKE_ATTRIBUTES)
+        if score is not None:
+            attributes["kestrel.wake.score"] = round(float(score), 3)
+        if path in WAKE_PATHS:  # a fixed set: never free text
+            attributes["kestrel.wake.path"] = path
         try:
             with self.connect() as conn:
                 conn.execute(
                     "INSERT INTO spans VALUES (?, ?, NULL, 'wake', ?, ?, 0, 'ok', NULL, ?)",
-                    (_new_id(8), _new_id(16), at, at, json.dumps(WAKE_ATTRIBUTES)),
+                    (_new_id(8), _new_id(16), at, at, json.dumps(attributes)),
                 )
         except Exception as e:  # tracing must never break the wake
             print(f"[trace] could not record wake: {type(e).__name__}: {e}", file=sys.stderr)

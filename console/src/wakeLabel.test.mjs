@@ -2,7 +2,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { wakeLabel } from "./wakeLabel.ts";
+import { WAKE_OFF_ON_SERVER, wakeLabel } from "./wakeLabel.ts";
+
+test("with the wake word off on the server, the console says how to turn it on", () => {
+  assert.match(WAKE_OFF_ON_SERVER, /KESTREL_WAKE=on/);
+});
 
 const base = { available: true, enabled: true };
 

@@ -115,7 +115,8 @@ def load_labels(path: Path | None = None) -> list[dict[str, Any]]:
     path = path or LABELS  # looked up at call time, so tests can point it elsewhere
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # split("\n"), not splitlines(): that also breaks inside strings, at U+2028 and friends
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
 
 
 def append_label(entry: dict[str, Any], path: Path | None = None) -> None:

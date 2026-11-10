@@ -176,6 +176,7 @@ class LLM:
         self.sleep = time.sleep  # swapped out in tests
         self.last_provider: str | None = None
         self.last_call: CallInfo | None = None
+        self.sampling: dict[str, float] = {}  # sent with every request; only the Phase 4 router sets it (the student)
         self._streaming_ok = True
 
     def _request(self, **kwargs):
@@ -265,7 +266,8 @@ class LLM:
         """Send the conversation plus tool schemas; return the assistant message as a dict
         with "content" (text or None) and, if the model wants tools, "tool_calls".
         With on_text, the reply is streamed and on_text gets each piece of text as it arrives."""
-        kwargs = {"tools": tools} if tools else {}
+        kwargs: dict[str, Any] = {"tools": tools} if tools else {}
+        kwargs.update(self.sampling)
         self.last_call = info = CallInfo(self.provider.name, self.model, attempts=[self.provider.name])
         prepared = self._prepare(messages)
         out: dict

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from kestrel import egress
+from kestrel.netguard import Resolver, blocked_call, system_resolver
 from kestrel.permissions import Requirement, Session, required_approval
 from kestrel.tools import Tool, forbidden_message
 from kestrel.tracing import redact, redact_value
@@ -134,7 +135,7 @@ class GateResult:
     args: dict | None  # the arguments to run with, or None if the call must not run
     message: str = ""  # tool result to send the model when it doesn't run
     note: str = ""  # prefix for the tool result when it does run (e.g. "the user edited this")
-    decision: str = ""  # for tracing: approved / edited / rejected / forbidden / session-approved / refused
+    decision: str = ""  # for tracing: approved / edited / rejected / forbidden / blocked / session-approved / refused
     reason: str = ""
 
 
@@ -157,10 +158,17 @@ def rejection_message(tool_name: str, reason: str) -> str:
 
 
 class ApprovalGate:
-    def __init__(self, approver: Approver | None = None, log_path: Path = AUDIT_LOG, max_edits: int = MAX_EDITS):
+    def __init__(
+        self,
+        approver: Approver | None = None,
+        log_path: Path = AUDIT_LOG,
+        max_edits: int = MAX_EDITS,
+        resolve: Resolver = system_resolver,
+    ):
         self.approver = approver or DenyAllApprover()
         self.log_path = log_path
         self.max_edits = max_edits
+        self.resolve = resolve  # for the private-network block (netguard); the bench passes no_dns
         self.session_approved: set[str] = set()
 
     def requirement(self, tool: Tool, args: dict, session: Session | None = None) -> Requirement:
@@ -176,6 +184,9 @@ class ApprovalGate:
         `session`: the conversation, for the card's notice (why it appeared, recipients never typed).
         An escalated call (a network call after local data was read) always gets its own card:
         no earlier "yes for this session" covers it, and none can be given for it."""
+        if blocked := blocked_call(tool.name, args, self.resolve):  # before any card: never approvable
+            self.record(tool.name, args, "blocked", blocked)
+            return GateResult(None, f"Error: {blocked}", decision="blocked", reason=blocked)
         need = need or self.requirement(tool, args, session)
         if need.level == "safe":
             return GateResult(args, decision="safe")
@@ -271,7 +282,8 @@ class ApprovalGate:
             entry["escalated_by"] = list(escalated_by)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         with self.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            # ASCII only: model text can hold U+2028 or a lone surrogate, so this stays one writable line
+            f.write(json.dumps(entry) + "\n")
 
 
 # --- Terminal UI --------------------------------------------------------------

@@ -151,7 +151,7 @@ issue #73). Full details: `distill/EXPORT.md`.
    **If they aren't set in the session:**
    - **Without `KESTREL_ROUTER_STUDENT_MODEL`,** `--model kestrel-student` still makes the router call the student. But the run is labelled with Ollama's default model: `routed/qwen3:4b -> …` in the dry run, in the results' `meta.model` and in every report (found 2026-11-03).
    - **The other router variables** fall back to defaults (teacher model, context) or stop the run (lineage).
-   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and the routed fingerprint `4da8f4b3c792` (results files record the same agent as `502b95cc0fb8`: the hash covers the model label, `docs/phase4-plan.md` 8.7, 11-05).
+   - **Before the run, check:** the dry run must read `routed/kestrel-student -> openai/gpt-oss-120b`, and it prints `Routed agent fingerprint:`, the value the results file will record. Section 9's is `2ae99cffdbbc` (the taint rule and explicit sampling). Section 8's runs were `502b95cc0fb8`, quoted as `4da8f4b3c792` before the resume fix (`docs/phase4-plan.md` 8.7, 11-05).
 
 5. **Record the hardware** with the run (section 3), in the run log:
 
@@ -187,7 +187,7 @@ uv run --no-sync kestrel bench run --provider routed --model kestrel-student --r
     --wait-for-quota --token-budget <day budget> --out evals\results\routed-main-r5.json
 ```
 
-Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file). **No `--model` here:** with it the resume is refused (KI-pending-routed-resume-fingerprint), and `KESTREL_ROUTER_STUDENT_MODEL` already names the student:
+Next days, the same results file continues (graded runs are kept; `--out` defaults to the resumed file). `KESTREL_ROUTER_STUDENT_MODEL` names the student; `--model` isn't needed (section 8's resume was refused with it, fixed since: KI-pending-routed-resume-fingerprint):
 
 ```powershell
 uv run --no-sync kestrel bench run --provider routed --repeat 5 --judge none `
@@ -199,6 +199,20 @@ uv run --no-sync kestrel bench run --provider routed --repeat 5 --judge none `
   log name, never reusing an earlier attempt's file.
 - **Don't read the pass rate** between days (no interim look); check only that it runs (errors, the
   `ROUTER STOPPED` student-health guard).
+- **Output, for every attempt:** a new log name, and a filter that lets through only lines with no outcome in them.
+  Checked in Windows PowerShell 5.1 on a stand-in script that crashes: a traceback and `RUN STOPPED` come through,
+  `PASS` / `FAIL` / `Pass rate` don't, and the log keeps everything (unread). Append to the run line:
+
+  ```powershell
+  2>&1 | Tee-Object -FilePath "routed-$(Get-Date -Format yyyyMMdd-HHmmss).log" | Select-String -CaseSensitive -Pattern 'Expected:|Traceback|Error\b|Error:|RUN STOPPED|KeyboardInterrupt|\[quota\]|\[checkpoint\]|ROUTER STOPPED|To finish later|already exists|stale lock'
+  ```
+
+  PSReadLine doesn't save a line containing "token" to its history, so `--token-budget` lines aren't in
+  `ConsoleHost_history.txt`.
+- **If the process goes away** (a closed window, a power cut): with `--wait-for-quota` the results file exists from
+  the start and is saved after every finished run, so at most the run in progress is lost. Clear the lock
+  (`kestrel bench unlock <file>`, which checks the process is gone), then use the `--resume` line. The first line
+  refuses to overwrite an existing file. `meta.attempts` records each attempt.
 - A run stopped by the student-health rule can't give PASS (section 8.5); it's reported as such.
 - **3b (optional, secondary metric):** `kestrel bench rejudge evals\results\routed-main-r5.json` with its own
   approval line (~137.5k). The primary verdict is the same with or without it.
@@ -224,7 +238,7 @@ uv run --no-sync python -c "from kestrel.bench.safety import SAFETY_DIR, load_sa
 ### 4a. Routed, group S (Groq for escalations; approval line)
 
 As tiers v2.1's after side (`KESTREL_IMAGE_POLICY=allowlist`, `KESTREL_MCP=off`); the safety split has no
-judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks. **No `--model`, on the first run or a resume** (KI-pending-routed-resume-fingerprint); the router variables in step 1 name the student:
+judge. Strict ×3 on the 29 tasks, then rubber-stamp ×1 on its 18 attacks. The router variables in step 1 name the student, so `--model` isn't needed:
 
 ```powershell
 $env:KESTREL_IMAGE_POLICY = "allowlist"; $env:KESTREL_MCP = "off"
@@ -356,6 +370,38 @@ Reported next to it, not part of the verdict (section 5): the student alone and 
 ×3 on local Ollama (`--provider ollama --model kestrel-student` / `kestrel-base`, `--judge none`, then
 rejudge at ~83k each with an approval line), and section 4's student-alone safety runs (no Groq).
 
+## 8. The report, in one command (no Groq)
+
+When steps 3-5 are finished, from this folder:
+
+```powershell
+uv run --no-sync python scripts/phase4_result.py
+```
+
+It reads the runs folder's files by the names above, and the pinned references in git:
+- the routed main suite, the drift control and the 10-07 reference;
+- group S strict and rubber-stamp;
+- the teacher's v2.1 safety runs (group F);
+- the student-alone safety pins.
+
+It writes `evals/reports/phase4-result.md` and `evals/reports/phase4-cost-quality.svg`. The report holds:
+- section 8.5's verdict table, computed by the same code as steps 6-7 and cross-checked against `bench compare`'s
+  own outcome line;
+- the secondary metric ("not run" unless `--rejudged FILE` from 3b);
+- the drift reading, group F by the pre-route rule, and group S with the student alone alongside;
+- the cost table with escalation reasons;
+- the cost-vs-quality chart (teacher alone, routed, student alone).
+
+The "student alone" point is the pinned `evals/after-runs/student-main-x1.json` (11-03, checks only, ×1; context
+only, not the claim: `docs/phase4-plan.md` 8.7), costed from its traces in `..\kestrel-runs\logs\bench.db`.
+`--student-main FILE --student-db DB` replace them; if either is missing the chart leaves the student out and says so.
+
+**It writes nothing on incomplete inputs.** Instead it prints what's missing and exits 2:
+- a routed task with fewer than 5 runs done, or traces that don't price every call;
+- group S files that aren't 8.7's 29 / 18 tasks, or a drift control that isn't the old agent `cc5c16377662`;
+- a reference that doesn't match its pinned SHA-256;
+- a routed agent that differs from the teacher's beyond the router block (8.7, 11-03: the timeout stays at 60 s).
+
 ## Dry run of steps 6-7 (fake files, no Groq)
 
 ```powershell
@@ -366,3 +412,14 @@ Writes a fake teacher reference, two fake older references and three fake routed
 databases shaped like the real one), runs steps 6 and 7 on each, and prints the cost table and one
 outcome line per scenario: PASS, NOT SHOWN, FAIL, and PENDING when the safety and drift flags are left
 out. `tests/test_bench_cost.py` runs the same path.
+
+The step 8 report, end to end on fake files, one set per outcome:
+
+```powershell
+uv run --no-sync python scripts/phase4_dryrun.py --kit --out $env:TEMP\phase4-kit
+```
+
+The six scenarios are PASS; NOT SHOWN by quality and by drift; FAIL by quality and by safety; and an unfinished
+routed run, which the kit must refuse. They use fake drift, group S / F and student-alone files on the real
+safety task ids. Each prints its outcome line; the reports and charts are in the folder.
+`tests/test_phase4_result.py` runs the same path.
