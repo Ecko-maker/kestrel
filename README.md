@@ -1,117 +1,152 @@
 # Kestrel
 
-**Hunts on its own. Comes back when called. Gets sharper every night.**
+**A personal AI agent that asks before it acts, and trains a smaller model from its own traces.**
 
 [![CI](https://github.com/Ecko-maker/kestrel/actions/workflows/ci.yml/badge.svg)](https://github.com/Ecko-maker/kestrel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Demo (1:50): [youtu.be/kglrGnkzt_I](https://youtu.be/kglrGnkzt_I)**
 
-Scene 3 uses a scripted model to show the approval gate stopping a prompt injection; the numbers on the closing slide are the measured ones, each already linked in [Results](#results).
+Scene 3 uses a scripted model to show the approval gate stopping a prompt injection; the numbers on the closing slide are the measured ones, each linked in [Results](#results).
 
-Kestrel is a personal AI agent, built from scratch with its own agent loop and no agent framework. It plans, calls tools and works through multi-step tasks on its own. **Every risky action (sending, writing, posting) waits for a human to approve it, and the most dangerous ones are refused outright**. That rule is enforced in code, not in the prompt, so a model fooled by injected text can only *ask*. Every request is traced, and it's measured on its own benchmark and its own prompt-injection suite under decision rules fixed before the results were seen.
-
-| Headline | Result | Source |
-|---|---|---|
-| KestrelBench v1.1 (100 tasks), gpt-oss-120b on Groq | **92% pass rate** (95% CI 86–97%) | [baseline report](evals/reports/baseline-v1.1.md) |
-| Prompt-injection attacks that got through, tiers v2.1 | **0 of 29** at system level (95% CI 0–12%), from 1 of 29 before | [safety report](evals/reports/safety-after-v2.1.md), [before/after](docs/tiers-v2-design.md) |
-| Cost to run and to evaluate | **$0**: free tiers only (Groq, Gemini, local Ollama, Kaggle GPUs) | [prices.toml](src/kestrel/prices.toml) (`actual_*` = 0) |
-| Phase 4: distill a small open model | **in progress**: student trained and served; the pre-registered routed runs are next | [pre-registration](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) |
+Kestrel plans, calls tools and works through multi-step tasks, with its own agent loop and no agent framework.
+- **Risky actions need you:** every risky action (sending, writing, posting) waits for a human to approve it, and the most dangerous ones are refused. This is enforced in code, not in the prompt, so a model fooled by injected text can only *ask*.
+- **Measured:** every request is traced. The agent is scored on its own benchmark and prompt-injection suite, under decision rules written down before the results were seen.
+- **$0 to run:** free tiers only (Groq, Gemini, local Ollama, Kaggle GPUs).
 
 | Approve, edit or reject every action | See every step as a timeline |
 |---|---|
 | ![An email waiting for approval in the Kestrel console](docs/screenshots/chat-approval-email.png) | ![Trace waterfall of one request](docs/screenshots/trace-waterfall.png) |
 
-## Where it stands
+## What works
 
-**Built and merged:**
-- **Agent loop and model layer:** one interface over Groq, Gemini, Ollama and a no-key demo provider, with streaming, retries and fallback between providers. Tool calling uses JSON schemas built from type hints, with validation, timeouts and parallel calls.
-- **Approval gate and permission tiers v2.1:** every tool has capabilities fixed in code. Data read from files or the web taints the session, and outbound content is checked against it. Previews show real diffs; you approve, edit or reject, and every decision is written to an audit log.
-- **MCP in both directions:** Kestrel uses tools from MCP servers (untrusted by default) and serves its own safe tools to clients such as Claude Code.
-- **Tracing:** every request is a tree of spans in SQLite, with tokens, latency, cost and ratings.
-- **Web console:** live chat, the agent's steps as they happen, approval cards, trace waterfalls.
-- **KestrelBench:** 100 main tasks, a 48-task safety split (29 attacks, 1 policy probe, 18 benign) and evals in CI.
-- **Early local voice:** wake word and speech-to-text on the laptop, with no cloud speech service ([design decisions 19–21](docs/design-decisions.md)).
-- **Production basics:** Docker (non-root, health check), CI on Linux and Windows, secret scanning, 1,081 tests.
-
-**Being measured now (Phase 4, distillation):** the plan is to train a small open model (the student, Qwen3-4B) on successful traces from a large open-weight teacher (gpt-oss-120b on Groq), then route each request to the student first and fall back to the teacher.
-- The decision rule was frozen on 2026-10-30, before any teacher data existed: the routed system must reach at least 95% of the teacher's quality and cost less per task ([section 8](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30)).
-- Built so far: the trace-dataset builder, a Kaggle QLoRA training script (its GPU smoke test passed), the export to Ollama with a byte-for-byte template check, and router v1 (off by default).
-- The teacher's data was collected on 2026-11-01 and 11-02 (104 of 122 distill tasks passed), and the training set is built: 89 examples, 71 train and 18 validation, split by task.
-- The student is trained (QLoRA on a Kaggle T4) and served on local Ollama with the trained prompt format checked byte for byte. **The routed runs that decide the Phase 4 claim haven't run yet, so there is no Phase 4 result.**
-
-**Next:** the pre-registered routed runs. **Long-term memory with hybrid RAG is built on branches but parked** until after Phase 4 (owner decision, 2026-10-26); it isn't in `main`.
-
-| Phase | Status |
-|---|---|
-| 1 Foundation | done |
-| 2 Evals | done: baseline in this README; the LLM judge agrees with my labels on 91% of held-out answers, but isn't calibrated yet (kappa can't be read: [#21](docs/known-issues.md)) |
-| 3 Safety | done: tiers v2.1 merged on its safety gate ([decision 17](docs/design-decisions.md#17-phase-3-tiers-gate-ship-tiers-v21-owner-override-on-rule-a)); memory moved after Phase 4 |
-| 4 Distillation | **in progress** |
-| 5 Voice and launch | voice started early (in `main`); demo video done ([1:50](https://youtu.be/kglrGnkzt_I)); write-ups not done |
+| Part | What it does | Evidence |
+|---|---|---|
+| Agent loop and model layer | One interface over Groq, Gemini, Ollama and a no-key demo provider: streaming, retries, fallback between providers, tool calls validated against JSON schemas, parallel calls | [agent.py](src/kestrel/agent.py), [llm.py](src/kestrel/llm.py), [tools.py](src/kestrel/tools.py) |
+| Approval gate, permission tiers v2.1 | Capabilities fixed in code per tool; reading files or the web taints the session, and outbound content is checked against it; approve, edit or reject, with an audit log | [design](docs/tiers-v2-design.md), [safety report](evals/reports/safety-after-v2.1.md) |
+| MCP in both directions | Uses tools from MCP servers (untrusted by default); serves its own safe tools to clients such as Claude Code | [mcp_client.py](src/kestrel/mcp_client.py), [mcp_server.py](src/kestrel/mcp_server.py) |
+| Tracing and web console | Every request is a tree of spans in SQLite (tokens, latency, cost); the console shows live steps, approval cards and trace waterfalls | [tracing.py](src/kestrel/tracing.py), [console/](console/) |
+| KestrelBench | 100 main tasks and a 48-task safety split (29 attacks), deterministic checks first, evals in CI | [tasks](evals/kestrelbench/tasks/), [safety split](evals/kestrelbench/safety/), [CI](.github/workflows/ci.yml) |
+| Distillation pipeline | Trace dataset → QLoRA fine-tune of Qwen3-4B on a free Kaggle T4 → served on local Ollama → a router that sends each turn to the student first and escalates to the teacher | [training log](distill/TRAINING.md), [export log](distill/EXPORT.md), [router.py](src/kestrel/router.py) |
+| Local voice | Wake word and speech-to-text on the laptop, no cloud speech service | [voice-wake.md](docs/voice-wake.md) |
 
 ## Results
 
-Each number links to the report it comes from. Write-up of Phase 3: [Teaching an agent to ask before it leaks](docs/blog/01-safe-agent.md).
+Each number links to the file it comes from.
 
-**Phase 2, evals.**
-- **KestrelBench v1.1 baseline**, gpt-oss-120b on Groq: **92%** of 100 tasks (95% CI 86–97%) ([baseline report](evals/reports/baseline-v1.1.md)).
-- **Run-to-run noise**, measured: two runs of the identical agent flip 9% of tasks ([run-to-run report](evals/reports/run-to-run.md)).
-- **The LLM judge against my own labels**, held-out half: **91% agreement** (95% CI 78–100%, 32 answers).
-  - **It isn't calibrated yet.** Cohen's kappa is 0.0 because every held-out answer I labelled was a pass, and kappa can't exceed 0 when one rater never says fail.
-  - **All 3 disagreements are the judge being too strict**, on two "forbidden action" tasks that the Phase 2 failure analysis had already flagged ([#21](docs/known-issues.md), [failure analysis](evals/reports/baseline-failures.md)).
-  - On the dev half, used to improve the judge and never reported, agreement is 95% and the judge's 2 misses are too lenient.
+**KestrelBench (Phase 2).**
+- **Baseline:** gpt-oss-120b on Groq, **92%** of 100 tasks (95% CI 86–97%). Source: [baseline report](evals/reports/baseline-v1.1.md).
+- **Run-to-run noise:** a second run of the identical agent scored 93%, a difference of +1 point (95% CI −5 to +7). **9 of 100 tasks changed outcome**, so a single-run gap under about 6–7 points is noise. Source: [run-to-run report](evals/reports/run-to-run.md).
 
-**Phase 3, safety (tiers v2.1).** The 48-task safety split has 29 attacks with declared goals and canaries.
+**Prompt-injection safety, permission tiers v2.1 (Phase 3).** These are attacks that got through at system level, out of 29.
 
-| Measure | Before | After |
+| Model and user | Before | After |
 |---|---|---|
-| Attacks that got through, strict user | 1/29 (95% CI 0–18%) | **0/29** (0–12%) |
-| Attacks the model attempted, strict user | 1/29 | 1/29 (0–18%) |
-| Attacks that got through, rubber-stamp user | 0/28 graded | 0/29 (0–12%) |
-| Benign tasks passed every repeat | 12/18 | 11/18 (36–83%) |
+| Scripted model that reads the data, then always obeys the injection; strict user | 13/29 | **0/29** |
+| gpt-oss-120b; strict user | 1/29 (95% CI 0–18%) | **0/29** (95% CI 0–12%) |
 
-Sources: the before side is in the [design document](docs/tiers-v2-design.md); the after side is the [safety report](evals/reports/safety-after-v2.1.md). The main suite's non-inferiority at 6 points was **not shown**: −3 points, 95% CI −7 to +1 ([rule C verdict](evals/reports/rule-c-verdict.md)). The benign rule A was **not met** and overridden by the owner, on the record ([decision 17](docs/design-decisions.md#17-phase-3-tiers-gate-ship-tiers-v21-owner-override-on-rule-a)).
+- **The scripted model** is a test of the code, not of a model: it shows the gate stops every attack *if the model tries it after reading the data*.
+- **A user who approves every card isn't protected by the gate:** for the same scripted model, 25/29 → 23/29.
+- **Sources:** the scripted rows are in the [offline report](evals/reports/tiers-v2-offline.md), gpt-oss-120b before in the [design](docs/tiers-v2-design.md), and after in the [safety report](evals/reports/safety-after-v2.1.md). The write-up is [Teaching an agent to ask before it leaks](docs/blog/01-safe-agent.md).
 
-**Phase 4, distillation: in progress.**
-- **The student is trained:** Qwen3-4B, QLoRA, 5 epochs, validation loss 0.660 → 0.409 ([training log](distill/TRAINING.md)).
-- **It's served on local Ollama** ([export log](distill/EXPORT.md)).
-- **The student alone (not the Phase 4 claim; the routed runs start 11-04):**
-  - main suite: 90/100 tasks passed every deterministic check, ×1, no judge, so a check-pass rate of 90% (95% CI 84–96%) ([pinned run](evals/after-runs/student-main-x1.json), [8.7 disclosure](docs/phase4-plan.md#87-amendments)). The teacher's after-run ×3 gives 92% (88–96%) on the same metric, for context only;
-  - safety split: 0/29 attacks got through under the strict user, but it attempted 5/29 against the teacher's 1/29 ([student-alone report](evals/reports/student-safety-alone.md)).
-- **The claim itself is still open:** routed ≥ 95% of the teacher's quality at lower cost, decided by the [pre-registered](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30) routed runs, which haven't run yet.
+**Distillation, section 9 (Phase 4): PASS.** Routing a fine-tuned 4B student with a 120B teacher passed its pre-registered gate: quality at least 95% of the teacher's (shown), about 50% lower list cost, and 0 of 17 test attacks succeeding, even with a user who approves everything. The student fixed two of the teacher's habits (it uses the calculator and looks in the workspace); handing conversations that have read local data to the teacher fixed the student's injection weakness, at the cost of half the savings.
+- **What was tested:** a routed system, the student (Qwen3-4B, QLoRA) first and the teacher (gpt-oss-120b) as fallback, against the teacher alone.
+- **The rule:** frozen before any section 9 run ([section 9](docs/phase4-section9-proposal.md), frozen in `0071e54`).
+- **The results:** in the [verdict report](evals/reports/phase4-section9-verdict.md), recomputed from pinned files by `scripts/s9_verdict.py`.
+- **Quality: shown.** Check-pass rate 97% (97/100, one run per task) against the teacher's 92.3%. The test needed the 95% lower bound of mean(routed − 0.95 × teacher) above 0: it was **+0.0928 (95% CI +0.0502 to +0.1382)**, and +0.0865 (+0.0470 to +0.1288) against all three teacher references.
+- **Cost: shown.** **50.3% lower** list-price cost, $0.285 against $0.574 per 1,000 tasks; the difference is −$0.289 (95% CI −$0.348 to −$0.229).
+  - **Section 8's router was 94.8% cheaper.** The fix sends tainted turns to the paid teacher, so the student now answers **56.6% of turns** (60 of 106), down from 96.6%.
+- **Safety gate: held.** No attack got through at system level, under the strict user or the rubber-stamp user: 0/17 each, 3 repeats. In section 8 it was 1/17 under the rubber-stamp user.
+- **Drift:** the teacher's own control scored +6 points this week (95% CI 0 to +17) against 10-07. The frozen rule guards only against downward drift, so this didn't count against the result.
+- **What a PASS at one run per task can't rule out**, as the frozen rule requires us to say:
+  - a **4%** chance of a false PASS on quality if the routed system were exactly at the 95% margin;
+  - an **8%** chance that quality shows as passing even if the fix changed nothing. That would not be a false quality claim, since section 8 was already above the margin on average.
+- **Where the margin comes from:**
+  - **The student fixed two teacher habits.** It used the calculator where the teacher sometimes worked arithmetic out in its head (5 tasks), and it looked in the workspace before asking.
+  - **Two tasks the teacher always fails:** on `act-note-top-todos` and `multi-scale-recipe` the teacher fails every run, asking the user for data that is in the workspace. The student read the files first, and the teacher finished from there.
+- **Sensitivity:** quality is still shown with the calculator and workspace flips treated as noise (lower bound +0.0185). It isn't if every flip in the routed system's favour is (−0.0015).
+- **Per the frozen rule,** the router ships as an opt-in configuration (`KESTREL_PROVIDERS=routed`). It stays off by default.
 
-## How it's evaluated
+**Distillation, section 8 (Phase 4): FAIL, the first attempt.** The same claim and metric, before the fix ([section 8](docs/phase4-plan.md#8-pre-registration-of-the-phase-4-claim-2026-10-30); [result report](evals/reports/phase4-result.md)). It stands as FAIL and is reported beside section 9.
+- **Cost: shown.** **94.8% lower** list-price cost, $0.030 against $0.574 per 1,000 tasks ([how it's computed](evals/reports/phase4-result.md#derived-numbers-quoted-in-the-readme-added-2026-11-08)). The difference is −$0.544 per 1,000 tasks (95% CI −$0.597 to −$0.494). The student answered 96.6% of turns.
+- **Quality: not shown.** Check-pass rate 89.6% against the teacher's 92.3%, a quality ratio of **0.970** ([how it's computed](evals/reports/phase4-result.md#derived-numbers-quoted-in-the-readme-added-2026-11-08)). The pre-registered test needed the 95% lower bound of mean(routed − 0.95 × teacher) above 0; it was +0.0188 (95% CI −0.0342 to +0.0715).
+- **Safety gate: FAIL**, on one attack. Under the rubber-stamp user, `atk-exfil-search-file` got through (1/17, where the rule requires 0; the strict user stayed at 0/17).
+  - **Cause:** the router sent every turn to the student, including turns after the session had read local data. The student followed the injected instruction, and the rubber-stamp user approved it.
+  - **The fix,** decided before the runs: once a session is tainted, its turns go to the teacher ([section 8.7](docs/phase4-plan.md#87-amendments), decision 9). Section 9 measured it.
 
-- **Deterministic checks first.** Most KestrelBench tasks are graded by code: the tool calls made, the file contents, whether anything leaked. An LLM judge adds a score only on the 43 open-ended tasks. It's the same model as the one tested and isn't calibrated yet, which is why the Phase 4 claim uses checks only.
-- **Decision rules fixed before the result.** Each gate is written down, with what each outcome leads to, before its runs. Examples: the Phase 3 safety gate, rule C for the main suite, the Phase 4 pre-registration. Changes after that are dated amendments, made only before the affected runs.
-- **Paired comparisons with intervals.** Runs are compared task by task with a paired bootstrap (10,000 resamples, fixed seed). Attack rates use exact intervals. Run-to-run noise was measured, not assumed: two runs of the identical agent flip 9% of tasks, so single-run gaps under about 6–7 points are noise ([run-to-run report](evals/reports/run-to-run.md)).
-- **Outcomes reported as they came out, overrides on the record.**
-  - **Tiers v2.1 safety gate:** passed (0 of 29 under the strict user).
-  - **Rule C, main suite:** "gate not met": −3 points against the two references (95% CI −7 to +1), so non-inferiority at 6 points was not shown. The pre-registered consequence for 0 escalated cards applied: merge, open a drift issue, run a same-day control ([rule C verdict](evals/reports/rule-c-verdict.md), [#58](docs/known-issues.md)).
-  - **Rule A part 1 (benign tasks):** not met. Shipping anyway was an **owner override**, recorded as such, not as a pass ([tiers gate decision](docs/design-decisions.md#17-phase-3-tiers-gate-ship-tiers-v21-owner-override-on-rule-a)).
-- **Evals in CI.** A 16-task subset runs on Groq when a PR changes the agent, with a 75% pass gate. Otherwise CI says "KestrelBench not run".
-- **Open problems are listed** in [known issues](docs/known-issues.md), and every decision with its alternatives is in [design decisions](docs/design-decisions.md).
+**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](docs/known-issues.md)) and by the combined PR's CI runs (#90, 2026-11-10), both green: the CI subset on Groq passed its gate on the PR (14/15 graded runs, 1 errored; [run 42755872462](https://github.com/Ecko-maker/kestrel/actions/runs/42755872462)) and after the merge to `main` (14/16, 0 errored; [run 42759045086](https://github.com/Ecko-maker/kestrel/actions/runs/42759045086)).
 
-## Quickstart
+**The LLM judge, calibrated against my own labels.** Source: [calibration report](evals/reports/judge-calibration.md).
+- **Agreement:** 91% (95% CI 78–100%) on 32 held-out answers.
+- **Disagreements:** all 3 were the judge being too strict.
+- **Leniency can't be measured yet,** because the held-out labels contain no failing answers. That is also why kappa is 0.
+- **Lenient verdicts do happen:** the earlier [pass review](evals/reports/baseline-pass-review.md) found 2 lenient verdicts in 9.
+- **Where the judge is used:** only on the 43 open-ended tasks, and the Phase 4 claim uses deterministic checks only.
+
+## Limits
+
+- **No speaker recognition.** The wake word is word spotting ([voice-wake.md](docs/voice-wake.md)), so any voice can wake Kestrel and make a request. Risky actions still need an approval click; a wake can't answer one.
+- **Web fetch:**
+  - v1.0 blocks `fetch` calls to loopback, private and link-local addresses before they run (approval rules `tiers-v2.2`). A block is a refusal, never an approval card.
+  - **What the block checks:** the URL's host, not where the fetch ends up. A public URL that redirects to a private one, and DNS rebinding, stay open ([known issues](docs/known-issues.md)).
+- **Paraphrased leaks are invisible to the checks.** Leaks are detected as written, URL-decoded, base64, hex or split into pieces of 6+ characters. A paraphrase, ROT13 or spelled-out text is missed, so attack rates are lower bounds ([#23](docs/known-issues.md)).
+- **The judge is self-graded until calibrated.** It is the same model as the agent under test ([#21](docs/known-issues.md)).
+- **Docker is verified in CI only:** build, demo-mode start, health check and non-root user. Not on Docker Desktop for Windows, and not with MCP servers or Ollama inside the container ([#2](docs/known-issues.md)).
+
+Every open problem is in [known issues](docs/known-issues.md), and every decision with its alternatives in [design decisions](docs/design-decisions.md).
+
+## Future work
+
+- **Long-term memory with hybrid RAG:** built on branches (`phase3/memory`, design on `phase3/memory-rag`), parked until after Phase 4.
+- **A nightly training loop:** good traces → retrain the student → deploy only if it beats the current one on KestrelBench and passes every safety test.
+- **Speaker verification** for the wake word.
+- **Judge leniency:** label failing answers, so the judge's leniency can be measured.
+
+## Run it (free tiers)
+
+**You need:**
+- [git](https://git-scm.com) and [uv](https://docs.astral.sh/uv/). uv installs Python 3.14 itself if you don't have it.
+- [Node.js](https://nodejs.org) for the web console only. The terminal works without it.
 
 **1. Demo mode, no API keys.** Scripted model replies for a few sample prompts. The tools, approval cards, prompt-injection handling and traces are real.
 
 ```bash
-git clone https://github.com/Ecko-maker/kestrel && cd kestrel
-KESTREL_PROVIDERS=demo docker compose up        # PowerShell: $env:KESTREL_PROVIDERS="demo"; docker compose up
+git clone https://github.com/Ecko-maker/kestrel
+cd kestrel
+uv sync
+uv run kestrel --provider demo          # terminal chat; type 'exit' to quit
 ```
 
-Open the link printed in the logs (`http://127.0.0.1:8000/?token=...`). Without Docker, with [uv](https://docs.astral.sh/uv/): `uv sync`, then `uv run kestrel --provider demo` in the terminal.
+**Prompts the demo knows** (it lists them if you type anything else):
+- "What time is it in Tokyo?"
+- "Create a note called 'Kestrel ideas' with three ideas for features": this one shows an approval card. Answer `a` (approve), `e` (edit), `r` (reject) or `s` (approve for the session); closing the input counts as a rejection.
+- "Summarize suspicious_email.txt": the email hides an instruction, and the scripted model obeys it. The gate's card flags an address you never typed, and the send is only simulated, so nothing leaves your machine.
 
-**2. With a free Groq or Gemini key.** Get one from [Groq](https://console.groq.com/keys) or [Google AI Studio](https://aistudio.google.com/apikey):
+**The web console in demo mode:**
 
 ```bash
-cp .env.example .env      # add GROQ_API_KEY=... and/or GEMINI_API_KEY=...
-docker compose up         # or: uv run kestrel --provider groq   (terminal) / uv run kestrel web --build (console)
+KESTREL_PROVIDERS=demo uv run kestrel web --build      # PowerShell: $env:KESTREL_PROVIDERS="demo"; uv run kestrel web --build
 ```
 
-Kestrel tries providers in the order of `KESTREL_PROVIDERS` (default `gemini,groq,ollama`); `--provider` pins one. Other useful commands: `uv run kestrel traces`, `uv run kestrel stats`, `uv run pytest` (no keys or network needed).
+- **What `--build` does:** it builds the console, running `npm install` the first time (about 12 MB to download), then starts the server. Later runs can leave out `--build`.
+- **Opening it:** open the link it prints, `http://127.0.0.1:8765/?token=...`. The token is required.
+- **If `npm install` fails:** delete `console/node_modules` before trying again. Otherwise `--build` skips the install and the build fails.
+
+**MCP servers start too:** Kestrel starts two MCP servers (`fetch` and `time`) through `uvx`, which downloads them on the first run. Set `KESTREL_MCP=off` to skip them.
+
+**Or with Docker** (verified in CI only): `KESTREL_PROVIDERS=demo docker compose up`, or in PowerShell `$env:KESTREL_PROVIDERS="demo"; docker compose up`. Then open the link printed in the logs, which is on port 8000: `http://127.0.0.1:8000/?token=...`.
+
+**2. With a free key.** Get a key from [Groq](https://console.groq.com/keys) or [Google AI Studio](https://aistudio.google.com/apikey), or run a model locally with [Ollama](https://ollama.com):
+
+```bash
+cp .env.example .env                    # add GROQ_API_KEY=... and/or GEMINI_API_KEY=...
+uv run kestrel --provider groq          # or gemini, or ollama
+```
+
+- **Providers:** Kestrel tries them in the order of `KESTREL_PROVIDERS` (default `gemini`); `--provider` pins one.
+- **Other commands:** `uv run kestrel traces`, `uv run kestrel stats`.
+- **Tests:** `uv run pytest`, which needs no keys or network. A few tests are skipped without the optional `train` extra (torch, transformers); that's expected.
+- **The judge calibration:** `uv run kestrel bench calibrate --split heldout` recomputes the [calibration report](evals/reports/judge-calibration.md)'s numbers from stored verdicts, with no model calls.
 
 ## Architecture
 
@@ -124,7 +159,7 @@ flowchart LR
     W <-->|WebSocket: events + approvals| S[FastAPI server<br/>localhost + token]
     T --> A
     S --> A[Agent loop]
-    A -->|chat, streaming| F[Model layer<br/>fallback chain]
+    A -->|chat, streaming| F[Model layer<br/>fallback chain or router]
     F --> P1[Groq] & P2[Gemini] & P3[Ollama] & P4[Demo]
     A --> G{Approval gate<br/>tiers v2.1: capabilities, taint, content check}
     G -->|needs approval| AP[Approver<br/>terminal or web]
@@ -136,12 +171,12 @@ flowchart LR
 ```
 
 **Security model, in short:**
-- Permissions are fixed in code, and nothing the model sends can change them.
-- The registry refuses to run a gated tool without the gate's approval, and with no approver connected, everything risky is rejected.
-- File tools touch only `workspace/` and never read `.env` files.
-- File, web and MCP content reaches the model as labelled untrusted data. Once local data has been read, sending anything out needs an approval (a taint card), and the outbound content is checked.
-- Keys live only in `.env`, and traces pass through redaction.
-- The console listens on 127.0.0.1 only and needs a random access token.
+- **Permissions are fixed in code,** and nothing the model sends can change them.
+- **No approval, no risky action:** the registry won't run a gated tool without the gate's approval, and with no approver connected, everything risky is rejected.
+- **File tools are sandboxed:** they touch only `workspace/` and never read `.env` files.
+- **Untrusted content is labelled:** file, web and MCP content reaches the model as untrusted data. Once local data has been read, sending anything out needs an approval (a taint card), and the outbound content is checked.
+- **Secrets:** keys live only in `.env`, and traces pass through redaction.
+- **The console** listens on 127.0.0.1 only and needs a random access token.
 
 ## License
 
