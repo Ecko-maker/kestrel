@@ -219,9 +219,11 @@ there is one entry in practice. The dict keeps the design honest if that ever ch
 
 ## 5. Privacy
 
-**Bot chats are not end-to-end encrypted.** Telegram's "secret chats" (E2E) aren't available to bots. Everything the
-bot sends or receives is a cloud chat, stored on Telegram's servers and readable by Telegram. It is also readable by
-anyone who holds the bot token, through `getUpdates`, for updates not yet fetched.
+**Bot chats are not end-to-end encrypted.** Telegram's "secret chats" (E2E) aren't available to bots (*unverified*:
+not stated in the Telegram pages checked on 2026-11-11). Everything the bot sends or receives goes through Telegram's
+servers as a cloud chat, readable by Telegram. Telegram's bots page says "Bots have limited cloud storage — older
+messages may be removed by the server shortly after they have been processed". So the copy may be short-lived, but
+it exists. Updates are also readable by anyone who holds the bot token, through `getUpdates`, until they're fetched.
 
 **What goes to Telegram:**
 - every prompt the user types;
@@ -262,14 +264,14 @@ and says "open the console to see the preview". That trades decision quality for
 | | **taylorwilsdon/google_workspace_mcp** (PyPI `workspace-mcp`) | **aaronsb/google-workspace-mcp** (npm `@aaronsb/google-workspace-mcp`) | **Google's official Workspace MCP servers** |
 |---|---|---|---|
 | License | MIT, no CLA | Apache-2.0 (code before v3.0.0: MIT) | none (Google APIs Terms of Service, Workspace API developer policy) |
-| Maintenance | very active: 2.4.1 on PyPI 2026-11-11; 3.7k commits, 3.5k stars | active: v4.8.0 release notes; ~700 commits, ~200 stars | Google; **Developer Preview** (rollout from 2026-05-01), not general availability |
-| Runtime / transport | Python (classifiers 3.11-3.13; uvx picks a compatible Python); **stdio** for local clients, streamable HTTP for OAuth 2.1 multi-user | Node 22.12+, via `npx`; transport not stated (stdio, by its Claude Code instructions) | **remote only**, streamable HTTP, one endpoint per product (`gmailmcp.googleapis.com/mcp/v1`, ...) |
+| Last release | **2.4.1, 2026-11-11** (PyPI and GitHub release; 6 releases since 10-21); 3.5k stars; ~3.7k commits (*unverified*) | **4.9.1, 2026-11-10** (npm and GitHub release); 195 stars | none: a hosted Google service; **Developer Preview** (rollout from 2026-05-01), not general availability |
+| Runtime / transport | Python (classifiers 3.11-3.13; uvx picks a compatible Python); **stdio** or streamable HTTP ("any MCP client works over streamable HTTP (recommended) or stdio") | Node >= 22.12, via `npx`; transport *unverified* (the README doesn't say; an `npx` launch suggests stdio) | **remote only**, streamable HTTP, one endpoint per product (`gmailmcp.googleapis.com/mcp/v1`, ...) |
 | Fits `mcp_client.py` today (stdio only) | yes | yes | no: needs an HTTP transport and a web-application OAuth client with a redirect URI |
 | Service / tool selection | `--tools gmail drive calendar`, `--tool-tier core\|extended\|complete`, `--disabled-tools ...`, `--read-only`, per-service `--permissions` | `manage_accounts {operation: "scopes", services, access: "read"\|"readwrite"}` at consent time | per product (separate servers); scopes chosen on the consent screen |
-| Read-only scopes | per **service** (`--read-only` asks for `*.readonly` scopes; `--permissions` per service, syntax to verify) | per **service**, at consent | per **product** |
+| Read-only scopes | yes, per **service**: `--read-only` and per-service `--permissions` exist (README). Which scope strings each requests, and the `--permissions` syntax: *unverified* | yes, per **service**, at consent (`access: "read"`: "the token itself cannot send, edit or delete") | yes, per **product**: the docs list `gmail.readonly`, `drive.readonly`, `calendar.events.readonly` among others. Calendar's list has no write scope although `create_event` is a tool (*unverified* how create is authorized) |
 | Per-**tool** scopes | no (no server can: OAuth scopes are per API, not per tool) | no | no |
 | Tools needed | `search_gmail_messages` (+ the message-content reader), the Calendar create tool, `create_drive_file` | `manage_email`, `manage_calendar`, `manage_drive` (12 multi-operation tools) | `search_threads`, `get_message`, `create_event`, `create_file` |
-| Gmail send | yes (a tool; not exposed, below) | yes, an operation of `manage_email` | no send tool (draft only) |
+| Gmail send | yes (a tool; not exposed, below) | yes, an operation of `manage_email` | no send tool (`create_draft` only; the `send_message` on that page is Google Chat's) |
 | Credentials | `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`; token store local (path to verify) | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`; tokens in `~/.local/share/google-workspace-mcp/credentials/` | OAuth web client, "Use this client for an AI-powered agent" |
 
 **Recommendation: `workspace-mcp`**, pinned to an exact version, run with
@@ -300,15 +302,15 @@ before downloading**, per CLAUDE.md.
 **OAuth scopes to request** (the smallest set that allows the three actions):
 - `gmail.readonly`
 - `calendar.events`: create needs write. It also allows editing and deleting events. Only the exposed tool set limits
-  that (6.2).
-- `drive.file`: Kestrel sees only the files it created or opened, not the rest of Drive.
+  that (6.2). (*Unverified* here: Google's scopes page wasn't machine-readable; from general knowledge of the scope.)
+- `drive.file`: Kestrel sees only the files it created or opened, not the rest of Drive. (*Unverified* here, as above.)
 
 No `gmail.send`, `gmail.modify`, `drive` or `drive.readonly`.
 
 **`.env` lines to add** (step 2):
 
 ```
-GOOGLE_OAUTH_CLIENT_ID=<OAuth client ID, Google Cloud console, Desktop app>
+GOOGLE_OAUTH_CLIENT_ID=<OAuth client ID, Google Cloud console; client type per workspace-mcp's Quick Start (unverified: Desktop app)>
 GOOGLE_OAUTH_CLIENT_SECRET=<that client's secret>
 ```
 
@@ -318,7 +320,8 @@ the server's one-time local redirect, not Telegram's transport, so the "no open 
 
 **$0 (decision 1):**
 - The Gmail, Calendar and Drive APIs are free for personal use within their quotas, and an OAuth client needs no
-  billing account.
+  billing account (*unverified*). The tools-safety page does say "Quota increase requests will require Google Cloud
+  billing to be enabled".
 - Google's tools-safety page says that from late 2026, usage over standard daily thresholds will be billed, with 90
   days' notice. One person's use is far below them, but the build step records the thresholds.
 - The Telegram Bot API is free.
@@ -492,7 +495,8 @@ that approve the attack's own call.
 **Runs.** Billable tokens from measured files, with the corrected estimator (2026-10-06: 64-75% of raw tokens are
 billable):
 - main suite ×1, tiers v2: **174.1k**;
-- main ×3, v2.1: 541.5k, so **~1.80k per task run**;
+- main ×3, v2.1: the file says 541.5k, but that includes ~225k spent in dropped retry attempts (known issue #53), so
+  the per-run figure comes from the ×1 run, **~1.74k per task run**;
 - safety strict ×3, all 48 (v2.1): **230.2k**, ~1.60k per run;
 - rubber-stamp ×1 on the 30 attack tasks (v2.1): **68.4k**, ~2.3k per run.
 
@@ -507,7 +511,7 @@ replaced by its numbers before anything is approved.
 | Main suite before | reuse the pinned `main-after-v21-x3.json` (300 runs). Rules v2.1 -> v2.2 changed only `fetch__fetch`, which isn't in the main registry, so the main-suite agent is the same | 0 |
 | Same-week drift control (#58), old agent ×2, CI subset | checks that the pinned before still stands this week | ~50k |
 | Safety before: strict ×3 (48) + rubber-stamp ×1 (30 attacks), at `main` (`8a8174d8f17d`) | fresh: the fetch block changes safety outcomes, so v2.1's files can't stand in | ~299k |
-| Main suite after ×1, `--tools google` | | ~180-270k |
+| Main suite after ×1, `--tools google` | | ~175-260k |
 | Safety after: strict ×3 (48 + 12 new) + rubber-stamp ×1 (30 + 6 attacks) | the new tasks have no before side (no Gmail tool before); they are judged by the gate alone | ~370-555k |
 | **Total** | | **~0.90-1.15M billable, about 5-7 Groq days** at ~185k free per day |
 
@@ -562,9 +566,11 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
    - no fresh safety before side: report the old tasks' after-run against the gate only, without the before-after
      comparison.
 9. **Who writes the email tasks:** you write the 6 injection emails and their 6 benign twins (structure in 7.2). When?
-10. **Google OAuth client:** the `workspace-mcp` README reportedly says an OAuth client's "Use this client for an
-    AI-powered agent" setting can't be changed on an existing client after **2026-11-12** (not verified here). If you
-    already have a client you'd reuse, check that today. A new client created later is unaffected.
+10. **Google OAuth client:** `workspace-mcp` does **not** need Google's "Use this client for an AI-powered agent"
+    setting: its README says "this server only calls Google's REST APIs, so your OAuth client does not need" it. The
+    2026-11-12 date applies only if you want agent traffic labelled for admin controls: then you create a separate
+    client with the setting on, because it "can't be changed on an existing client after November 12, 2026".
+    Google's official servers do require the setting. Nothing to do today unless you want the labelling.
 11. **Order after step 1:** Google first (this design), or memory first?
 
 **Sources checked 2026-11-11:**
@@ -577,5 +583,17 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
   [Workspace developer update, May 2026](https://workspaceupdates.googleblog.com/2026/05/agent-tools-and-security-updates-for-workspace-developers.html),
   [Configure MCP servers](https://developers.google.com/workspace/guides/configure-mcp-servers) and
   [tools safety](https://developers.google.com/workspace/tools-safety).
-- Telegram's limits from PTB's constants. The Bot API documents bots as cloud chats, without secret-chat (E2E)
-  support.
+- Telegram's limits from PTB's constants, matched against the
+  [Bot API](https://core.telegram.org/bots/api): 1-4,096 characters after entities parsing, callback data 1-64 bytes,
+  chat action "5 seconds or less".
+- [Bots FAQ](https://core.telegram.org/bots/faq): "avoid sending more than one message per second" per chat.
+- [Bots page](https://core.telegram.org/bots): limited cloud storage.
+- That bots can't use secret chats is *unverified* (not found in these pages).
+
+**Review 2026-11-11** (`design/telegram-google`):
+- Every claim above checked against the PyPI and npm registries, the GitHub API, the raw READMEs, the PTB 22.8 wheel,
+  and Google's and Telegram's pages. Anything not confirmed is marked *unverified*.
+- **Corrected:**
+  - aaronsb's last release (4.9.1, not v4.8.0);
+  - the per-run main-suite figure (the ×3 file includes dropped retries);
+  - open question 10 (`workspace-mcp` doesn't need the agent-client setting).
