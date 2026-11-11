@@ -597,3 +597,10 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
   - aaronsb's last release (4.9.1, not v4.8.0);
   - the per-run main-suite figure (the ×3 file includes dropped retries);
   - open question 10 (`workspace-mcp` doesn't need the agent-client setting).
+- **Main state at review:**
+  - `origin/main` = `17393a3`.
+  - `phase3/tiers-v2` is merged (PR #27, merge commit `02c1d2e`, 2026-10-29, an ancestor of `main`).
+  - Default agent fingerprint computed offline on a clean checkout of `17393a3`:
+    `agent_fingerprint("groq", "openai/gpt-oss-120b")` gives `sha 8a8174d8f17d`, `tools ede3efa38c54`,
+    `system_prompt 36d57c7e8a82`, `approval_rules tiers-v2.2`, 10 tools, `fetch__fetch` not in the main registry.
+  - Step 1 pins these values. If `main` moves before step 1, recompute them.
