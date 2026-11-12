@@ -589,3 +589,26 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** a webhook (needs a public URL and an open port); raw Bot API over httpx (no dependency, more transport code to own); aaronsb's server (one tool both reads and sends, so a tier can't tell them apart); Google's official servers (Developer Preview, remote only, need an HTTP transport); Gmail reads with no card from the start.
 
 **Why:** the n8n "trigger -> agent -> reply" shape is useful from a phone, and none of it needs to weaken the gate: the channel only asks and shows, the gate still decides. Splitting it in two keeps the cheap, provable part (Telegram) apart from the part that changes behaviour (Google) and needs Groq to measure.
+
+---
+
+## D-pending-data-rca. Root-cause answers from a read-only data server, with confidence computed from evidence (proposed, 2026-11-12)
+
+**Proposal:** a third MCP server, `kestrel-data` (code in `src/kestrel/data/`, served over MCP), built after Phase 4 (`docs/data-rca-design.md`):
+- **Five read-only tools:** describe_dataset, query, compare_periods, detect_anomalies, decompose_change.
+- **Declared `reads_local`:** safe tier, results wrapped as untrusted, each call that returns data taints the session.
+- **DuckDB 2.0.0** opened with `read_only=True` + `enable_external_access=false` + `lock_configuration=true` over pre-built `.duckdb` files. `query` also accepts exactly one `SELECT`.
+- **Answers:** each hypothesis cites evidence ids. The confidence label comes from a fixed rule over share of gap, effect size and consistency, never from the model.
+- **Evals:**
+  - a new `rca` split from a seeded generator (5 scenarios with distractors), graded by checks, with a judge only for explanation quality;
+  - label calibration measured offline on held-out seeds;
+  - 5 data-cell injection attacks in the safety split.
+
+**Alternatives:**
+- A Python execution tool: no sandbox on Windows (decision 13), and the gate can't see inside a call.
+- `read_only=True` alone: measured to still read any file, write with `COPY`, and install extensions.
+- `allowed_directories` with live CSV reads: `COPY ... TO` into the folder still writes.
+- A confidence the model states: unverifiable.
+- Real datasets for the eval: no planted truth to grade against.
+
+**Why:** "why did X drop?" is the question analysts are paid to answer, and the hard parts are measurable: did it find the planted cause, reject the red herring, and quote only numbers the tools produced? The engine-level lock-down keeps the agent's gate meaningful: the data tools can read, and nothing else.
