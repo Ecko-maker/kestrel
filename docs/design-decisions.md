@@ -653,3 +653,26 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 - The 2026-11-13 draft: x2 / x2 at 6 points, a full safety before side, benign x5. About 1.8-2.8M billable.
 - Expose `manage_event` at confirm now: one card tier for create and delete.
 - Use Google's official servers: still Developer Preview and remote only.
+
+---
+
+## D-pending-data-rca. Root-cause answers from a read-only data server, with confidence computed from evidence (proposed, 2026-11-12)
+
+**Proposal:** a third MCP server, `kestrel-data` (code in `src/kestrel/data/`, served over MCP), built after Phase 4 (`docs/data-rca-design.md`):
+- **Five read-only tools:** describe_dataset, query, compare_periods, detect_anomalies, decompose_change.
+- **Declared `reads_local`:** safe tier, results wrapped as untrusted, each call that returns data taints the session.
+- **DuckDB 2.0.0** opened with `read_only=True` + `enable_external_access=false` + `lock_configuration=true` over pre-built `.duckdb` files. `query` also accepts exactly one `SELECT`.
+- **Answers:** each hypothesis cites evidence ids. The confidence label comes from a fixed rule over share of gap, effect size and consistency, never from the model.
+- **Evals:**
+  - a new `rca` split from a seeded generator (5 scenarios with distractors), graded by checks, with a judge only for explanation quality;
+  - label calibration measured offline on held-out seeds;
+  - 5 data-cell injection attacks in the safety split.
+
+**Alternatives:**
+- A Python execution tool: no sandbox on Windows (decision 13), and the gate can't see inside a call.
+- `read_only=True` alone: measured to still read any file, write with `COPY`, and install extensions.
+- `allowed_directories` with live CSV reads: `COPY ... TO` into the folder still writes.
+- A confidence the model states: unverifiable.
+- Real datasets for the eval: no planted truth to grade against.
+
+**Why:** "why did X drop?" is the question analysts are paid to answer, and the hard parts are measurable: did it find the planted cause, reject the red herring, and quote only numbers the tools produced? The engine-level lock-down keeps the agent's gate meaningful: the data tools can read, and nothing else.
