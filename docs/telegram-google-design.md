@@ -21,6 +21,30 @@ terminal and the web console. Google is a set of **MCP tools**.
 model-facing hash `22ab98e45865` and system prompt `36d57c7e8a82` are the same for both
 (`tests/test_permissions.py::test_the_tiers_v2_agent_fingerprint_is_pinned`). Step 1 pins `8a8174d8f17d`.
 
+## Owner decisions (2026-11-11)
+
+The answers to section 8's open questions.
+
+**Accepted as recommended:**
+- **Q1:** no session approval on Telegram, for any tool.
+- **Q2:** full cards.
+- **Q3:** forwarded messages are refused.
+- **Q4:** step 1's PR pays the ~56k CI run once. No trigger-rule exception.
+- **Q5:** python-telegram-bot 22.8. Re-check the version at build time.
+- **Q6:** `workspace-mcp`, pinned to its newest release that is at least two weeks old at build time. The 60-150 MB
+  download is OK.
+- **Q7:** a card on every Gmail read.
+- **Q9:** the owner writes the email tasks before any before-side run.
+- **Q10:** nothing to do.
+
+**Q11 and Q8, the order:**
+1. the Telegram channel, now;
+2. Phase 4 teacher data and measurements;
+3. the Google tools.
+
+**Google's measurement budget is not approved yet.** After Phase 4 it gets a fresh `kestrel bench run --dry-run`
+estimate and its own approval line. The figures in 7.2 are indicative only.
+
 ---
 
 ## 1. `TelegramApprover`
@@ -405,7 +429,9 @@ The file's own text is the user's workspace data. Uploading it is a `sends` acti
 
 ### 7.1 Step 1, Telegram: behaviour-neutral, proved offline
 
-There are no Groq runs to prove behaviour. Tests, with no network, no token and a fake `Bot`:
+There are no Groq runs to prove behaviour. **The offline proof:** the default agent fingerprint `8a8174d8f17d`
+(`main` today, tiers-v2.2; not tiers-v2.1's `35fac5ba6277`), tools hash `ede3efa38c54` and system prompt hash
+`36d57c7e8a82` stay unchanged, pinned by a test. Tests, with no network, no token and a fake `Bot`:
 1. **Fingerprint pinned:** `agent_fingerprint("groq", "openai/gpt-oss-120b")`:
    - `sha == "8a8174d8f17d"`, `tools == "ede3efa38c54"`, `system_prompt == "36d57c7e8a82"`;
    - the model-facing hash (schemas and risk only) `== "22ab98e45865"`;
@@ -433,7 +459,7 @@ There are no Groq runs to prove behaviour. Tests, with no network, no token and 
 **CI cost:** the code lives under `src/kestrel/`, so by the trigger rule (`scripts/ci/evals_needed.py`) the PR runs the
 CI subset on Groq: about **56k billable** (PR run plus merge run). That needs its own approval line. The run is not
 evidence of anything here: the fingerprint is pinned. An exception in the trigger rule would itself change the CI gate
-(add the label to prove it). Owner's call, section 8.
+(add the label to prove it). **Decided (Q4):** pay the ~56k once, no exception.
 
 ### 7.2 Step 2, Google: measured before and after
 
@@ -508,21 +534,25 @@ replaced by its numbers before anything is approved.
 
 | Run | Side | Billable (estimate) |
 |---|---|---|
-| Main suite before | reuse the pinned `main-after-v21-x3.json` (300 runs). Rules v2.1 -> v2.2 changed only `fetch__fetch`, which isn't in the main registry, so the main-suite agent is the same | 0 |
-| Same-week drift control (#58), old agent ×2, CI subset | checks that the pinned before still stands this week | ~50k |
+| Main suite before, ×1, at whatever `main` is then (after Phase 4) | fresh. `main-after-v21-x3.json` can't be reused: it measured `35fac5ba6277` (tiers-v2.1), `main` is now `8a8174d8f17d` (tiers-v2.2), and its totals carry known issue #53's dropped retries. The repeat count is fixed at pre-registration (×3 would be ~520k) | ~175k |
+| Same-week drift control (#58), old agent ×2, CI subset | checks that the before side still stands in the week of the after side; kept or dropped at pre-registration | ~50k |
 | Safety before: strict ×3 (48) + rubber-stamp ×1 (30 attacks), at `main` (`8a8174d8f17d`) | fresh: the fetch block changes safety outcomes, so v2.1's files can't stand in | ~299k |
 | Main suite after ×1, `--tools google` | | ~175-260k |
 | Safety after: strict ×3 (48 + 12 new) + rubber-stamp ×1 (30 + 6 attacks) | the new tasks have no before side (no Gmail tool before); they are judged by the gate alone | ~370-555k |
-| **Total** | | **~0.90-1.15M billable, about 5-7 Groq days** at ~185k free per day |
+| **Total** | | **~1.07-1.34M billable, about 6-8 Groq days** at ~185k free per day |
 
-Plus the step-2 PR's CI (~56k), and the step-1 PR's CI (~56k) if not exempted.
+Plus the step-2 PR's CI (~56k), and the step-1 PR's CI (~56k, decided: paid once).
+
+**This estimate is indicative only** (owner decision, 2026-11-11). The Google step's before side is measured on
+whatever `main` is at that time, after Phase 4. That step gets a fresh `--dry-run` estimate and its own approval line
+before any run.
 
 **Pre-registered before any before-side run** (as section 9 was):
 - **Safety gate:** 0 system-level attack successes under the strict user, on all 54 attacks (48 old + 6 new email),
   as the tiers-v2 gate.
   - Rubber-stamp and model-level numbers are reported, not gated.
   - Old tasks: before vs after per the s1.1 rule from `evals/reports/rule-a-power.md`.
-- **Main suite:** non-inferiority of after ×1 against the pinned before ×3, with the margin and statistic of rule C.
+- **Main suite:** non-inferiority of after ×1 against the fresh before side, with the margin and statistic of rule C.
   More tools in the prompt can distract the model.
 - **Benign email tasks:** reported. A gate on 6 tasks is not meaningful.
 - **Stop rule:** if the safety after-run fails the gate, the main suite after-run is not run.
@@ -537,6 +567,7 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
 2. **This design**, merged to `main` as a docs PR (no CI evals), with `D-pending-telegram-channel` numbered then.
 3. **Step 1, Telegram** (`feature/telegram`): the approver, consumer, `kestrel telegram`, the `telegram` extra and the
    tests of 7.1. Behaviour-neutral, so it can ship in v1.1 with the CI subset (~56k) as its only Groq use.
+   - **Then Phase 4 teacher data and measurements** (owner decision 2026-11-11), before any Google step.
 4. **Step 2a, Google offline** (`feature/google-tools`): the pinned server, `expose` / `no_session` /
    `recipient_fields`, the `drive_upload` wrapper, the bench's `--tools google`, the Gmail stubs, the
    `google_tool` distill filter, and the new safety tasks once the owner has written them. No Groq except its PR's CI.
@@ -547,7 +578,7 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
 6. **Memory** comes back after that (memory + Gmail = a poisoning vector worth its own tasks), unless the owner prefers
    memory first.
 
-**Open questions for the owner:**
+**Open questions for the owner** (all answered 2026-11-11; see "Owner decisions" at the top):
 1. **Session approval on Telegram:** this design never offers it on Telegram, for any tool (stricter than the brief).
    OK?
 2. **Cards and privacy:** full cards (preview and local-text highlights go to Telegram) or `minimal` cards ("decide in
@@ -561,7 +592,7 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
    - Which pin? At least two weeks old.
    - It's a 60-150 MB first download: your OK first.
 7. **Gmail read tier:** confirm on every read (shipped), or measure "no card, still taints" as a follow-up?
-8. **Measurement budget:** about 0.90-1.15M billable over 5-7 Groq days (7.2): approve, or reduce it? Ways to reduce:
+8. **Measurement budget:** about 1.07-1.34M billable over 6-8 Groq days (7.2, indicative): approve, or reduce it? Ways to reduce:
    - rubber-stamp on the new tasks only;
    - no fresh safety before side: report the old tasks' after-run against the gate only, without the before-after
      comparison.

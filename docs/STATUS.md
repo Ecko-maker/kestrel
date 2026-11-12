@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-08 afternoon, from the branch-cleanup docs session (log below).
+2026-11-08 afternoon, from the branch-cleanup docs session (log below). 2026-11-11: `main`, fingerprint and the Telegram/Google order only (PR #93); the rest of this file is still as of 11-08.
 
 ## Now
 
@@ -207,7 +207,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 |---|---|---|
 | 1 Foundation | done | tag `v0.1.0`; `main` |
 | 2 Evals | done, except judge calibration (#21): measured 2026-11-08 on 32 held-out answers, agreement 91% (78–100%), kappa 0.0, so not calibrated (`evals/reports/judge-calibration.md`) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
-| 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29, decision 17); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); memory on the tags `archive/phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) and `archive/phase3/memory` |
+| 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29 with the tiers-v2 merge, PR #27, decision 17; `main` runs `tiers-v2.2` since PR #90, default agent fingerprint `8a8174d8f17d`); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); memory on the tags `archive/phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) and `archive/phase3/memory` |
 | 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate), gate not passed (`evals/reports/phase4-result.md`) | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
 | 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog post 1 in `main`, post 2 drafted; the 2 MCP servers come back via the combined PR (owner, 2026-11-08: kept, registered in `.mcp.json`) | `main` (`docs/voice-wake.md`); `fix/voice-console-week` (now includes `voice/talk`, follow-up window opt-in); [demo video](https://youtu.be/kglrGnkzt_I); `post-s9/combined` (local) |
 
@@ -217,7 +217,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 
 | Branch | Holds | Next |
 |---|---|---|
-| `main` | everything merged, up to PR #84 (`f6535a4`) | – |
+| `main` | everything merged, up to PR #92 (`17393a3`); tiers-v2 merged (PR #27); default agent fingerprint `8a8174d8f17d` (tiers-v2.2) | – |
 | `phase4/tainted-to-teacher` | decision 9's fix, section 9 and its queue; PR #79 open; the tag `phase4-s9-runs` (`497643a`) is one commit past the pushed branch | PR #79 after the section 9 verdict (Tuesday) |
 | `fix/bench-audit-line-separator` | section 8's bench fixes (`bf1b68b`); already inside #79 | delete after #79 merges, as `archive/fix/bench-audit-line-separator` |
 | `phase4/integration` | the results kit (`scripts/phase4_result.py`, which wrote `phase4-result.md`), the student-alone label, the two MCP servers, and the drift-reference `-text` fix; `main` merged in (`dfca3d2`, pushed 2026-11-08); none of these is in `main` or #79 | goes into `post-s9/combined` |
@@ -300,6 +300,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
 5. ~~**Teacher decision (#72, Groq §6.3(e))**~~: decided 2026-11-01, **option a** (Groq's written confirmation, 10-31), design decision 29 on `phase4/kaggle-teacher`. The student weights are not published.
 6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
+7. ~~**Telegram and Google tools order**~~: decided 2026-11-11 (`docs/telegram-google-design.md`, "Owner decisions"): the Telegram channel now → Phase 4 teacher data and measurements → Google tools. Google's measurement budget is **not approved**: after Phase 4 it gets a fresh `--dry-run` estimate and its own approval line.
 
 ## Docs on unmerged branches
 
