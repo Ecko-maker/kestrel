@@ -25,7 +25,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import InlineKeyboardButtonLimit
 
 from kestrel.approval import Decision, Notice
-from kestrel.telegram.outbox import Outbox
+from kestrel.telegram.outbox import Outbox, describe
 from kestrel.telegram.text import card_text
 
 log = logging.getLogger("kestrel.telegram")
@@ -90,7 +90,7 @@ class TelegramApprover:
                 decision = Decision("rejected", reason=f"no answer within {self.timeout / 60:g} minutes")
                 label = "Expired: rejected"
         except Exception as e:  # the card couldn't be sent (network, flood, Telegram refused): nothing runs
-            log.warning("approval card for %s not delivered: %s", tool_name, type(e).__name__)
+            log.warning("approval card for %s not delivered, so rejected: %s", tool_name, describe(e))
             decision, label = Decision("rejected", reason="the approval card couldn't be delivered"), ""
         finally:
             with self._lock:
@@ -117,7 +117,7 @@ class TelegramApprover:
         try:
             self.outbox.call_from_thread("edit_message_text", chat_id=self.chat_id, message_id=message_id, text=text)
         except Exception as e:
-            log.warning("couldn't update an approval card: %s", type(e).__name__)
+            log.warning("couldn't update an approval card: %s", describe(e))
 
     def _find(self, chat_id: int, message_id: int | None, approval_id: str | None = None) -> Pending | None:
         with self._lock:

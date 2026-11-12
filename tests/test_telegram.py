@@ -477,6 +477,54 @@ def test_a_card_that_cant_be_delivered_is_a_rejection(tmp_path):
     assert decision.status == "rejected" and "couldn't be delivered" in decision.reason
 
 
+class CardsFailBot(FakeBot):
+    """Plain messages go through; any message with buttons is refused, as Telegram refuses a chat it can't reach."""
+
+    async def send_message(self, chat_id, text, **kwargs):
+        if kwargs.get("reply_markup") is not None:
+            from telegram.error import BadRequest
+
+            raise BadRequest(f"Bad Request: chat not found (bot{FAKE_TOKEN})")
+        return await super().send_message(chat_id, text, **kwargs)
+
+
+def test_a_card_whose_send_fails_is_rejected_and_the_run_carries_on(tmp_path, registry, caplog):
+    llm = ScriptedLLM(call("save", text="x"), say("I didn't save it."))
+    core = make_core(tmp_path, llm, registry)
+
+    async def scenario():
+        bot = CardsFailBot()
+        core.attach(bot, asyncio.get_running_loop())
+        await core.on_message(message("save x"))
+        await finished(core)
+        await core.on_message(message("/help"))  # the bot still answers afterwards
+        return bot
+
+    with caplog.at_level(logging.WARNING, logger="kestrel.telegram"):
+        bot = asyncio.run(scenario())
+    assert registry.ran == []  # nothing ran without an answer on a card
+    assert bot.texts()[:2] == ["🔧 save ✗ rejected", "I didn't save it."] and len(bot.texts()) == 3
+    assert "couldn't be delivered" in json.dumps(llm.seen[-1])  # the model was told why
+    audit = [json.loads(line) for line in (tmp_path / "approvals.jsonl").read_text().splitlines()]
+    assert [a["decision"] for a in audit] == ["rejected"]
+    line = next(r.getMessage() for r in caplog.records if "not delivered" in r.getMessage())
+    assert "BadRequest: Chat not found" in line and "TELEGRAM_ALLOWED_USER_ID" in line
+    assert FAKE_TOKEN.split(":")[1] not in caplog.text  # Telegram's text goes through redact()
+
+
+def test_describe_gives_telegrams_text_redacted_and_a_hint_only_for_refusals():
+    from telegram.error import BadRequest, Forbidden, NetworkError
+
+    from kestrel.telegram.outbox import REACH_HINT, describe
+
+    assert describe(BadRequest("Bad Request: chat not found")) == f"BadRequest: Chat not found ({REACH_HINT})"
+    assert describe(Forbidden("Forbidden: bot was blocked by the user")).endswith(f"({REACH_HINT})")
+    assert describe(NetworkError(f"https://api.telegram.org/bot{FAKE_TOKEN}/x")) == (
+        "NetworkError: https://api.telegram.org/bot[REDACTED]/x"
+    )
+    assert describe(TimeoutError()) == "TimeoutError"
+
+
 def test_stop_rejects_the_waiting_card_and_ends_the_run(tmp_path, registry):
     core = make_core(tmp_path, ScriptedLLM(call("save", text="x"), say("never")), registry)
 
@@ -682,3 +730,106 @@ def test_run_long_polls_for_messages_and_presses_only_and_drops_old_updates(tmp_
     assert seen["handlers"] == [MessageHandler, MessageHandler, CallbackQueryHandler] and seen["errors"] == 1
     assert printed[0] == bot_module.E2E_NOTICE and not any(FAKE_TOKEN in line for line in printed)
     assert not (tmp_path / "logs" / "telegram.lock").exists()  # released on exit
+
+
+class FakeBotAPI:
+    """Stands in for api.telegram.org under python-telegram-bot's real Application (its request layer):
+    sendMessage is refused as Telegram refuses a chat that never pressed Start, and the second
+    getUpdates brings a stranger's message. `stop` is called once the stranger has been logged."""
+
+    def __init__(self, stranger_logged, stop):
+        self.methods: list[str] = []
+        self.polls = 0
+        self.stranger_logged, self.stop = stranger_logged, stop
+
+    async def __call__(self, url, method, request_data=None, **kwargs):
+        name = url.rsplit("/", 1)[-1]
+        self.methods.append(name)
+        if name == "getMe":
+            result: object = {"id": 123456789, "is_bot": True, "first_name": "K", "username": "k_bot"}
+        elif name == "sendMessage":
+            body = {"ok": False, "error_code": 400, "description": "Bad Request: chat not found"}
+            return 400, json.dumps(body).encode()
+        elif name == "getUpdates":
+            self.polls += 1
+            await asyncio.sleep(0.01)
+            result = []
+            if self.polls == 2:
+                person = {"id": STRANGER, "is_bot": False, "first_name": "S"}
+                chat = {"id": STRANGER, "type": "private"}
+                said = {"message_id": 1, "date": 0, "text": "hi", "chat": chat, "from": person}
+                result = [{"update_id": 7, "message": said}]
+            elif self.stranger_logged() or self.polls > 500:
+                self.stop()
+        else:
+            result = True
+        return 200, json.dumps({"ok": True, "result": result}).encode()
+
+
+def test_a_failed_start_message_is_logged_and_the_bot_keeps_polling(tmp_path, monkeypatch, caplog, capsys):
+    """docs/telegram.md's way to find your id: TELEGRAM_ALLOWED_USER_ID=1, so the start message can't be
+    delivered. python-telegram-bot's real Application, with only the HTTP layer faked."""
+    from telegram.ext import Application
+    from telegram.request import BaseRequest
+
+    from kestrel.telegram import bot as bot_module
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", FAKE_TOKEN)
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "1")
+    apps: list = []
+
+    def stranger_logged():
+        return any(f"ignored update from user id {STRANGER}" in r.getMessage() for r in caplog.records)
+
+    def stop():  # only once run_polling has reached its run_forever, as Ctrl+C would
+        if apps[0].running:
+            asyncio.get_running_loop().call_soon(apps[0].stop_running)
+
+    api = FakeBotAPI(stranger_logged, stop)
+
+    class FakeRequest(BaseRequest):
+        read_timeout = 1.0
+
+        async def initialize(self):
+            pass
+
+        async def shutdown(self):
+            pass
+
+        async def do_request(self, url, method, request_data=None, **kwargs):
+            return await api(url, method, request_data, **kwargs)
+
+    real_builder = Application.builder
+
+    def builder():
+        return real_builder().request(FakeRequest()).get_updates_request(FakeRequest())
+
+    real_build = bot_module.build_application
+
+    def build(core, token):
+        apps.append(real_build(core, token))
+        return apps[0]
+
+    monkeypatch.setattr(Application, "builder", staticmethod(builder))
+    monkeypatch.setattr(bot_module, "build_application", build)
+    saved = {
+        name: (logging.getLogger(name).level, list(logging.getLogger(name).handlers)) for name in bot_module.LOGGERS
+    }
+    try:
+        with caplog.at_level(logging.INFO, logger="kestrel.telegram"):
+            bot_module.run(DemoLLM(delay=0), print_line=lambda line: None)
+    finally:
+        for name, (level, handlers) in saved.items():
+            logging.getLogger(name).setLevel(level)
+            logging.getLogger(name).handlers[:] = handlers
+    assert api.methods.count("sendMessage") == 1  # the start message; the stranger got no reply
+    assert stranger_logged() and api.polls >= 3  # still polling after the failed start message
+    first = api.methods.index("sendMessage")
+    assert "getUpdates" in api.methods[first:]
+    lines = [r.getMessage() for r in caplog.records]
+    assert any("start message" in m and "BadRequest: Chat not found" in m and "pressed Start" in m for m in lines)
+    assert any(m.startswith("Still polling.") for m in lines)
+    shown = capsys.readouterr().err + caplog.text
+    assert FAKE_TOKEN.split(":")[1] not in shown
+    assert not (tmp_path / "logs" / "telegram.lock").exists()

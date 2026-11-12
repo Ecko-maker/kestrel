@@ -13,11 +13,26 @@ from datetime import timedelta
 from typing import Any
 
 from telegram import LinkPreviewOptions
-from telegram.error import RetryAfter
+from telegram.error import BadRequest, Forbidden, RetryAfter
+
+from kestrel.tracing import redact
 
 NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 FLOOD_RETRIES = 3  # RetryAfter waits honoured per request before giving up
 SEND_TIMEOUT = 60.0  # seconds the Agent's thread waits for one request (flood waits included)
+MAX_ERROR_TEXT = 200
+REACH_HINT = "check TELEGRAM_ALLOWED_USER_ID and that you pressed Start in your bot's chat"
+
+
+def describe(error: BaseException) -> str:
+    """A failed request, for a log line: its type, Telegram's own text ("Chat not found"), redacted,
+    and for a refusal (400 Bad Request, 403 Forbidden) what to check. Sends never raise past this:
+    the caller logs it and carries on."""
+    text = redact(str(error)).strip()[:MAX_ERROR_TEXT]
+    line = f"{type(error).__name__}: {text}" if text else type(error).__name__
+    if isinstance(error, BadRequest | Forbidden):
+        line += f" ({REACH_HINT})"
+    return line
 
 
 def retry_seconds(error: RetryAfter) -> float:

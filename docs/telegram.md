@@ -30,7 +30,9 @@ If the token ever leaks: BotFather `/revoke`, pick the bot, and put the new toke
 **3. Find your numeric user id.** It is a number (like `123456789`), not your @username. Kestrel shows it to you:
 1. Add both lines to `.env` (below) with `TELEGRAM_ALLOWED_USER_ID=1` for now. 1 is nobody's account, so the
    bot answers no one yet.
-2. Run `uv run kestrel telegram` and send your bot any message.
+2. Run `uv run kestrel telegram`. It can't greet user 1, so it prints
+   `[telegram] couldn't send the start message to TELEGRAM_ALLOWED_USER_ID: BadRequest: Chat not found (check ...)`
+   and `Still polling.`: expected here, it keeps running. Send your bot any message.
 3. The terminal prints `[telegram] ignored update from user id 123456789`: that number is yours. Only the id is
    logged, never your text.
 4. Stop Kestrel (Ctrl+C), put the number in `.env`, and start it again.
@@ -52,7 +54,9 @@ uv run kestrel --provider demo telegram    # demo mode: no API keys
 ```
 
 It polls Telegram (no webhook, no open port, nothing exposed from your laptop). Messages you sent while it was off
-are skipped. Ctrl+C stops it. Only one `kestrel telegram` can run on this machine (`logs/telegram.lock`).
+are skipped. Ctrl+C stops it. A message Telegram refuses (a start message, an answer, a card) is logged with
+Telegram's reason and never stops the bot; a card that can't be delivered counts as **Reject**. If the start
+message fails with your real id, check `TELEGRAM_ALLOWED_USER_ID` and that you pressed **Start** in the bot's chat. Only one `kestrel telegram` can run on this machine (`logs/telegram.lock`).
 
 **In the chat:**
 - Type a request. You get the final answer, and one short line per step with the tools used (`🔧 read_file ✓`),

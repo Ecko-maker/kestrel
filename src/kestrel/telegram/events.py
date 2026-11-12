@@ -15,7 +15,7 @@ import logging
 import time
 from collections.abc import Callable
 
-from kestrel.telegram.outbox import Outbox
+from kestrel.telegram.outbox import Outbox, describe
 from kestrel.telegram.text import split_message
 from kestrel.tracing import redact
 
@@ -55,7 +55,7 @@ class TelegramEvents:
         try:
             self.outbox.call_from_thread("send_message", chat_id=self.chat_id, text=text)
         except Exception as e:
-            log.warning("couldn't send a message to Telegram: %s", type(e).__name__)
+            log.warning("couldn't send a message to Telegram: %s", describe(e))
 
     def _flush_tools(self) -> None:
         if self._tools:
@@ -72,7 +72,7 @@ class TelegramEvents:
                 try:
                     self.outbox.call_from_thread("send_chat_action", chat_id=self.chat_id, action="typing")
                 except Exception as e:
-                    log.warning("couldn't send 'typing': %s", type(e).__name__)
+                    log.warning("couldn't send 'typing': %s", describe(e))
         elif kind == "tool_result":
             self._tools.append(tool_line(event))
         elif kind == "error":

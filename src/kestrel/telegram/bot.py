@@ -35,7 +35,7 @@ from kestrel.approval import AUDIT_LOG, ApprovalGate
 from kestrel.bench.lock import pid_alive
 from kestrel.telegram.approver import APPROVAL_TIMEOUT, TelegramApprover
 from kestrel.telegram.events import TelegramEvents
-from kestrel.telegram.outbox import Outbox
+from kestrel.telegram.outbox import Outbox, describe
 from kestrel.tools import ToolRegistry
 from kestrel.tools import registry as default_registry
 from kestrel.tracing import Span, Tracer, redact
@@ -170,8 +170,8 @@ class TelegramBot:
     async def say(self, chat_id: int, text: str) -> None:
         try:
             await self.outbox.send(chat_id, text)
-        except Exception as e:
-            log.warning("couldn't send a message to Telegram: %s", type(e).__name__)
+        except Exception as e:  # logged, never raised: a failed send must not stop the bot
+            log.warning("couldn't send a message to Telegram: %s", describe(e))
 
     # --- updates -------------------------------------------------------------------
 
@@ -268,8 +268,15 @@ class TelegramBot:
     # --- lifecycle -----------------------------------------------------------------
 
     async def started(self, bot: Any) -> None:
+        """Attach, then greet the allowed user. If the greeting fails (TELEGRAM_ALLOWED_USER_ID=1 while
+        you look up your id, or you never pressed Start), say so and keep polling: the "ignored update
+        from user id" line is how you find your id (docs/telegram.md)."""
         self.attach(bot, asyncio.get_running_loop())
-        await self.say(self.allowed_user_id, STARTED)  # a private chat's id is the user's id
+        try:
+            await self.outbox.send(self.allowed_user_id, STARTED)  # a private chat's id is the user's id
+        except Exception as e:
+            log.warning("couldn't send the start message to TELEGRAM_ALLOWED_USER_ID: %s", describe(e))
+            log.warning("Still polling. A message from anyone else shows here as 'ignored update from user id N'.")
 
     def shutdown(self) -> None:
         for chat in self.chats.values():
