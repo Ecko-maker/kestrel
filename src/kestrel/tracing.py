@@ -100,6 +100,7 @@ _KEY_PATTERN = re.compile(
     | sk-(?:proj-|ant-)?[0-9A-Za-z_\-]{20,}   # OpenAI / Anthropic
     | gh[pousr]_[0-9A-Za-z]{30,}              # GitHub
     | hf_[0-9A-Za-z]{30,}                     # Hugging Face
+    | [0-9]{6,12}:[0-9A-Za-z_\-]{30,}         # Telegram bot tokens (also inside Bot API URLs)
     | (?i:bearer)\s+[0-9A-Za-z_\-.=]{20,}     # Authorization headers
     """,
     re.VERBOSE,

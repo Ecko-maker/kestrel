@@ -75,7 +75,7 @@ order:
 
 **Buttons:** an inline keyboard with **Approve** and **Reject**. The `callback_data` is `a:<approval_id>` and
 `r:<approval_id>`. That is at most 14 bytes, inside Telegram's 64-byte limit
-(`telegram.constants.CallbackQueryLimit.MAX_CALLBACK_DATA`). No tool data goes in it.
+(`telegram.constants.InlineKeyboardButtonLimit.MAX_CALLBACK_DATA`; the name was corrected when step 1 was built). No tool data goes in it.
 
 **Decisions:**
 
@@ -156,7 +156,7 @@ were skipped.
   - `CallbackQueryHandler(callback, pattern=..., game_pattern=..., block=...)`.
   - `filters.User(user_id)`, `filters.ChatType.PRIVATE`, `Message.forward_origin`.
   - `bot.edit_message_reply_markup`, `CallbackQuery.answer`, `LinkPreviewOptions`.
-  - `MessageLimit.MAX_TEXT_LENGTH = 4096`, `CallbackQueryLimit.MAX_CALLBACK_DATA = 64`.
+  - `MessageLimit.MAX_TEXT_LENGTH = 4096`, `InlineKeyboardButtonLimit.MAX_CALLBACK_DATA = 64` (first written as `CallbackQueryLimit`, which has no such member in 22.8).
   - **`ApplicationBuilder.concurrent_updates`:** the default processes **one update at a time**. That matters
     (below).
 - **Where it goes:** an optional extra, `telegram = ["python-telegram-bot==22.8"]`, like `wake`. A clean clone and CI

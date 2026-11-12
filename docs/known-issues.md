@@ -631,6 +631,45 @@ The routed main suite's second attempt (2026-11-04, runs folder at `46c54d8`) st
 - Tests: `tests/test_bench_killed_run.py` (a child process killed with `os._exit`, at the first call and after a finished run, then `--resume`). Agent, grading and both fingerprints unchanged (default `35fac5ba6277`, routed `4da8f4b3c792`).
 **Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs), and the routed run has passed `act-packing-list` repeat 2.
 
+### KI-pending-telegram-not-e2e. Telegram bot chats aren't end-to-end encrypted
+**Labels:** `privacy`, `telegram`, `medium`
+Everything the Telegram channel sends or receives goes through Telegram's servers as a cloud chat, readable by Telegram (`docs/telegram.md`, design section 5). That covers:
+- prompts and final answers;
+- the one-line tool status;
+- every approval card, with its preview (message bodies, file diffs) and the local text the content check found in an outgoing call.
+
+Updates also wait on Telegram's side until fetched, readable by anyone holding the bot token. Telegram's "secret chats" aren't available to bots (*unverified*: not stated in the pages checked on 2026-11-11). `KESTREL_TRACE_CONTENT=off` doesn't change what reaches Telegram.
+- **Mitigations in place:**
+  - tool results and arguments never go to Telegram (except on cards);
+  - link previews are off;
+  - the startup line says so;
+  - the user and chat ids aren't stored in traces.
+- **Not built:** `KESTREL_TELEGRAM_CARDS=minimal` (cards without the preview, "decide in the console"). Owner decision Q2 chose full cards.
+
+**Done when:** the owner accepts this as the cost of the channel, or a minimal-card mode is built and chosen.
+
+### KI-pending-telegram-stop-after-step. `/stop` ends a run only after the current step
+**Labels:** `telegram`, `low`
+`/stop` rejects any waiting card at once, then makes the model's *next* call fail (`StoppableLLM`, `src/kestrel/telegram/bot.py`), so the run ends with "Stopped.". Two things it can't interrupt:
+- a model call already in flight (up to `KESTREL_REQUEST_TIMEOUT`, 60 s);
+- a safe tool already running (up to `TOOL_TIMEOUT`, 20 s).
+
+Interrupting those needs a cancel hook inside the Agent loop, and design section 7.1 keeps `agent.py` untouched for this channel. The stopped run is recorded as an error trace ("StopRequested").
+
+**Done when:** the Agent gets a cancel hook (measured as an agent change), or the owner accepts after-the-step.
+
+### KI-pending-telegram-no-edit. Telegram cards can't edit a call's arguments
+**Labels:** `telegram`, `low`
+The terminal and console can edit a call before approving it. Telegram can only approve or reject (design section 1: editing JSON on a phone is error-prone). To change a call, reply to the card with what you want: that rejects it with your reason, and the model's next call gets a fresh card.
+
+**Done when:** the owner wants edits on Telegram; then a guided edit (one field, as text) is designed.
+
+### KI-pending-telegram-restart-forgets. A restart of `kestrel telegram` is a new conversation
+**Labels:** `telegram`, `low`
+Nothing persists across restarts: history, taint and `/good`/`/bad` targets are in memory only, and messages sent while Kestrel was off are skipped on purpose (`drop_pending_updates`). A run still working when Kestrel stops is cut off: its waiting cards are rejected and its next model call fails.
+
+**Done when:** conversations need to survive restarts (then taint must persist with them).
+
 ---
 
 ## Process

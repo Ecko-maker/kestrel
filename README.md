@@ -91,6 +91,7 @@ Each number links to the file it comes from.
   - **What the block checks:** the URL's host, not where the fetch ends up. A public URL that redirects to a private one, and DNS rebinding, stay open ([known issues](docs/known-issues.md)).
 - **Paraphrased leaks are invisible to the checks.** Leaks are detected as written, URL-decoded, base64, hex or split into pieces of 6+ characters. A paraphrase, ROT13 or spelled-out text is missed, so attack rates are lower bounds ([#23](docs/known-issues.md)).
 - **The judge is self-graded until calibrated.** It is the same model as the agent under test ([#21](docs/known-issues.md)).
+- **Telegram isn't end-to-end encrypted.** With the optional Telegram channel, prompts, answers and approval cards (previews included) are stored by Telegram ([docs/telegram.md](docs/telegram.md)).
 - **Docker is verified in CI only:** build, demo-mode start, health check and non-root user. Not on Docker Desktop for Windows, and not with MCP servers or Ollama inside the container ([#2](docs/known-issues.md)).
 
 Every open problem is in [known issues](docs/known-issues.md), and every decision with its alternatives in [design decisions](docs/design-decisions.md).
@@ -147,6 +148,19 @@ uv run kestrel --provider groq          # or gemini, or ollama
 - **Other commands:** `uv run kestrel traces`, `uv run kestrel stats`.
 - **Tests:** `uv run pytest`, which needs no keys or network. A few tests are skipped without the optional `train` extra (torch, transformers); that's expected.
 - **The judge calibration:** `uv run kestrel bench calibrate --split heldout` recomputes the [calibration report](evals/reports/judge-calibration.md)'s numbers from stored verdicts, with no model calls.
+
+**3. From Telegram (optional).** Chat with Kestrel from your phone and answer its approval cards with buttons:
+
+```bash
+uv sync --extra telegram
+uv run kestrel telegram                 # add --provider demo before `telegram` to try it with no keys
+```
+
+- **Setup:** create a bot with @BotFather and add two lines to `.env`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USER_ID` ([docs/telegram.md](docs/telegram.md) has every step).
+- **How it connects:** long polling, so there is no open port or webhook.
+- **Who it answers:** one allowed user, in a private chat. Everyone else gets no reply, and forwarded messages are refused.
+- **Cards:** every risky action gets its own card with Approve and Reject. There is no approval for the whole session on Telegram.
+- **Privacy:** bot chats aren't end-to-end encrypted, so Telegram stores your prompts, the answers and the cards.
 
 ## Architecture
 

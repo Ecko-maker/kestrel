@@ -32,7 +32,8 @@ jobs:
       - name: Install (exactly what uv.lock says)
         # --extra wake: mypy needs the voice packages (pywhispercpp, numpy) to check the calls into them.
         # All have prebuilt wheels for both runners; the code imports them lazily, so tests are unaffected.
-        run: uv sync --locked --extra wake
+        # --extra telegram: python-telegram-bot (pure Python), for mypy and the Telegram tests (fake bot, no network).
+        run: uv sync --locked --extra wake --extra telegram
       - name: Lint
         run: uv run ruff check .
       - name: Format

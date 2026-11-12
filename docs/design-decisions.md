@@ -589,3 +589,12 @@ Short records of the choices that shape Kestrel: what we decided, what else we c
 **Alternatives:** a webhook (needs a public URL and an open port); raw Bot API over httpx (no dependency, more transport code to own); aaronsb's server (one tool both reads and sends, so a tier can't tell them apart); Google's official servers (Developer Preview, remote only, need an HTTP transport); Gmail reads with no card from the start.
 
 **Why:** the n8n "trigger -> agent -> reply" shape is useful from a phone, and none of it needs to weaken the gate: the channel only asks and shows, the gate still decides. Splitting it in two keeps the cheap, provable part (Telegram) apart from the part that changes behaviour (Google) and needs Groq to measure.
+
+**Step 1 built (2026-11-12, `feature/telegram`, offline only):** `src/kestrel/telegram/` (approver, events, outbox, text, bot, settings) and `uv run kestrel telegram`, with python-telegram-bot 22.8 as the optional `telegram` extra. Built as designed, with three mechanisms the design didn't spell out, chosen so `agent.py`, `approval.py`, `permissions.py`, `egress.py`, `tools.py` and `bench/` stay untouched:
+- `/stop` wraps the model (`StoppableLLM`) so the next call fails; the run ends after its current step (KI-pending-telegram-stop-after-step);
+- `kestrel.channel = "telegram"` is set by a `Tracer` subclass on each run's root span;
+- a decided card is marked with `edit_message_text`, which also removes its buttons.
+
+Two more points:
+- **Token redaction:** the bot-token pattern is in `tracing.redact()`, and the channel's log lines pass through it.
+- **Fingerprint:** `8a8174d8f17d`, tools `ede3efa38c54` and system prompt `36d57c7e8a82` are unchanged, pinned by `tests/test_telegram.py` after importing the channel.
