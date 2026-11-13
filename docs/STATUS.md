@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-13, from the v1.0.0 release session (log below). `main` = `c8b72e5` before this PR.
+2026-11-13, from the notifications stage 1 session (log below). `main` = `b05d4ac` before this PR.
 
 ## Now
 
@@ -17,18 +17,34 @@ decision 32, known issues 84-88.
 
 **v1.0.0 released** (2026-11-13): annotated tag `v1.0.0` on `c8b72e5`, GitHub release "Kestrel v1.0" (Latest).
 
-**Notifications design in `main`** (PR #100, `c8b72e5`): `docs/notifications-design.md`, `D-pending-notifications`
+**Notifications design in `main`** (PR #100, `c8b72e5`): `docs/notifications-design.md`, decision 33
 with the owner's 11-13 decisions (section 11).
 
+**Notifications stage 1 in `main`** (PR #103, `b05d4ac`, 2026-11-13): `/remind`, `/reminders`, `/cancel`, Done/Snooze
+in `kestrel telegram`, off unless `KESTREL_NOTIFY=on`; decision 33 ("Stage 1 as built"), known issues 89-92.
+Fingerprint unchanged (`8a8174d8f17d`); owner's phone test 9/9.
+
 **Open:**
-- **Next: notifications stage 1, `/remind`** (branch `feature/notify-reminders`). Fingerprint unchanged, but the PR
-  touches `src/kestrel/`, so the CI subset runs on the PR and on the merge (~56k billable): **needs an approval line
-  here before the PR opens** (added 11-13, below). Built like Telegram: offline with a fake Telegram and a fake clock, then the owner's
-  live phone test (passed 11-13, all 9 items), then one PR. Stages 2-3 come with the Google step (their measurement budget needs its own approval).
+- **Notifications stages 2-3** (calendar alerts, email triage) come with the Google step; their measurement budget
+  needs its own approval line.
 - **PR #94,** the kestrel-data RCA design (docs only): still open, built after Phase 4.
 - **Fork-PR approval** (checklist 6.3): the repo setting is `first_time_contributors`, not "all outside
   collaborators"; reported 11-13, not changed (owner's call).
 - **Merged branches not yet deleted:** 16 on `origin` (Branches, below).
+
+## 2026-11-13 (notifications stage 1 session; Groq only through the approved CI runs)
+
+1. **Owner's phone test** (`--provider demo`, real Telegram): all 9 items passed; nothing tappable in a hostile
+   reminder (the regrouped phone number and `/stop` included), no "defang bug" line; the restart test arrived once,
+   labelled Late; the sleep test arrived once.
+2. **Approval line** merged first (PR #102, `b36f1ce`, KestrelBench not run). Then `feature/notify-reminders` rebased
+   onto it, pending names numbered (decision 33, known issues 89-92), checks green (1540 passed), pinned hash
+   `8a8174d8f17d`. Before the PR: no Groq consumer running; `groq_quota.py` 133,472 free (its "not final" came from
+   two docs-only runs cancelled before KestrelBench started, 0 tokens).
+3. **PR #103 merged** (squash, `b05d4ac`, owner's message). CI subset: PR run 43495497784 88% (14/16), 0 errored,
+   **31,676 billable** (failed `adapt-casual-email`, `multi-scale-recipe`); merge run 43508493585 88% (14/16), 0
+   errored, **31,948 billable** (failed `multi-scale-recipe`, `convo-chained-math`); fingerprint `8a8174d8f17d` on
+   both. **63,624 together, above the ~56k estimate** (an estimate, not a cap; Telegram's two runs were 51,528).
 
 ## 2026-11-13 (v1.0.0 release session; no Groq, no model calls)
 
@@ -253,8 +269,8 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 
 | Branch | Holds | Next |
 |---|---|---|
-| `main` | everything merged, up to PR #100 (`c8b72e5`, tag `v1.0.0`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
-| `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; adds `D-pending-data-rca`, decision 33 if it merges next) | owner's decisions; built after Phase 4 |
+| `main` | everything merged, up to PR #103 (`b05d4ac`; tag `v1.0.0` on `c8b72e5`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
+| `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; adds `D-pending-data-rca`, decision 34 if it merges next) | owner's decisions; built after Phase 4 |
 | merged, not deleted (16): `release/v1.0` (#98, squash), `docs/readme-architecture` (#99, squash), `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
 
 **Archived as tags, branches deleted (2026-11-08, owner's OK).** Each tag sits at the branch's last commit:
@@ -272,6 +288,8 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 
 - **Restore one:** `git switch -c <branch> archive/<branch>`, for example `git switch -c phase3/memory archive/phase3/memory`.
 - **Older archive tags** (different naming): `archive/console-hud-theme-9c4bb52`, `archive/docs-merge-plan-56d1edf`, `archive/fix-quota-retry-spend-ee496a0`, `archive/phase4-trace-dataset-1f0084f`, `archive/phase4-trace-dataset-v0-289274e`, `archive/voice-talk-4155004`, `archive/voice-talk-8a4e22b`, `archive/voice-wake-word-88bb9d1`.
+
+**Deleted 2026-11-13** (owner's OK; local and `origin`): `feature/notify-reminders` (#103, squash) and `docs/approval-notify-stage1` (#102, squash).
 
 **Deleted 2026-11-08** (owner's OK; local and `origin`, all merged into `main`): `deps/pin-training-libs`, `docs/demo-video`, `docs/judge-calibration`, `docs/phase4-derived-numbers`, `docs/s9-approval`, `docs/s9-approval-303k`, `fix/audit-2026-11-03`, `fix/label-paths`, and `dependabot/npm_and_yarn/console/console-5cae597071` (origin only).
 
@@ -322,7 +340,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 11-08 onward | Section 9 as frozen (`0071e54`, `docs/phase4-section9-proposal.md`): the CI run on the `phase4/tainted-to-teacher` PR (#79: 31,604 measured); a second CI run on #79 after section 8's bench fixes are merged into the branch (~31k); run 1, group S strict ×3 (~73k); run 2, group S rubber-stamp ×3 (~57k); run 3, the same-week drift control (~50k); run 4, routed main suite R=1 (~64k) | **~303k** (trace-based estimates; was ~272k before the second CI run) | **approved by the owner (2026-11-07; raised from ~272k to ~303k the same night), within the 600,000 approval above.** Why the second CI run: the tagged commit lacked section 8's bench fixes (`fix/bench-audit-line-separator`: the U+2028 audit reader, lone-surrogate-safe results, a save after every run, no overwrite, the RUN STOPPED line), which never reached `main`; they are merged into the branch before any section 9 run, and pushing to the open PR re-runs its CI. Runs 1, 2 and 4 at the tag `phase4-s9-runs` on the PR head after `main` is merged into it (agent code and dependencies then equal `main` after the merge; routed fingerprint `2ae99cffdbbc` from a dry run there); the PR isn't merged before the runs. Results `s9-safety-S-strict-x3.json`, `s9-safety-S-rubber-attacks-x3.json`, `s9-main-r1.json`. Stop rule 9.3: runs 3-4 only if group S holds. `--wait-for-quota`; each `--token-budget` from `scripts/groq_quota.py`. **Ran:** 11-07 to 11-09, all four runs graded; **293,042 billable** of the 303,000. Verdict PASS by 9.6 (`evals/reports/phase4-section9-verdict.md`). |
 | 11-09 onward | After section 9's PASS: (1) #79's CI after pushing its banner commit (`a825b81`, "frozen in 0071e54"), ~31k; (2) #79's merge-to-`main` run, ~31k; (3) the combined PR (`post-s9/combined`: `fix/fetch-private-block` + `fix/voice-console-week` + `phase4/integration`, rules `tiers-v2.2`), its PR run and its merge-to-`main` run, ~56k | **~118k** (estimate from #79's measured 31,604 and ~28k per CI subset run) | **approved by the owner (2026-11-09), up to ~120,000 billable** for these four runs only. Each starts only when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; any other push to an open PR needs a new line. **Ran:** #79's two runs (51,696 together, release checklist); the combined PR #90, **49,694 measured** (PR run 29,410, run 42755872462, 14/15 graded, 1 errored; merge-to-`main` run 20,284, run 42759045086, 14/16, 0 errored). |
 | 2026-11-12 | feature/telegram PR: CI subset on the PR + on the merge to main | ~56k (est.); **51,528 measured** (PR run 31,480 + main run 20,048) | approved by the owner 2026-11-12. **Ran:** PR #96, 94% and 87.5%, 0 errors; two earlier PR runs skipped KestrelBench (0 tokens). |
-| 2026-11-13 | Notifications stage 1 PR (`feature/notify-reminders`): CI subset on the PR + on the merge to main | ~56k (est.) | Notifications stage 1 PR: CI subset ~56k (PR run + merge run), approved by the owner 2026-11-13. |
+| 2026-11-13 | Notifications stage 1 PR (`feature/notify-reminders`): CI subset on the PR + on the merge to main | ~56k (est.); **63,624 measured** (PR run 31,676 + main run 31,948) | Notifications stage 1 PR: CI subset ~56k (PR run + merge run), approved by the owner 2026-11-13. **Ran:** PR #103, 88% and 88%, 0 errors; above the estimate by 7,624 (each run ~31.8k vs ~20k for most past merge runs); no extra pushes to the open PR. |
 
 ## Owner decisions open
 
@@ -367,7 +385,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-budget-counts-local-tokens, -routed-resume-fingerprint, -ollama-auto-update | in `main` (docs PRs of 11-05) | not numbered yet |
 | KI-pending-training-on-bench, -secret-scrub-v0 | trace-dataset-v0 | **25, 26** |
 
-Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**. Update 2026-11-02: PR #50 merged (decision 29 with it); its pending names are numbered in PR #52 as decisions 30, 31 and issue 79, so **the next free numbers on `main` are decision 32 and issue 80**. Update 2026-11-12: "issue 80" was stale, since `main` already held issues 80-83 (PR #53, numbered 11-03). Telegram took decision 32 and issues 84-88 (PR #96), so **the next free numbers on `main` are decision 33 and issue 89**. The `KI-pending-*` and `D-pending-*` entries already in `main` (from the docs PRs of 11-05 onward) still have no numbers.
+Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**. Update 2026-11-02: PR #50 merged (decision 29 with it); its pending names are numbered in PR #52 as decisions 30, 31 and issue 79, so **the next free numbers on `main` are decision 32 and issue 80**. Update 2026-11-12: "issue 80" was stale, since `main` already held issues 80-83 (PR #53, numbered 11-03). Telegram took decision 32 and issues 84-88 (PR #96), so **the next free numbers on `main` are decision 33 and issue 89**. Update 2026-11-13: notifications stage 1 took decision 33 and issues 89-92 (PR #103), so **the next free numbers on `main` are decision 34 and issue 93** (PR #94's `D-pending-data-rca` takes 34 if it merges next). The `KI-pending-*` and `D-pending-*` entries already in `main` (from the docs PRs of 11-05 onward) still have no numbers.
 
 ## Data outside git
 
