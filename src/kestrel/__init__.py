@@ -140,7 +140,7 @@ def main() -> None:
     parser.add_argument("--list-models", action="store_true", help="show available model IDs")
     parser.add_argument("--debug", action="store_true", help="print full JSON of each tool call and result")
     parser.add_argument("--no-mcp", action="store_true", help="don't start the MCP servers in kestrel.mcp.json")
-    sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,bench,distill}")
+    sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,telegram,bench,distill}")
     p = sub.add_parser("traces", help="list recent traces")
     p.add_argument("-n", type=int, default=20, help="how many (default 20)")
     p = sub.add_parser("trace", help="show one trace as a tree")
@@ -149,6 +149,7 @@ def main() -> None:
     p = sub.add_parser("web", help="open the web console (chat, approvals, traces, stats)")
     p.add_argument("--port", type=int, default=int(os.getenv("KESTREL_PORT", "8765")))
     p.add_argument("--build", action="store_true", help="build the frontend first (needs Node.js)")
+    sub.add_parser("telegram", help="chat and approve from Telegram (long polling; needs the telegram extra)")
     p = sub.add_parser("export", help="export traces as chat-format JSONL")
     p.add_argument("--rated", choices=["good", "bad", "any"], default="good")
     p.add_argument("--out", default="data/traces.jsonl")
@@ -166,6 +167,9 @@ def main() -> None:
     tracer = Tracer()
     if args.command == "web":
         run_web(args, tracer)
+        return
+    if args.command == "telegram":
+        run_telegram(args)
         return
     if args.command:
         run_report(args, tracer)
@@ -261,6 +265,38 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     dim("Only this machine can connect; the token in the link is your key. Ctrl+C to stop.")
     try:
         uvicorn.run(app, host=config.host, port=args.port, log_level="warning")
+    finally:
+        if mcp:
+            mcp.close()
+
+
+def run_telegram(args: argparse.Namespace) -> None:
+    """`kestrel telegram`: the two .env lines are checked before any model or network is touched."""
+    try:
+        from kestrel.telegram import bot as telegram_bot
+        from kestrel.telegram.settings import TelegramConfigError, load_settings
+    except ImportError:
+        sys.exit("The Telegram channel needs its optional extra: uv sync --extra telegram")
+    try:
+        load_settings()
+    except TelegramConfigError as e:
+        sys.exit(str(e))
+    try:
+        llm, skipped = build_llm(
+            provider_chain(args.provider),
+            args.model,
+            on_retry=lambda p, reason, wait: dim(f"[retry] {p} {reason}; waiting {wait:.1f}s"),
+            on_fallback=lambda msg: print(f"{YELLOW}[fallback] {msg}{RESET}"),
+        )
+    except LLMError as e:
+        sys.exit(f"Kestrel can't start: {e}")
+    for warning in skipped:
+        dim(f"[skip] {warning}")
+    mcp = None if args.no_mcp else start_mcp()
+    try:
+        telegram_bot.run(llm, max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)))
+    except telegram_bot.AlreadyRunning as e:
+        sys.exit(str(e))
     finally:
         if mcp:
             mcp.close()

@@ -1,7 +1,7 @@
 # Telegram front end and Google tools: design
 
 **Status:** design only, for the owner's review (2026-11-11, branch `design/telegram-google`). No code, no model calls,
-no Groq quota. Decision: `D-pending-telegram-channel` (`docs/design-decisions.md`).
+no Groq quota. Decision: 32 (`docs/design-decisions.md`).
 
 **Idea:** an n8n-style flow, "Telegram trigger -> tools agent -> Telegram reply", built Kestrel's way. The agent loop,
 the approval gate, tiers v2 and decisions 1 ($0), 4 (own loop, tools through MCP) and 6 (secrets in `.env` only) stay
@@ -75,7 +75,7 @@ order:
 
 **Buttons:** an inline keyboard with **Approve** and **Reject**. The `callback_data` is `a:<approval_id>` and
 `r:<approval_id>`. That is at most 14 bytes, inside Telegram's 64-byte limit
-(`telegram.constants.CallbackQueryLimit.MAX_CALLBACK_DATA`). No tool data goes in it.
+(`telegram.constants.InlineKeyboardButtonLimit.MAX_CALLBACK_DATA`; the name was corrected when step 1 was built). No tool data goes in it.
 
 **Decisions:**
 
@@ -89,7 +89,8 @@ order:
 | A press from any other user ID, an unknown or expired `approval_id`, any other `callback_data` | ignored; the Future isn't touched |
 
 After every decision the bot edits the card: it removes the keyboard (`edit_message_reply_markup`) and appends
-`Approved`, `Rejected` or `Expired: rejected`. A stale button can't be pressed twice, and the chat keeps a record. Every
+`Approved`, `Rejected` or `Expired: no answer in 5 min, not done` (was `Expired: rejected` until the 2026-11-12 phone
+test, where an expired card followed by a new one read as one card). A stale button can't be pressed twice, and the chat keeps a record. Every
 press is acknowledged with `CallbackQuery.answer()` so the phone stops its spinner.
 
 **No session approval on Telegram, ever.** The brief asks for none on send-type tools. This goes further: Telegram
@@ -156,7 +157,7 @@ were skipped.
   - `CallbackQueryHandler(callback, pattern=..., game_pattern=..., block=...)`.
   - `filters.User(user_id)`, `filters.ChatType.PRIVATE`, `Message.forward_origin`.
   - `bot.edit_message_reply_markup`, `CallbackQuery.answer`, `LinkPreviewOptions`.
-  - `MessageLimit.MAX_TEXT_LENGTH = 4096`, `CallbackQueryLimit.MAX_CALLBACK_DATA = 64`.
+  - `MessageLimit.MAX_TEXT_LENGTH = 4096`, `InlineKeyboardButtonLimit.MAX_CALLBACK_DATA = 64` (first written as `CallbackQueryLimit`, which has no such member in 22.8).
   - **`ApplicationBuilder.concurrent_updates`:** the default processes **one update at a time**. That matters
     (below).
 - **Where it goes:** an optional extra, `telegram = ["python-telegram-bot==22.8"]`, like `wake`. A clean clone and CI
@@ -564,7 +565,7 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
 
 **Merge order:**
 1. **v1.0 release** as planned. This design doesn't block it.
-2. **This design**, merged to `main` as a docs PR (no CI evals), with `D-pending-telegram-channel` numbered then.
+2. **This design**, merged to `main` as a docs PR (no CI evals), with its decision numbered then (decision 32).
 3. **Step 1, Telegram** (`feature/telegram`): the approver, consumer, `kestrel telegram`, the `telegram` extra and the
    tests of 7.1. Behaviour-neutral, so it can ship in v1.1 with the CI subset (~56k) as its only Groq use.
    - **Then Phase 4 teacher data and measurements** (owner decision 2026-11-11), before any Google step.

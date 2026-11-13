@@ -631,6 +631,56 @@ The routed main suite's second attempt (2026-11-04, runs folder at `46c54d8`) st
 - Tests: `tests/test_bench_killed_run.py` (a child process killed with `os._exit`, at the first call and after a finished run, then `--resume`). Agent, grading and both fingerprints unchanged (default `35fac5ba6277`, routed `4da8f4b3c792`).
 **Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs), and the routed run has passed `act-packing-list` repeat 2.
 
+### 84. Telegram bot chats aren't end-to-end encrypted
+**Labels:** `privacy`, `telegram`, `medium`
+Everything the Telegram channel sends or receives goes through Telegram's servers as a cloud chat, readable by Telegram (`docs/telegram.md`, design section 5). That covers:
+- prompts and final answers;
+- the one-line tool status;
+- every approval card, with its preview (message bodies, file diffs) and the local text the content check found in an outgoing call.
+
+Updates also wait on Telegram's side until fetched, readable by anyone holding the bot token. Telegram's "secret chats" aren't available to bots (*unverified*: not stated in the pages checked on 2026-11-11). `KESTREL_TRACE_CONTENT=off` doesn't change what reaches Telegram.
+- **Mitigations in place:**
+  - tool results and arguments never go to Telegram (except on cards);
+  - link previews are off;
+  - the startup line says so;
+  - the user and chat ids aren't stored in traces.
+- **Not built:** `KESTREL_TELEGRAM_CARDS=minimal` (cards without the preview, "decide in the console"). Owner decision Q2 chose full cards.
+
+**Done when:** the owner accepts this as the cost of the channel, or a minimal-card mode is built and chosen.
+
+### 85. `/stop` ends a run only after the current step
+**Labels:** `telegram`, `low`
+`/stop` rejects any waiting card at once, then makes the model's *next* call fail (`StoppableLLM`, `src/kestrel/telegram/bot.py`), so the run ends with "Stopped.". Two things it can't interrupt:
+- a model call already in flight (up to `KESTREL_REQUEST_TIMEOUT`, 60 s);
+- a safe tool already running (up to `TOOL_TIMEOUT`, 20 s).
+
+Interrupting those needs a cancel hook inside the Agent loop, and design section 7.1 keeps `agent.py` untouched for this channel. The stopped run is recorded as an error trace ("StopRequested").
+
+**Done when:** the Agent gets a cancel hook (measured as an agent change), or the owner accepts after-the-step.
+
+### 86. Telegram cards can't edit a call's arguments
+**Labels:** `telegram`, `low`
+The terminal and console can edit a call before approving it. Telegram can only approve or reject (design section 1: editing JSON on a phone is error-prone). To change a call, reply to the card with what you want: that rejects it with your reason, and the model's next call gets a fresh card.
+
+**Done when:** the owner wants edits on Telegram; then a guided edit (one field, as text) is designed.
+
+### 87. A restart of `kestrel telegram` is a new conversation
+**Labels:** `telegram`, `low`
+Nothing persists across restarts: history, taint and `/good`/`/bad` targets are in memory only, and messages sent while Kestrel was off are skipped on purpose (`drop_pending_updates`). A run still working when Kestrel stops is cut off: its waiting cards are rejected and its next model call fails.
+
+**Done when:** conversations need to survive restarts (then taint must persist with them).
+
+### 88. After a rejection the agent may propose the same action again in the same run
+**Labels:** `agent`, `approval`, `medium`
+After a card is rejected (by the user, by a reply, or by the 5-minute timeout), nothing stops the model from proposing the same action again in the same run, and each new proposal gets a new card with its own wait. Seen three times in the 2026-11-12 Telegram phone test with the demo provider:
+- run `638fe59e`: two `send_message` cards, both rejected by the user;
+- run `bc12ae17`: two `send_message` cards, both expired (00:05:33 -> 00:10:34, 00:10:35 -> 00:15:36); one request held the chat for 10 minutes.
+
+With the demo, this is scripted: `demo.py`'s email script drafts again after any first rejection, timeouts included. So the demo shows the cost (a second card, a second wait) but says nothing about real models. Rejections already reach the model as text ("REJECTED", with the user's reason or "no answer within 5 minutes"), and nothing in the agent loop or the gate counts them.
+- Options, none built: the gate refuses a call identical to one rejected in this run (or this session); after a timeout, end the run instead of asking the model again; tell the model in the rejection to ask the user before proposing again.
+- **Agent-affecting:** any fix changes the agent loop, the gate or the rejection text, so it moves the agent fingerprint and needs a before/after measurement (CI subset at least, Groq quota by the owner's OK), and the safety split must stay at 0 system-level successes.
+**Done when:** re-proposals after a rejection are measured on a real provider, and either a fix is in `main` with its before/after numbers or the owner decides the behaviour is fine.
+
 ---
 
 ## Process
