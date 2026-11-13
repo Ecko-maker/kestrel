@@ -78,7 +78,7 @@ so a forwarded email must not count as you), and anything that isn't text.
 
 ## Reminders (optional, off by default)
 
-Kestrel can remind you at a time you set (stage 1 of `docs/notifications-design.md`). Add to `.env`:
+Kestrel can remind you at a time you set (stage 1 of `docs/notifications-design.md`; decision 33; known issues 89-92). Add to `.env`:
 
 ```
 KESTREL_NOTIFY=on
@@ -104,7 +104,7 @@ zone and the reminder's number.
 
 **Only `/remind` sets a reminder.** A plain message such as "remind me what we discussed about Sam" goes to the
 model as any other message, exactly as with reminders off. The model has no reminder tool, so it can't set one, even
-if its answer says it will (known issue `KI-pending-agent-claims-reminder`). On a day the clocks change, a time that doesn't exist (02:30 when they go forward) is refused, and
+if its answer says it will (known issue #92). On a day the clocks change, a time that doesn't exist (02:30 when they go forward) is refused, and
 one that happens twice (when they go back) is the first, with a note. Limits: 300 characters, 100 pending, a year
 ahead.
 

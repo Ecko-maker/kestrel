@@ -1,7 +1,7 @@
 # Proactive notifications over Telegram: design
 
 **Status:** design only, **owner decisions recorded 2026-11-13** (section 11; branch `design/notifications`). No
-code, no model calls, no Groq quota. Decision: `D-pending-notifications` (`docs/design-decisions.md`), numbered when it merges.
+code, no model calls, no Groq quota. Decision 33 (`docs/design-decisions.md`; `D-pending-notifications` before stage 1 merged).
 
 **Idea:** Kestrel tells you things on your phone without being asked, through the Telegram channel that already
 exists (`src/kestrel/telegram/`, decision 32). Three stages, each useful on its own:
