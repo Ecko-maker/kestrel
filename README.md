@@ -166,23 +166,45 @@ uv run kestrel telegram                 # add --provider demo before `telegram` 
 
 ```mermaid
 flowchart LR
-    subgraph clients [You]
+    subgraph fronts [Front ends]
         T[Terminal / voice]
         W[Web console<br/>React + Vite]
+        TG[Telegram<br/>your phone]
     end
-    W <-->|WebSocket: events + approvals| S[FastAPI server<br/>localhost + token]
-    T --> A
-    S --> A[Agent loop]
-    A -->|chat, streaming| F[Model layer<br/>fallback chain or router]
-    F --> P1[Groq] & P2[Gemini] & P3[Ollama] & P4[Demo]
-    A --> G{Approval gate<br/>tiers v2.1: capabilities, taint, content check}
-    G -->|needs approval| AP[Approver<br/>terminal or web]
-    G --> R[Tool registry]
-    R --> L[Local tools<br/>sandboxed workspace]
-    R --> M[MCP client] --> MS[MCP servers]
-    A --> TR[Tracer] --> DB[(SQLite<br/>traces + ratings)]
-    C[Claude Code, other MCP clients] --> KM[kestrel-mcp<br/>safe tools only] --> R
+    W <-->|WebSocket| S[FastAPI server<br/>localhost + token]
+    TG <-->|long polling,<br/>no open port| B[Bot runner<br/>allowed user only,<br/>forwards refused]
+
+    subgraph agent [Agent loop: one per session or chat]
+        H[Chat history]
+        F[Model layer<br/>fallback chain,<br/>optional router]
+        TR[Tracer]
+    end
+    T --> agent
+    S --> agent
+    B -->|one Agent per chat| agent
+    F --> P[Groq, Gemini,<br/>Ollama, Demo]
+    TR --> DB[(SQLite<br/>traces + ratings)]
+
+    agent -->|every tool call| G{Approval gate<br/>tiers v2.2: capabilities,<br/>taint, egress check}
+
+    subgraph approvers [Approvers: risky calls]
+        AT[TerminalApprover]
+        AW[WebApprover]
+        AG[TelegramApprover<br/>Approve / Reject card,<br/>5 min no answer = reject]
+    end
+    G -->|needs approval| approvers
+
+    G -->|allowed| R[Tool registry]
+    R --> L[Kestrel's tools<br/>sandboxed workspace]
+    R --> M[MCP client] --> MS[External MCP servers<br/>untrusted by default]
+    M -.->|planned| GO[Google tools<br/>Gmail, Calendar, Drive]:::planned
+    M -.->|planned| KD[kestrel-data<br/>MCP server]:::planned
+    C[Claude Code,<br/>other MCP clients] --> KM[kestrel-mcp<br/>safe tools only] --> R
+
+    classDef planned stroke-dasharray: 5 5
 ```
+
+Front ends never call tools: every tool call, from any of them, goes through the same approval gate, and only the approver differs. Telegram is a third front end on that gate; it left the agent unchanged (same agent fingerprint, `8a8174d8f17d`). Setup and its limits: [docs/telegram.md](docs/telegram.md). Dashed boxes are planned, not built.
 
 **Security model, in short:**
 - **Permissions are fixed in code,** and nothing the model sends can change them.
