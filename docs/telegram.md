@@ -3,7 +3,7 @@
 Type to Kestrel from your phone and answer its approval cards with buttons. Telegram is a channel,
 like the terminal and the web console: the same Agent, the same approval rules, the same traces.
 Design: [telegram-google-design.md](telegram-google-design.md) (sections 1-5 and the owner decisions of
-2026-11-11); decision `D-pending-telegram-channel`.
+2026-11-11); decision 32.
 
 ## Set it up (once)
 
@@ -67,7 +67,7 @@ message fails with your real id, check `TELEGRAM_ALLOWED_USER_ID` and that you p
   - **Reply** to the card with text to reject it with a reason. Kestrel sees the reason.
   - No answer in 5 minutes = rejected: the card ends "Expired: no answer in 5 min, not done". The model may then
     propose the same action again on a new card, with its own 5 minutes (known issue
-    `KI-pending-reproposal-after-reject`).
+    #88).
 - `/new` starts a new conversation (the only way to clear "local data was read" for network calls).
 - `/stop` rejects a waiting card and stops after the current step.
 - `/good`, `/bad [note]` rate the last answer, as in the terminal.

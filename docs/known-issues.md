@@ -631,7 +631,7 @@ The routed main suite's second attempt (2026-11-04, runs folder at `46c54d8`) st
 - Tests: `tests/test_bench_killed_run.py` (a child process killed with `os._exit`, at the first call and after a finished run, then `--resume`). Agent, grading and both fingerprints unchanged (default `35fac5ba6277`, routed `4da8f4b3c792`).
 **Done when:** `main` has the fix (its PR runs the CI subset on Groq, so after the section 8 runs), and the routed run has passed `act-packing-list` repeat 2.
 
-### KI-pending-telegram-not-e2e. Telegram bot chats aren't end-to-end encrypted
+### 84. Telegram bot chats aren't end-to-end encrypted
 **Labels:** `privacy`, `telegram`, `medium`
 Everything the Telegram channel sends or receives goes through Telegram's servers as a cloud chat, readable by Telegram (`docs/telegram.md`, design section 5). That covers:
 - prompts and final answers;
@@ -648,7 +648,7 @@ Updates also wait on Telegram's side until fetched, readable by anyone holding t
 
 **Done when:** the owner accepts this as the cost of the channel, or a minimal-card mode is built and chosen.
 
-### KI-pending-telegram-stop-after-step. `/stop` ends a run only after the current step
+### 85. `/stop` ends a run only after the current step
 **Labels:** `telegram`, `low`
 `/stop` rejects any waiting card at once, then makes the model's *next* call fail (`StoppableLLM`, `src/kestrel/telegram/bot.py`), so the run ends with "Stopped.". Two things it can't interrupt:
 - a model call already in flight (up to `KESTREL_REQUEST_TIMEOUT`, 60 s);
@@ -658,19 +658,19 @@ Interrupting those needs a cancel hook inside the Agent loop, and design section
 
 **Done when:** the Agent gets a cancel hook (measured as an agent change), or the owner accepts after-the-step.
 
-### KI-pending-telegram-no-edit. Telegram cards can't edit a call's arguments
+### 86. Telegram cards can't edit a call's arguments
 **Labels:** `telegram`, `low`
 The terminal and console can edit a call before approving it. Telegram can only approve or reject (design section 1: editing JSON on a phone is error-prone). To change a call, reply to the card with what you want: that rejects it with your reason, and the model's next call gets a fresh card.
 
 **Done when:** the owner wants edits on Telegram; then a guided edit (one field, as text) is designed.
 
-### KI-pending-telegram-restart-forgets. A restart of `kestrel telegram` is a new conversation
+### 87. A restart of `kestrel telegram` is a new conversation
 **Labels:** `telegram`, `low`
 Nothing persists across restarts: history, taint and `/good`/`/bad` targets are in memory only, and messages sent while Kestrel was off are skipped on purpose (`drop_pending_updates`). A run still working when Kestrel stops is cut off: its waiting cards are rejected and its next model call fails.
 
 **Done when:** conversations need to survive restarts (then taint must persist with them).
 
-### KI-pending-reproposal-after-reject. After a rejection the agent may propose the same action again in the same run
+### 88. After a rejection the agent may propose the same action again in the same run
 **Labels:** `agent`, `approval`, `medium`
 After a card is rejected (by the user, by a reply, or by the 5-minute timeout), nothing stops the model from proposing the same action again in the same run, and each new proposal gets a new card with its own wait. Seen three times in the 2026-11-12 Telegram phone test with the demo provider:
 - run `638fe59e`: two `send_message` cards, both rejected by the user;

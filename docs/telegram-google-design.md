@@ -1,7 +1,7 @@
 # Telegram front end and Google tools: design
 
 **Status:** design only, for the owner's review (2026-11-11, branch `design/telegram-google`). No code, no model calls,
-no Groq quota. Decision: `D-pending-telegram-channel` (`docs/design-decisions.md`).
+no Groq quota. Decision: 32 (`docs/design-decisions.md`).
 
 **Idea:** an n8n-style flow, "Telegram trigger -> tools agent -> Telegram reply", built Kestrel's way. The agent loop,
 the approval gate, tiers v2 and decisions 1 ($0), 4 (own loop, tools through MCP) and 6 (secrets in `.env` only) stay
@@ -565,7 +565,7 @@ post-1.0 work, Phase 5's "channels" side (voice is the other channel). Memory is
 
 **Merge order:**
 1. **v1.0 release** as planned. This design doesn't block it.
-2. **This design**, merged to `main` as a docs PR (no CI evals), with `D-pending-telegram-channel` numbered then.
+2. **This design**, merged to `main` as a docs PR (no CI evals), with its decision numbered then (decision 32).
 3. **Step 1, Telegram** (`feature/telegram`): the approver, consumer, `kestrel telegram`, the `telegram` extra and the
    tests of 7.1. Behaviour-neutral, so it can ship in v1.1 with the CI subset (~56k) as its only Groq use.
    - **Then Phase 4 teacher data and measurements** (owner decision 2026-11-11), before any Google step.
