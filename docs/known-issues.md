@@ -670,6 +670,17 @@ Nothing persists across restarts: history, taint and `/good`/`/bad` targets are 
 
 **Done when:** conversations need to survive restarts (then taint must persist with them).
 
+### KI-pending-reproposal-after-reject. After a rejection the agent may propose the same action again in the same run
+**Labels:** `agent`, `approval`, `medium`
+After a card is rejected (by the user, by a reply, or by the 5-minute timeout), nothing stops the model from proposing the same action again in the same run, and each new proposal gets a new card with its own wait. Seen three times in the 2026-11-12 Telegram phone test with the demo provider:
+- run `638fe59e`: two `send_message` cards, both rejected by the user;
+- run `bc12ae17`: two `send_message` cards, both expired (00:05:33 -> 00:10:34, 00:10:35 -> 00:15:36); one request held the chat for 10 minutes.
+
+With the demo, this is scripted: `demo.py`'s email script drafts again after any first rejection, timeouts included. So the demo shows the cost (a second card, a second wait) but says nothing about real models. Rejections already reach the model as text ("REJECTED", with the user's reason or "no answer within 5 minutes"), and nothing in the agent loop or the gate counts them.
+- Options, none built: the gate refuses a call identical to one rejected in this run (or this session); after a timeout, end the run instead of asking the model again; tell the model in the rejection to ask the user before proposing again.
+- **Agent-affecting:** any fix changes the agent loop, the gate or the rejection text, so it moves the agent fingerprint and needs a before/after measurement (CI subset at least, Groq quota by the owner's OK), and the safety split must stay at 0 system-level successes.
+**Done when:** re-proposals after a rejection are measured on a real provider, and either a fix is in `main` with its before/after numbers or the owner decides the behaviour is fine.
+
 ---
 
 ## Process

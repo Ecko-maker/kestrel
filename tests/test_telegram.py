@@ -19,7 +19,7 @@ from kestrel import tools
 from kestrel.agent import Agent
 from kestrel.approval import ApprovalGate, Decision, Highlight, Notice
 from kestrel.demo import DEMO_PROMPTS, DemoLLM
-from kestrel.telegram.approver import TelegramApprover
+from kestrel.telegram.approver import APPROVAL_TIMEOUT, TelegramApprover, expired_label
 from kestrel.telegram.bot import (
     FORWARD_REFUSED,
     STARTED,
@@ -378,7 +378,8 @@ def test_no_answer_within_the_timeout_rejects_and_marks_the_card(tmp_path, regis
 
     bot = asyncio.run(scenario())
     assert registry.ran == []
-    assert bot.edits[-1]["text"].endswith("Expired: rejected")
+    assert bot.edits[-1]["text"].endswith("\n\nExpired: no answer in 0.2 s, not done")
+    assert expired_label(APPROVAL_TIMEOUT) == "Expired: no answer in 5 min, not done"  # the real setting
     tool_message = next(m for m in llm.seen[1] if m["role"] == "tool")["content"]
     assert "REJECTED" in tool_message and "no answer within" in tool_message
     audit = [json.loads(line) for line in (tmp_path / "approvals.jsonl").read_text().splitlines()]

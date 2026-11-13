@@ -89,7 +89,8 @@ order:
 | A press from any other user ID, an unknown or expired `approval_id`, any other `callback_data` | ignored; the Future isn't touched |
 
 After every decision the bot edits the card: it removes the keyboard (`edit_message_reply_markup`) and appends
-`Approved`, `Rejected` or `Expired: rejected`. A stale button can't be pressed twice, and the chat keeps a record. Every
+`Approved`, `Rejected` or `Expired: no answer in 5 min, not done` (was `Expired: rejected` until the 2026-11-12 phone
+test, where an expired card followed by a new one read as one card). A stale button can't be pressed twice, and the chat keeps a record. Every
 press is acknowledged with `CallbackQuery.answer()` so the phone stops its spinner.
 
 **No session approval on Telegram, ever.** The brief asks for none on send-type tools. This goes further: Telegram

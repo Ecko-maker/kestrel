@@ -36,6 +36,12 @@ CALLBACK = re.compile(r"([ar]):([0-9a-f]{12})")  # a:<approval_id> approves, r:<
 CALLBACK_DATA_LIMIT = InlineKeyboardButtonLimit.MAX_CALLBACK_DATA  # 64 bytes; ours are 14, with no tool data
 
 
+def expired_label(timeout: float) -> str:
+    """The line an expired card ends with: it says what happened, so it can't pass for a new card."""
+    wait = f"{timeout / 60:g} min" if timeout >= 60 else f"{timeout:g} s"
+    return f"Expired: no answer in {wait}, not done"
+
+
 def keyboard(approval_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -88,7 +94,7 @@ class TelegramApprover:
                 label = "Approved" if decision.status == "approved" else "Rejected"
             except FutureTimeout:
                 decision = Decision("rejected", reason=f"no answer within {self.timeout / 60:g} minutes")
-                label = "Expired: rejected"
+                label = expired_label(self.timeout)
         except Exception as e:  # the card couldn't be sent (network, flood, Telegram refused): nothing runs
             log.warning("approval card for %s not delivered, so rejected: %s", tool_name, describe(e))
             decision, label = Decision("rejected", reason="the approval card couldn't be delivered"), ""
