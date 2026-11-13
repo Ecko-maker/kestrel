@@ -681,6 +681,28 @@ With the demo, this is scripted: `demo.py`'s email script drafts again after any
 - **Agent-affecting:** any fix changes the agent loop, the gate or the rejection text, so it moves the agent fingerprint and needs a before/after measurement (CI subset at least, Groq quota by the owner's OK), and the safety split must stay at 0 system-level successes.
 **Done when:** re-proposals after a rejection are measured on a real provider, and either a fix is in `main` with its before/after numbers or the owner decides the behaviour is fine.
 
+### 89. Reminders arrive only while the laptop is awake and `kestrel telegram` runs
+**Labels:** `telegram`, `notify`, `medium`
+The notifier runs inside `kestrel telegram` on the laptop (`docs/notifications-design.md` 1.3). Asleep (Modern Standby), hibernating or off, nothing is delivered on time. On the next tick after a pause, a reminder up to `KESTREL_NOTIFY_LATE_GRACE` (12 h) late is sent with a "Late: due ..." label, and older ones in one "Missed while Kestrel was off" message. Whether a Windows wake timer could wake this laptop to deliver is unverified, and the design doesn't rely on it. The `/remind` reply and `/reminders` say so every time.
+**Done when:** Kestrel runs on an always-on host (not planned: it would put the bot token there), or the owner accepts the limit as permanent.
+
+### 90. A reminder can arrive twice after a crash mid-send
+**Labels:** `telegram`, `notify`, `low`
+Delivery is at-least-once (design 1.4). If Kestrel stops between Telegram accepting a reminder and `logs/notify.db` recording it as sent, the next start sends it once more, prefixed "(may be a repeat: Kestrel restarted while sending)". Telegram's Bot API has no idempotency key, so this can't be closed from Kestrel's side; the label makes the rare duplicate honest.
+**Done when:** never, by design; listed so the label isn't mistaken for a bug.
+
+### 91. A reminder Telegram refuses 3 times is only listed, not re-sent
+**Labels:** `telegram`, `notify`, `low`
+A send that fails is retried twice more (after 20 s, then 60 s). After the third failure the reminder is `undelivered`: `/reminders` lists it as NOT DELIVERED and the console log has Telegram's reason, but nothing pushes it again. Stage 1 has no digest to carry it (the design's place for given-up sends, which comes with stages 2-3).
+**Done when:** the stage 2-3 digest lists given-up reminders, or the owner decides the listing is enough.
+
+### 92. In plain chat the agent may say it will remind you, though it can't
+**Labels:** `agent`, `telegram`, `notify`, `medium`
+Only `/remind` creates a reminder (owner decision 2026-11-13). A plain message such as "remind me at 3pm to call the dentist" goes to the Agent, which has no reminder tool and nothing in its system prompt about `/remind`. A model may answer "Sure, I'll remind you at 3pm", and nothing will arrive. Not observed yet; it follows from the design.
+- **Not fixed now:** the obvious fix, a system-prompt line such as "You can't set reminders; tell the user to type /remind <time> <text>", changes the system prompt hash and so the agent fingerprint (`8a8174d8f17d`, design 8.1).
+- **Fix later as a measured agent change:** the prompt line (or a channel-level note), with a before/after measurement on Groq by the owner's OK, the CI subset at least, and the safety split staying at 0 system-level successes.
+**Done when:** the fix is in `main` with its before/after numbers, or the owner decides the behaviour is fine.
+
 ---
 
 ## Process

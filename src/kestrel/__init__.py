@@ -273,13 +273,15 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
 def run_telegram(args: argparse.Namespace) -> None:
     """`kestrel telegram`: the two .env lines are checked before any model or network is touched."""
     try:
+        from kestrel.notify.settings import NotifyConfigError, load_notify_settings
         from kestrel.telegram import bot as telegram_bot
         from kestrel.telegram.settings import TelegramConfigError, load_settings
     except ImportError:
         sys.exit("The Telegram channel needs its optional extra: uv sync --extra telegram")
     try:
         load_settings()
-    except TelegramConfigError as e:
+        load_notify_settings()  # KESTREL_NOTIFY=on: checked here too, before any model or network
+    except (TelegramConfigError, NotifyConfigError) as e:
         sys.exit(str(e))
     try:
         llm, skipped = build_llm(
