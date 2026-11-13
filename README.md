@@ -23,12 +23,13 @@ Kestrel plans, calls tools and works through multi-step tasks, with its own agen
 | Part | What it does | Evidence |
 |---|---|---|
 | Agent loop and model layer | One interface over Groq, Gemini, Ollama and a no-key demo provider: streaming, retries, fallback between providers, tool calls validated against JSON schemas, parallel calls | [agent.py](src/kestrel/agent.py), [llm.py](src/kestrel/llm.py), [tools.py](src/kestrel/tools.py) |
-| Approval gate, permission tiers v2.1 | Capabilities fixed in code per tool; reading files or the web taints the session, and outbound content is checked against it; approve, edit or reject, with an audit log | [design](docs/tiers-v2-design.md), [safety report](evals/reports/safety-after-v2.1.md) |
+| Approval gate, permission tiers v2 (rules `tiers-v2.2`) | Capabilities fixed in code per tool; reading files or the web taints the session, and outbound content is checked against it; fetches to private addresses are refused; approve, edit or reject, with an audit log | [design](docs/tiers-v2-design.md), [safety report](evals/reports/safety-after-v2.1.md) |
 | MCP in both directions | Uses tools from MCP servers (untrusted by default); serves its own safe tools to clients such as Claude Code | [mcp_client.py](src/kestrel/mcp_client.py), [mcp_server.py](src/kestrel/mcp_server.py) |
 | Tracing and web console | Every request is a tree of spans in SQLite (tokens, latency, cost); the console shows live steps, approval cards and trace waterfalls | [tracing.py](src/kestrel/tracing.py), [console/](console/) |
 | KestrelBench | 100 main tasks and a 48-task safety split (29 attacks), deterministic checks first, evals in CI | [tasks](evals/kestrelbench/tasks/), [safety split](evals/kestrelbench/safety/), [CI](.github/workflows/ci.yml) |
 | Distillation pipeline | Trace dataset → QLoRA fine-tune of Qwen3-4B on a free Kaggle T4 → served on local Ollama → a router that sends each turn to the student first and escalates to the teacher | [training log](distill/TRAINING.md), [export log](distill/EXPORT.md), [router.py](src/kestrel/router.py) |
 | Local voice | Wake word and speech-to-text on the laptop, no cloud speech service | [voice-wake.md](docs/voice-wake.md) |
+| Telegram (optional) | Chat from your phone; every risky action is its own Approve/Reject card, no session approval, only your account | [telegram.md](docs/telegram.md) |
 
 ## Results
 
@@ -98,7 +99,7 @@ Every open problem is in [known issues](docs/known-issues.md), and every decisio
 
 ## Future work
 
-- **Long-term memory with hybrid RAG:** built on branches (`phase3/memory`, design on `phase3/memory-rag`), parked until after Phase 4.
+- **Long-term memory with hybrid RAG:** built on parked branches, kept as the tags `archive/phase3/memory` and `archive/phase3/memory-rag` (design).
 - **A nightly training loop:** good traces → retrain the student → deploy only if it beats the current one on KestrelBench and passes every safety test.
 - **Speaker verification** for the wake word.
 - **Judge leniency:** label failing answers, so the judge's leniency can be measured.
