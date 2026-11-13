@@ -4,31 +4,50 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-08 afternoon, from the branch-cleanup docs session (log below). 2026-11-11: `main`, fingerprint and the Telegram/Google order only (PR #93); the rest of this file is still as of 11-08.
+2026-11-12, from the Telegram post-merge docs session (log below). `main` = `c51c4f6` (PR #96).
 
 ## Now
 
-**Section 8: FAIL** (applied as frozen, 11-05; `evals/reports/phase4-result.md`). The Phase 4 gate is not passed.
+**Phase 4 gate passed:** section 9, PASS by its frozen rule 9.6 (2026-11-09, `evals/reports/phase4-section9-verdict.md`,
+PR #87), after section 8's FAIL (11-05). The router ships opt-in (`KESTREL_PROVIDERS=routed`, off by default; PR #79).
+`main` runs rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` (PR #90).
 
-**Section 9 is running.** It is the re-measurement after decision 9's fix, frozen 11-07 (`0071e54`, `docs/phase4-section9-proposal.md` on `phase4/tainted-to-teacher`). The queue `scripts/s9_queue.ps1` runs in `..\kestrel-runs`, started 11-08 08:19 EST at the tag `phase4-s9-runs` (`497643a`).
-- **Runs 1 and 2 are done:**
-  - run 1, group S strict ×3: 87/87 graded, 66,613 billable;
-  - run 2, group S rubber-stamp ×3: 54/54 graded, 31,627 billable;
-  - **the stop rule HELD after both**, so runs 3 and 4 go ahead.
-- **Runs 3 and 4 are pending:**
-  - run 3, the same-week drift control: waiting for Groq quota (needs 55,000, 30,808 free at 12:21 EST);
-  - then run 4, the routed main suite R=1.
-- **Groq so far:** 154,192 of the 303,000 approval, the CI runs on #79 included.
-- **Not read yet:** no section 9 outcome. Leave the window open, on mains power and awake.
+**Telegram channel in `main`** (PR #96, `c51c4f6`, 2026-11-12): `uv run kestrel telegram`, `docs/telegram.md`,
+decision 32, known issues 84-88.
 
-**This week:**
-- **Tuesday 2026-11-10:**
-  - the section 9 verdict, from the finished runs;
-  - then PR #79 (`phase4/tainted-to-teacher`), and the PRs for `fix/fetch-private-block` and `fix/voice-console-week`.
-  - Each of those three changes `src/kestrel/`, so each runs the CI evals on Groq (~56k per PR). #79 has its approval line; the other two need their own lines first.
-- **Friday 2026-11-13: the v1.0 release.**
-  - Merge `docs/readme-v1`: the README and `docs/release-notes-v1.0.md`, with section 9 filled in.
-  - Then the blog post on `docs/blog-phase4`, and the tag `v1.0`.
+**Open:**
+- **v1.0:** README, release notes and blog post 2 are merged (#91, #92) and the repo is public, but there is no `v1.0`
+  tag or GitHub release yet, and `docs/release-notes-v1.0.md` still says "DRAFT, not tagged"
+  (`docs/release-checklist.md` sections 4-6).
+- **Next in the owner's order (2026-11-11):** Phase 4 teacher data and measurements, then the Google tools. The
+  teacher data of 11-01/02 is what section 9 passed with; the next Phase 4 data step isn't defined yet (owner
+  decision 7 below).
+- **PR #94,** the kestrel-data RCA design (docs only): open, built after Phase 4.
+- **Merged branches not yet deleted:** 14 on `origin` (Branches, below).
+
+## 2026-11-12 (Telegram session; Groq only for #96's CI)
+
+1. **Telegram channel merged** (PR #96, `c51c4f6`): built offline, then a live phone test with the demo provider.
+   Behaviour-neutral: fingerprint `8a8174d8f17d`, tools `ede3efa38c54`, system prompt `36d57c7e8a82`, equal to
+   `main`'s before the merge.
+   - **CI:** the PR run 94% (15/16), 0 errors, 31,480 billable; the merge-to-`main` run 87.5% (14/16), 0 errors,
+     20,048 billable. Failures: `multi-scale-recipe` (both runs, systematic in `evals/reports/run-to-run.md`) and
+     `convo-chained-math` (main only, the known calculator flip in `evals/reports/ci-threshold.md`).
+   - Two earlier PR runs failed on ubuntu in the new `logs/` test guard (Linux `rmtree` paths); KestrelBench was
+     skipped in both, so they cost 0 tokens.
+2. **The live test found 3 bugs, all fixed before the merge:**
+   - a failed start message (the documented `TELEGRAM_ALLOWED_USER_ID=1` id lookup) looked like a crash; failed
+     sends are now logged with Telegram's reason and never stop the bot;
+   - an expired card read like the next one; it now ends "Expired: no answer in 5 min, not done";
+   - a test wrote to the real `logs/approvals.jsonl` (an `ApprovalGate` with no `log_path`, one line per full test
+     run since 11-05); tests now use a scratch audit log and fail if they touch `logs/`.
+3. **Audit log cleaned** (owner's OK): the 19 test-written `search` lines were moved, in order, from
+   `logs/approvals.jsonl` (45 lines -> 26, every other line byte-identical) to
+   `logs/approvals.test-pollution-2026-11-12.jsonl`; the original is in `C:\kestrel-backup\2026-11-12\`.
+4. **Token leak check** (`scripts/live/telegram_leak_check.py`, after the phone test): 9 files in `logs/`, the token
+   and its secret part in none.
+5. **The 10-28 merge queue is done:** `console/hud-theme` (PR #29, 10-29), `voice/talk` (PR #31, 10-30) and
+   `phase4/trace-dataset` (PR #37, 10-30) are all in `main`, and their branches are gone. No next action for any.
 
 ## 2026-11-08 afternoon (branch-cleanup docs session; no Groq, no model calls)
 
@@ -208,24 +227,18 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 1 Foundation | done | tag `v0.1.0`; `main` |
 | 2 Evals | done, except judge calibration (#21): measured 2026-11-08 on 32 held-out answers, agreement 91% (78–100%), kappa 0.0, so not calibrated (`evals/reports/judge-calibration.md`) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
 | 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29 with the tiers-v2 merge, PR #27, decision 17; `main` runs `tiers-v2.2` since PR #90, default agent fingerprint `8a8174d8f17d`); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); memory on the tags `archive/phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) and `archive/phase3/memory` |
-| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate), gate not passed (`evals/reports/phase4-result.md`) | `main` (`docs/phase4-plan.md`, `distill/*.md`) |
-| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog post 1 in `main`, post 2 drafted; the 2 MCP servers come back via the combined PR (owner, 2026-11-08: kept, registered in `.mcp.json`) | `main` (`docs/voice-wake.md`); `fix/voice-console-week` (now includes `voice/talk`, follow-up window opt-in); [demo video](https://youtu.be/kglrGnkzt_I); `post-s9/combined` (local) |
+| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate) (`evals/reports/phase4-result.md`); section 9 after decision 9's fix: **PASS** (11-09), **gate passed**, router opt-in (PR #79) | `main` (`docs/phase4-plan.md`, `distill/*.md`, `evals/reports/phase4-section9-verdict.md`) |
+| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog posts 1 and 2 in `main` (#92); the 2 MCP servers in `main` (#90); Telegram channel in `main` (#96); v1.0 not tagged yet | `main` (`docs/voice-wake.md`, `docs/telegram.md`, `servers/`); [demo video](https://youtu.be/kglrGnkzt_I) |
 
 ## Branches
 
-**Live branches** (2026-11-08; the same set locally and on `origin`):
+**Live branches** (2026-11-12, on `origin`; the same set locally):
 
 | Branch | Holds | Next |
 |---|---|---|
-| `main` | everything merged, up to PR #92 (`17393a3`); tiers-v2 merged (PR #27); default agent fingerprint `8a8174d8f17d` (tiers-v2.2) | – |
-| `phase4/tainted-to-teacher` | decision 9's fix, section 9 and its queue; PR #79 open; the tag `phase4-s9-runs` (`497643a`) is one commit past the pushed branch | PR #79 after the section 9 verdict (Tuesday) |
-| `fix/bench-audit-line-separator` | section 8's bench fixes (`bf1b68b`); already inside #79 | delete after #79 merges, as `archive/fix/bench-audit-line-separator` |
-| `phase4/integration` | the results kit (`scripts/phase4_result.py`, which wrote `phase4-result.md`), the student-alone label, the two MCP servers, and the drift-reference `-text` fix; `main` merged in (`dfca3d2`, pushed 2026-11-08); none of these is in `main` or #79 | goes into `post-s9/combined` |
-| `fix/fetch-private-block` | the private-address block for `fetch__fetch`; `main` merged in | goes into `post-s9/combined`; `RULES_VERSION` decided (owner, 2026-11-08, option A: `tiers-v2.2`, bumped on the combined branch) |
-| `fix/voice-console-week` | rule B, the Speaker switch, the wake-off notice, and `voice/talk` folded in (`87d3acf`; follow-up window opt-in, default off, `6118819`) | goes into `post-s9/combined` |
-| `post-s9/combined` | local only, not pushed: `main` + the three branches above, then `RULES_VERSION` `tiers-v2.2` (agent `35fac5ba6277` → `8a8174d8f17d`, routed `a67243f2dbaa` → `00bd8a158356`) and both MCP servers in `.mcp.json` | one PR after #79 merges: merge `main` in again, then CI evals once (~56k, approval line first) |
-| `docs/readme-v1` | the README rewrite and `docs/release-notes-v1.0.md` | PR Friday, with section 9 filled in |
-| `docs/blog-phase4` | blog post 2 | publish with v1.0 |
+| `main` | everything merged, up to PR #96 (`c51c4f6`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
+| `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; adds `D-pending-data-rca`, decision 33 if it merges next) | owner's decisions; built after Phase 4 |
+| merged, not deleted (14): `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
 
 **Archived as tags, branches deleted (2026-11-08, owner's OK).** Each tag sits at the branch's last commit:
 
@@ -291,7 +304,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | after section 9 is frozen | Section 9 runs (`docs/phase4-plan.md`, section 9 once frozen): routed group S strict ×3 + rubber-stamp ×1, the same-week drift control, routed main suite R=5 | ~463k (estimate, rule A) | approved by the owner (11-05), up to **600,000 billable over at most 4 Groq days**. Nothing starts until section 9 is frozen. If group S fails, the main suite is not run. Each command's `--token-budget` = that day's free quota. |
 | 11-08 onward | Section 9 as frozen (`0071e54`, `docs/phase4-section9-proposal.md`): the CI run on the `phase4/tainted-to-teacher` PR (#79: 31,604 measured); a second CI run on #79 after section 8's bench fixes are merged into the branch (~31k); run 1, group S strict ×3 (~73k); run 2, group S rubber-stamp ×3 (~57k); run 3, the same-week drift control (~50k); run 4, routed main suite R=1 (~64k) | **~303k** (trace-based estimates; was ~272k before the second CI run) | **approved by the owner (2026-11-07; raised from ~272k to ~303k the same night), within the 600,000 approval above.** Why the second CI run: the tagged commit lacked section 8's bench fixes (`fix/bench-audit-line-separator`: the U+2028 audit reader, lone-surrogate-safe results, a save after every run, no overwrite, the RUN STOPPED line), which never reached `main`; they are merged into the branch before any section 9 run, and pushing to the open PR re-runs its CI. Runs 1, 2 and 4 at the tag `phase4-s9-runs` on the PR head after `main` is merged into it (agent code and dependencies then equal `main` after the merge; routed fingerprint `2ae99cffdbbc` from a dry run there); the PR isn't merged before the runs. Results `s9-safety-S-strict-x3.json`, `s9-safety-S-rubber-attacks-x3.json`, `s9-main-r1.json`. Stop rule 9.3: runs 3-4 only if group S holds. `--wait-for-quota`; each `--token-budget` from `scripts/groq_quota.py`. **Ran:** 11-07 to 11-09, all four runs graded; **293,042 billable** of the 303,000. Verdict PASS by 9.6 (`evals/reports/phase4-section9-verdict.md`). |
 | 11-09 onward | After section 9's PASS: (1) #79's CI after pushing its banner commit (`a825b81`, "frozen in 0071e54"), ~31k; (2) #79's merge-to-`main` run, ~31k; (3) the combined PR (`post-s9/combined`: `fix/fetch-private-block` + `fix/voice-console-week` + `phase4/integration`, rules `tiers-v2.2`), its PR run and its merge-to-`main` run, ~56k | **~118k** (estimate from #79's measured 31,604 and ~28k per CI subset run) | **approved by the owner (2026-11-09), up to ~120,000 billable** for these four runs only. Each starts only when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; any other push to an open PR needs a new line. |
-| 2026-11-12 | feature/telegram PR: CI subset on the PR + on the merge to main | ~56k (est.) | approved by the owner 2026-11-12 |
+| 2026-11-12 | feature/telegram PR: CI subset on the PR + on the merge to main | ~56k (est.); **51,528 measured** (PR run 31,480 + main run 20,048) | approved by the owner 2026-11-12. **Ran:** PR #96, 94% and 87.5%, 0 errors; two earlier PR runs skipped KestrelBench (0 tokens). |
 
 ## Owner decisions open
 
@@ -301,7 +314,8 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
 5. ~~**Teacher decision (#72, Groq §6.3(e))**~~: decided 2026-11-01, **option a** (Groq's written confirmation, 10-31), design decision 29 on `phase4/kaggle-teacher`. The student weights are not published.
 6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
-7. ~~**Telegram and Google tools order**~~: decided 2026-11-11 (`docs/telegram-google-design.md`, "Owner decisions"): the Telegram channel now → Phase 4 teacher data and measurements → Google tools. Google's measurement budget is **not approved**: after Phase 4 it gets a fresh `--dry-run` estimate and its own approval line.
+7. ~~**Telegram and Google tools order**~~: decided 2026-11-11 (`docs/telegram-google-design.md`, "Owner decisions"): the Telegram channel → Phase 4 teacher data and measurements → Google tools. **Telegram done** (PR #96, 2026-11-12). **Open:** what the Phase 4 step is now: section 9 passed with the 11-01/02 teacher data, and the plan retrains only after a FAIL ("retrain with memory" waits for memory's own measurements). Google's measurement budget is **not approved**: after Phase 4 it gets a fresh `--dry-run` estimate and its own approval line.
+8. **kestrel-data root-cause-analysis server:** design in PR #94 (docs only, open; `D-pending-data-rca`). Built after Phase 4, like Google.
 
 ## Docs on unmerged branches
 
@@ -334,7 +348,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-budget-counts-local-tokens, -routed-resume-fingerprint, -ollama-auto-update | in `main` (docs PRs of 11-05) | not numbered yet |
 | KI-pending-training-on-bench, -secret-scrub-v0 | trace-dataset-v0 | **25, 26** |
 
-Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**. Update 2026-11-02: PR #50 merged (decision 29 with it); its pending names are numbered in PR #52 as decisions 30, 31 and issue 79, so **the next free numbers on `main` are decision 32 and issue 80**.
+Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**. Update 2026-11-02: PR #50 merged (decision 29 with it); its pending names are numbered in PR #52 as decisions 30, 31 and issue 79, so **the next free numbers on `main` are decision 32 and issue 80**. Update 2026-11-12: "issue 80" was stale, since `main` already held issues 80-83 (PR #53, numbered 11-03). Telegram took decision 32 and issues 84-88 (PR #96), so **the next free numbers on `main` are decision 33 and issue 89**. The `KI-pending-*` and `D-pending-*` entries already in `main` (from the docs PRs of 11-05 onward) still have no numbers.
 
 ## Data outside git
 
@@ -351,5 +365,6 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | Student-alone runs F1-F3 (results, reports) and their traces | `..\kestrel-runs\evals\results\student-*`, `..\kestrel-runs\logs\bench.db` | yes, 2026-11-03 (the two safety JSON also pinned in git) |
 | Routed main suite: results, report, 5 logs and traces | `..\kestrel-runs\evals\results\routed-main-r5.*`, `..\kestrel-runs\routed-2026*.log`, `..\kestrel-runs\logs\bench.db` | yes, `C:\kestrel-backup\2026-11-04\` (written 11-05); results also pinned in git |
 | Routed safety group S: results, reports, 2 logs, the cost report and traces | `..\kestrel-runs\evals\results\routed-safety-S-*`, `..\kestrel-runs\routed-safety-S-*.log`, `..\kestrel-runs\logs\bench.db` | yes, `C:\kestrel-backup\2026-11-05\` (10 files, 32 MB, `MANIFEST.txt`); results also pinned in git |
+| The 19 test-written audit-log lines (moved out of `logs/approvals.jsonl`, 2026-11-12) | `logs/approvals.test-pollution-2026-11-12.jsonl` | the original file, `C:\kestrel-backup\2026-11-12\approvals.jsonl.orig` (SHA-256 `58f1f0ab…82b0`) |
 
 Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-02\` (6 files, 2.2 MB, option a collection and training set, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here. `C:\kestrel-backup\2026-11-03\` (7 files, 24.8 MB: the student-alone results and `bench.db`, `MANIFEST.txt`).
