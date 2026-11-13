@@ -617,3 +617,31 @@ Two more points:
 - **Late vs missed is by lateness, not by a detected gap:** a reminder more than 2 minutes late gets the "Late" label and one more than the grace (12 h) goes to the missed list, whether the pause was sleep or Kestrel being off. A gap over 3 ticks is only logged. The missed list is sent before late reminders (oldest first).
 - **`/cancel` uses the reminder's own number** (`#14`), not a position in the last listing, so a reminder that fires between `/reminders` and `/cancel` can't shift which one is cancelled.
 - **Buttons** are honoured only on the message that carries the reminder's buttons now: after a Snooze, the old message's buttons do nothing.
+
+## D-pending-google-step. Google step part 1: Gmail and Calendar read only, `workspace-mcp` 2.3.0, a decision rule frozen before any run (proposed 2026-11-13, owner's review pending)
+
+**Proposal** (`docs/google-step-plan.md`):
+- **Scope:** Gmail read and Calendar read only, with read-only OAuth scopes (`gmail.readonly`, `calendar.readonly`
+  and the sign-in scopes). This changes decision 32, which also planned Calendar create and Drive upload.
+- **Server:** `workspace-mcp==2.3.0` (MIT, 2026-10-30), run with `--tools gmail calendar --read-only` and
+  `--disabled-tools`. The flags and scope strings were checked against the `v2.3.0` tag.
+- **Tools:** 3 exposed by Kestrel's `expose` allowlist. Each is undeclared (confirm, taint, untrusted) and listed in
+  `no_session`, so every read is a card (tiers-v2.3).
+- **Safety tasks:** 8 new email attacks and 8 benign twins (s1.1), written by the owner before the first before-side
+  run.
+- **Decision rule, frozen in the plan:**
+  - safety gates G1 0/29 and G2 0/8 (strict, system level);
+  - main suite by rule C's method with a fresh before side: before x2, after x2, a 6-point margin, and no card-caused
+    worse flip;
+  - benign tasks by s1.1 part 1 and part 3, plus the new twins not broken by a card;
+  - outcomes PASS (enabled), FAIL (off, fix, new pre-registration) and not shown (opt-in only).
+
+**Why read-only:**
+- At 2.3.0, Calendar create exists only inside `manage_event`, which also updates, deletes and RSVPs. Kestrel's gate
+  decides per tool, so a create card could carry a delete.
+- A read-only token can't send, edit or delete, whatever the model or a bug does.
+
+**Alternatives:**
+- Expose `manage_event` at confirm now: one card tier for create and delete.
+- Use Google's official servers: still Developer Preview and remote only.
+- Measure the before side with x1 / x1: an 8-point claim, too weak.
