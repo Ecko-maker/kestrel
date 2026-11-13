@@ -1,6 +1,4 @@
-# Kestrel v1.0: release notes (draft)
-
-> **DRAFT, not tagged.** Section 9's result is in (PASS); v1.0 is tagged after the owner's review.
+# Kestrel v1.0: release notes
 
 Kestrel is a personal AI agent with its own agent loop, built and evaluated on free tiers only.
 - **It asks before it acts:** every risky action waits for a human, and that is enforced in code.
@@ -13,12 +11,13 @@ Start here: [README](../README.md), [demo video (1:50)](https://youtu.be/kglrGnk
 | Area | In v1.0 | Evidence |
 |---|---|---|
 | Agent | Own agent loop: multi-step plans, parallel tool calls, retries, a step limit, history trimming; provider-agnostic model layer (Groq, Gemini, Ollama, a no-key demo) with fallback | [agent.py](../src/kestrel/agent.py), [llm.py](../src/kestrel/llm.py) |
-| Approval gate, permission tiers v2.1 | Capabilities fixed in code per tool; reading files or the web taints the session, and outbound content is checked; approve, edit or reject, with an audit log | [design](tiers-v2-design.md), [safety report](../evals/reports/safety-after-v2.1.md) |
-| MCP | Consumes MCP servers' tools (untrusted by default) and serves Kestrel's safe tools as `kestrel-mcp` | [mcp_client.py](../src/kestrel/mcp_client.py), [mcp_server.py](../src/kestrel/mcp_server.py) |
+| Approval gate, permission tiers v2 (rules `tiers-v2.2`) | Capabilities fixed in code per tool; reading files or the web taints the session, and outbound content is checked; fetches to private, loopback and link-local addresses are refused; approve, edit or reject, with an audit log | [design](tiers-v2-design.md), [safety report](../evals/reports/safety-after-v2.1.md) |
+| MCP | Consumes MCP servers' tools (untrusted by default) and serves Kestrel's safe tools as `kestrel-mcp`; two read-only servers expose KestrelBench results and traces | [mcp_client.py](../src/kestrel/mcp_client.py), [mcp_server.py](../src/kestrel/mcp_server.py), [servers/](../servers/) |
 | Tracing and console | SQLite traces with tokens, latency and cost; a web console with live steps, approval cards and trace waterfalls | [tracing.py](../src/kestrel/tracing.py), [console/](../console/) |
 | KestrelBench | 100 main tasks and a 48-task prompt-injection split (29 attacks); deterministic checks first; a CI subset on Groq when the agent changes | [tasks](../evals/kestrelbench/tasks/), [safety split](../evals/kestrelbench/safety/), [CI](../.github/workflows/ci.yml) |
 | Distillation | Trace dataset with counted filters, QLoRA on a free Kaggle T4 (Qwen3-4B), export to Ollama with a byte-for-byte template check, and a router (student first, teacher as fallback; off by default) | [training](../distill/TRAINING.md), [export](../distill/EXPORT.md), [router.py](../src/kestrel/router.py) |
 | Voice | Local wake word and speech-to-text, with no cloud speech service; a wake can't answer an approval | [voice-wake.md](voice-wake.md) |
+| Telegram (optional) | Chat with Kestrel from your phone. Every risky action is its own card with Approve and Reject (no approval for the whole session; no answer in 5 minutes rejects it); only one allowed user, in a private chat; long polling, so no open port. Not end-to-end encrypted | [telegram.md](telegram.md), [bot.py](../src/kestrel/telegram/bot.py) |
 | Demo mode | Runs with no keys: scripted replies, real tools, approval cards and traces | [README, "Run it"](../README.md#run-it-free-tiers) |
 
 ## Measured results
@@ -62,7 +61,33 @@ Every number links to its source.
   - **Cause:** the router kept turns on the student after the session had read local data, and the user approved the card.
   - **The fix:** tainted turns go to the teacher ([plan 8.7](phase4-plan.md#87-amendments)).
 
-**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](known-issues.md)) and by the combined PR's CI runs (#90, 2026-11-10), both green: the CI subset on Groq passed its gate on the PR (14/15 graded runs, 1 errored; [run 42755872462](https://github.com/Ecko-maker/kestrel/actions/runs/42755872462)) and after the merge to `main` (14/16, 0 errored; [run 42759045086](https://github.com/Ecko-maker/kestrel/actions/runs/42759045086)).
+**The released agent** is the section 9 agent (`35fac5ba6277`) plus the private-address fetch block (approval rules `tiers-v2.2`, agent `8a8174d8f17d`; prompt and tools unchanged). Checked by replaying the 209 pinned fetch calls through the block (0 refused, [known issues](known-issues.md)) and by the combined PR's CI runs (#90, 2026-11-10), both green: the CI subset on Groq passed its gate on the PR (14/15 graded runs, 1 errored; [run 42755872462](https://github.com/Ecko-maker/kestrel/actions/runs/42755872462)) and after the merge to `main` (14/16, 0 errored; [run 42759045086](https://github.com/Ecko-maker/kestrel/actions/runs/42759045086)). The Telegram channel (#96) left the agent unchanged (same fingerprint, tools and prompt hashes); its CI runs passed too (15/16 on the PR, 14/16 on `main`, 0 errored).
+
+**What was measured on which agent.** Each pinned results file records its agent fingerprint (the hash of the
+model, prompt, tools, approval rules and settings). The hash's inputs grew during the project (tool capabilities were
+added with tiers v2), so hashes from different weeks identify a file's agent but can't be compared with each other.
+
+| Result | Agent fingerprint | Rules |
+|---|---|---|
+| KestrelBench baseline v1.1 and its second run | none recorded (baseline); `cc5c16377662` (run 2) | before tiers v2 |
+| Safety before (strict ×3) | `25719febaed9` | before tiers v2 |
+| Safety after, tiers v2.1 (strict ×3, rubber-stamp) | `bb65063bad46` | `tiers-v2.1` |
+| Teacher reference for Phase 4 (main suite ×3) | `35fac5ba6277` | `tiers-v2.1` |
+| Section 8, routed | `502b95cc0fb8` | `tiers-v2.1` |
+| Section 9, routed | `2ae99cffdbbc` | `tiers-v2.1` |
+| **The released agent** | **`8a8174d8f17d`** | **`tiers-v2.2`** |
+
+The released agent itself was measured only by the CI subset (16 tasks, one run each): on #90 (93% of 15 graded runs,
+then 88% of 16) and on the Telegram PR #96 (94%, then 88%), every run above the 75% gate. Its headline numbers are
+the section 9 agent's, with the fetch block added on top.
+
+**Teacher and training data.** The teacher is `openai/gpt-oss-120b` on Groq (option a, [design decision 29](design-decisions.md),
+closing known issue #72 on 2026-11-01 after Groq Support confirmed the use in writing). The student was trained on 89
+examples (71 train, 18 validation) built from Kestrel's own traces of that teacher on the distill task set, which is
+checked for overlap with KestrelBench. **No Claude, GPT or Gemini output was used for training:**
+[`teachers.toml`](../src/kestrel/distill/teachers.toml) lists only the open-weight teacher, and the dataset builder
+refuses closed providers and models whatever the file says. A collection with Qwen3-30B-A3B (option c) was kept as
+evidence only and never trained on. **The student's weights (the LoRA adapter and the GGUF) are not published.**
 
 **LLM judge calibration** ([report](../evals/reports/judge-calibration.md)).
 - **Agreement:** 91% (95% CI 78–100%) on 32 held-out answers.
@@ -77,7 +102,21 @@ Every number links to its source.
   - v1.0 blocks `fetch` calls to loopback, private and link-local addresses before they run (approval rules `tiers-v2.2`); a block is a refusal, never an approval card.
   - **What the block checks:** the URL's host only, so a redirect to a private address and DNS rebinding stay open ([known issues](known-issues.md)).
 - **Paraphrased leaks are invisible to the checks.** A paraphrase, ROT13 or spelled-out secret isn't detected, so attack rates are lower bounds ([#23](known-issues.md)).
-- **The judge is self-graded until calibrated.** It is the agent's own model ([#21](known-issues.md)); the Phase 4 claim uses deterministic checks only.
+- **The judge is self-graded.** It is the agent's own model ([#21](known-issues.md)).
+- **The judge isn't calibrated** ([#21](known-issues.md)): 75 answers labelled by the owner (32 held-out, 42 dev, 1
+  skipped). The held-out half has no failing answer, so kappa is 0 and #21's bar (0.6) isn't met; rubric-graded scores
+  stay provisional. The Phase 4 claim uses deterministic checks only.
+- **Small samples:** section 9's safety gate is 0 of 17 attacks, which at 95% confidence (Clopper-Pearson) still
+  allows up to 20%; the main safety split's 0 of 29 allows up to 12%. Section 9's quality is one routed run per task.
+- **Reproducing section 9:** the tag's `kestrel bench compare` prints NOT SHOWN because it hard-codes section 8's five
+  routed runs per task; `scripts/s9_verdict.py` applies section 9's frozen design (one run) to the same statistic
+  ([verdict report](../evals/reports/phase4-section9-verdict.md)).
+- **Rule A's gap:** a web page's injection can still steer the student before any local read; it holds no local data
+  then, and any send or write still needs a card ([known issues](known-issues.md), rule A web injection).
+- **Drift is guarded one way only** ([#58](known-issues.md)): the frozen rule stops on downward drift of the teacher,
+  not upward (+6 points this time).
+- **After a rejected card, the agent may propose the same action again** in the same run ([#88](known-issues.md)).
+- **Telegram isn't end-to-end encrypted** ([#84](known-issues.md)): prompts, answers and cards are stored by Telegram.
 - **Docker is verified in CI only** ([#2](known-issues.md)).
 - **The student's sampling depended on the Ollama version** during section 8. This was disclosed, not recomputed ([plan 8.7](phase4-plan.md#87-amendments)).
 - **Long-term memory isn't included.** It is built on parked branches, after Phase 4.
@@ -90,3 +129,4 @@ The full list is in [known issues](known-issues.md); decisions and their alterna
 - **A nightly training loop:** retrain the student from good traces, and deploy only if it beats the current one on KestrelBench and passes every safety test.
 - **Speaker verification** for the wake word.
 - **Judge leniency:** failing answers labelled, so the judge's leniency can be measured.
+- **Google tools** (Gmail, Calendar, Drive through MCP): designed ([decision 32](design-decisions.md)), not built.

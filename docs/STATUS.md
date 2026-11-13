@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-12, from the Telegram post-merge docs session (log below). `main` = `c51c4f6` (PR #96).
+2026-11-12, from the Telegram post-merge docs session (log below); the same day, the v1.0 release PR (`release/v1.0`): owner decision 9 (Phase 4 done) and #90's measured CI runs. `main` = `440db5c` before that PR.
 
 ## Now
 
@@ -16,12 +16,11 @@ PR #87), after section 8's FAIL (11-05). The router ships opt-in (`KESTREL_PROVI
 decision 32, known issues 84-88.
 
 **Open:**
-- **v1.0:** README, release notes and blog post 2 are merged (#91, #92) and the repo is public, but there is no `v1.0`
-  tag or GitHub release yet, and `docs/release-notes-v1.0.md` still says "DRAFT, not tagged"
-  (`docs/release-checklist.md` sections 4-6).
-- **Next in the owner's order (2026-11-11):** Phase 4 teacher data and measurements, then the Google tools. The
-  teacher data of 11-01/02 is what section 9 passed with; the next Phase 4 data step isn't defined yet (owner
-  decision 7 below).
+- **v1.0:** README, release notes and blog post 2 are merged (#91, #92) and the repo is public. The release notes'
+  final version (no draft banner, numbers re-checked against their sources) is in the `release/v1.0` PR; the tag
+  `v1.0.0` and the GitHub release follow its merge, on the owner's OK (`docs/release-checklist.md` section 5).
+- **Phase 4 is done** (owner decision 9, 2026-11-12): the gate passed on 11-09, and there's no retrain. Next in the
+  owner's order (2026-11-11): the Google tools, after the v1.0 tag; their measurement budget needs its own approval.
 - **PR #94,** the kestrel-data RCA design (docs only): open, built after Phase 4.
 - **Merged branches not yet deleted:** 14 on `origin` (Branches, below).
 
@@ -227,7 +226,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 1 Foundation | done | tag `v0.1.0`; `main` |
 | 2 Evals | done, except judge calibration (#21): measured 2026-11-08 on 32 held-out answers, agreement 91% (78–100%), kappa 0.0, so not calibrated (`evals/reports/judge-calibration.md`) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
 | 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29 with the tiers-v2 merge, PR #27, decision 17; `main` runs `tiers-v2.2` since PR #90, default agent fingerprint `8a8174d8f17d`); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); memory on the tags `archive/phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) and `archive/phase3/memory` |
-| 4 Distillation | in progress: tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate) (`evals/reports/phase4-result.md`); section 9 after decision 9's fix: **PASS** (11-09), **gate passed**, router opt-in (PR #79) | `main` (`docs/phase4-plan.md`, `distill/*.md`, `evals/reports/phase4-section9-verdict.md`) |
+| 4 Distillation | **done** (owner decision 9, 2026-11-12; no retrain): tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate) (`evals/reports/phase4-result.md`); section 9 after decision 9's fix: **PASS** (11-09), **gate passed**, router opt-in (PR #79) | `main` (`docs/phase4-plan.md`, `distill/*.md`, `evals/reports/phase4-section9-verdict.md`) |
 | 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog posts 1 and 2 in `main` (#92); the 2 MCP servers in `main` (#90); Telegram channel in `main` (#96); v1.0 not tagged yet | `main` (`docs/voice-wake.md`, `docs/telegram.md`, `servers/`); [demo video](https://youtu.be/kglrGnkzt_I) |
 
 ## Branches
@@ -303,7 +302,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | when opened | Fix PR (`phase4/tainted-to-teacher` → `main`), one CI run on the PR + one on the merge | ~56k (estimate) | approved by the owner (11-05) as its own line. Not opened yet: the build is pushed without a PR, on the owner's word. Starts when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; extra pushes to the open PR need a new line. |
 | after section 9 is frozen | Section 9 runs (`docs/phase4-plan.md`, section 9 once frozen): routed group S strict ×3 + rubber-stamp ×1, the same-week drift control, routed main suite R=5 | ~463k (estimate, rule A) | approved by the owner (11-05), up to **600,000 billable over at most 4 Groq days**. Nothing starts until section 9 is frozen. If group S fails, the main suite is not run. Each command's `--token-budget` = that day's free quota. |
 | 11-08 onward | Section 9 as frozen (`0071e54`, `docs/phase4-section9-proposal.md`): the CI run on the `phase4/tainted-to-teacher` PR (#79: 31,604 measured); a second CI run on #79 after section 8's bench fixes are merged into the branch (~31k); run 1, group S strict ×3 (~73k); run 2, group S rubber-stamp ×3 (~57k); run 3, the same-week drift control (~50k); run 4, routed main suite R=1 (~64k) | **~303k** (trace-based estimates; was ~272k before the second CI run) | **approved by the owner (2026-11-07; raised from ~272k to ~303k the same night), within the 600,000 approval above.** Why the second CI run: the tagged commit lacked section 8's bench fixes (`fix/bench-audit-line-separator`: the U+2028 audit reader, lone-surrogate-safe results, a save after every run, no overwrite, the RUN STOPPED line), which never reached `main`; they are merged into the branch before any section 9 run, and pushing to the open PR re-runs its CI. Runs 1, 2 and 4 at the tag `phase4-s9-runs` on the PR head after `main` is merged into it (agent code and dependencies then equal `main` after the merge; routed fingerprint `2ae99cffdbbc` from a dry run there); the PR isn't merged before the runs. Results `s9-safety-S-strict-x3.json`, `s9-safety-S-rubber-attacks-x3.json`, `s9-main-r1.json`. Stop rule 9.3: runs 3-4 only if group S holds. `--wait-for-quota`; each `--token-budget` from `scripts/groq_quota.py`. **Ran:** 11-07 to 11-09, all four runs graded; **293,042 billable** of the 303,000. Verdict PASS by 9.6 (`evals/reports/phase4-section9-verdict.md`). |
-| 11-09 onward | After section 9's PASS: (1) #79's CI after pushing its banner commit (`a825b81`, "frozen in 0071e54"), ~31k; (2) #79's merge-to-`main` run, ~31k; (3) the combined PR (`post-s9/combined`: `fix/fetch-private-block` + `fix/voice-console-week` + `phase4/integration`, rules `tiers-v2.2`), its PR run and its merge-to-`main` run, ~56k | **~118k** (estimate from #79's measured 31,604 and ~28k per CI subset run) | **approved by the owner (2026-11-09), up to ~120,000 billable** for these four runs only. Each starts only when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; any other push to an open PR needs a new line. |
+| 11-09 onward | After section 9's PASS: (1) #79's CI after pushing its banner commit (`a825b81`, "frozen in 0071e54"), ~31k; (2) #79's merge-to-`main` run, ~31k; (3) the combined PR (`post-s9/combined`: `fix/fetch-private-block` + `fix/voice-console-week` + `phase4/integration`, rules `tiers-v2.2`), its PR run and its merge-to-`main` run, ~56k | **~118k** (estimate from #79's measured 31,604 and ~28k per CI subset run) | **approved by the owner (2026-11-09), up to ~120,000 billable** for these four runs only. Each starts only when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; any other push to an open PR needs a new line. **Ran:** #79's two runs (51,696 together, release checklist); the combined PR #90, **49,694 measured** (PR run 29,410, run 42755872462, 14/15 graded, 1 errored; merge-to-`main` run 20,284, run 42759045086, 14/16, 0 errored). |
 | 2026-11-12 | feature/telegram PR: CI subset on the PR + on the merge to main | ~56k (est.); **51,528 measured** (PR run 31,480 + main run 20,048) | approved by the owner 2026-11-12. **Ran:** PR #96, 94% and 87.5%, 0 errors; two earlier PR runs skipped KestrelBench (0 tokens). |
 
 ## Owner decisions open
@@ -314,8 +313,9 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 4. **CI threshold:** the proposal is to keep 75% (`evals/reports/ci-threshold.md`, on the tiers-v2 line).
 5. ~~**Teacher decision (#72, Groq §6.3(e))**~~: decided 2026-11-01, **option a** (Groq's written confirmation, 10-31), design decision 29 on `phase4/kaggle-teacher`. The student weights are not published.
 6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
-7. ~~**Telegram and Google tools order**~~: decided 2026-11-11 (`docs/telegram-google-design.md`, "Owner decisions"): the Telegram channel → Phase 4 teacher data and measurements → Google tools. **Telegram done** (PR #96, 2026-11-12). **Open:** what the Phase 4 step is now: section 9 passed with the 11-01/02 teacher data, and the plan retrains only after a FAIL ("retrain with memory" waits for memory's own measurements). Google's measurement budget is **not approved**: after Phase 4 it gets a fresh `--dry-run` estimate and its own approval line.
+7. ~~**Telegram and Google tools order**~~: decided 2026-11-11 (`docs/telegram-google-design.md`, "Owner decisions"): the Telegram channel → Phase 4 teacher data and measurements → Google tools. **Telegram done** (PR #96, 2026-11-12); the Phase 4 step is settled by decision 9. Google's measurement budget is **not approved**: it gets a fresh `--dry-run` estimate and its own approval line.
 8. **kestrel-data root-cause-analysis server:** design in PR #94 (docs only, open; `D-pending-data-rca`). Built after Phase 4, like Google.
+9. ~~**Phase 4 done or retrain**~~: decided 2026-11-12: **Phase 4 declared done** (the gate passed 11-09 with section 9; no retrain). "Retrain with memory" stays the planned follow-up once memory is built and measured.
 
 ## Docs on unmerged branches
 
