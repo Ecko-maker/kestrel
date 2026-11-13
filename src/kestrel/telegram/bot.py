@@ -33,9 +33,12 @@ from kestrel import parse_feedback
 from kestrel.agent import MAX_CONTEXT_TOKENS, Agent, ChatModel
 from kestrel.approval import ApprovalGate
 from kestrel.bench.lock import pid_alive
+from kestrel.notify.clock import Clock, SystemClock
+from kestrel.notify.settings import NotifySettings
 from kestrel.telegram.approver import APPROVAL_TIMEOUT, TelegramApprover
 from kestrel.telegram.events import TelegramEvents
 from kestrel.telegram.outbox import Outbox, describe
+from kestrel.telegram.reminders import Reminders
 from kestrel.tools import ToolRegistry
 from kestrel.tools import registry as default_registry
 from kestrel.tracing import Span, Tracer, redact
@@ -57,6 +60,9 @@ HELP = (
     "/new  start a new conversation\n"
     "/stop  reject waiting cards and stop after the current step\n"
     "/good or /bad [note]  rate the last answer"
+)
+REMINDER_HELP = (  # added to HELP only with KESTREL_NOTIFY=on
+    "/remind <time> <text>  set a reminder (/remind alone shows the forms)\n/reminders  list them; /cancel <n>"
 )
 
 
@@ -132,6 +138,8 @@ class TelegramBot:
         audit_log: Path | None = None,
         approval_timeout: float = APPROVAL_TIMEOUT,
         max_context_tokens: int = MAX_CONTEXT_TOKENS,
+        notify: NotifySettings | None = None,
+        clock: Clock | None = None,
     ):
         self.allowed_user_id = allowed_user_id
         self.llm = llm
@@ -143,6 +151,9 @@ class TelegramBot:
         self.chats: dict[int, Chat] = {}  # one Agent per chat_id (one in practice: private chats, one user)
         self._outbox: Outbox | None = None
         self._tasks: set[asyncio.Task] = set()
+        self.reminders: Reminders | None = None  # KESTREL_NOTIFY=on: /remind, buttons, the ticker
+        if notify is not None and notify.enabled:
+            self.reminders = Reminders(notify, allowed_user_id, clock or SystemClock())
 
     @property
     def outbox(self) -> Outbox:
@@ -207,6 +218,8 @@ class TelegramBot:
         text = message.text.strip()  # only the user's own words: never the quoted or replied-to text
         if not text:
             return
+        if self.reminders is not None and await self.reminders.handle(chat_id, text):
+            return  # no model involved, so this works while a run is in progress
         if text.startswith("/"):
             await self.command(chat, chat_id, text)
             return
@@ -250,7 +263,7 @@ class TelegramBot:
             self.tracer.rate(chat.last_trace, *feedback)
             await self.say(chat_id, f"Rated {feedback[0]}.")
         else:  # /start, /help, anything else
-            await self.say(chat_id, HELP)
+            await self.say(chat_id, HELP if self.reminders is None else f"{HELP}\n{REMINDER_HELP}")
 
     async def on_callback(self, query: Any) -> None:
         """A button press. Anything not from the allowed user, or not on a waiting card in that chat, is
@@ -258,6 +271,11 @@ class TelegramBot:
         user, message = getattr(query, "from_user", None), getattr(query, "message", None)
         if user is None or user.id != self.allowed_user_id or message is None:
             self.log_ignored(getattr(user, "id", None))
+            return
+        if self.reminders is not None and self.reminders.is_reminder_button(query.data):
+            if await self.reminders.press(message.chat.id, message.message_id, query.data):
+                with contextlib.suppress(Exception):
+                    await query.answer()
             return
         chat = self.chats.get(message.chat.id)
         if chat is None or not chat.approver.press(message.chat.id, message.message_id, query.data):
@@ -277,11 +295,15 @@ class TelegramBot:
         except Exception as e:
             log.warning("couldn't send the start message to TELEGRAM_ALLOWED_USER_ID: %s", describe(e))
             log.warning("Still polling. A message from anyone else shows here as 'ignored update from user id N'.")
+        if self.reminders is not None:
+            self.reminders.start(self.outbox)
 
     def shutdown(self) -> None:
         for chat in self.chats.values():
             chat.llm.stop()
             chat.approver.close()
+        if self.reminders is not None:
+            self.reminders.stop()
 
 
 # --- one poller per machine ----------------------------------------------------------
@@ -398,16 +420,20 @@ def run(
     max_context_tokens: int = MAX_CONTEXT_TOKENS,
 ) -> None:
     """`kestrel telegram`: settings first (nothing connects without both .env lines), then poll."""
+    from kestrel.notify.settings import load_notify_settings
     from kestrel.telegram.settings import load_settings
 
     settings = load_settings()
+    notify = load_notify_settings()
     setup_logging()
     tracer = TelegramTracer()
-    core = TelegramBot(settings.allowed_user_id, llm, tracer, max_context_tokens=max_context_tokens)
+    core = TelegramBot(settings.allowed_user_id, llm, tracer, max_context_tokens=max_context_tokens, notify=notify)
     with single_instance():
         app = build_application(core, settings.token)
         print_line(E2E_NOTICE)
         if not tracer.record_content:
             print_line("KESTREL_TRACE_CONTENT=off: nothing is kept locally, but Telegram still has the text.")
+        if notify.enabled:
+            print_line(f"Reminders on: {notify.db_path}, time zone {notify.zone}. Only while this laptop is awake.")
         print_line("Polling Telegram (no open port). Messages sent while Kestrel was off are skipped. Ctrl+C to stop.")
         app.run_polling(allowed_updates=ALLOWED_UPDATES, drop_pending_updates=True)

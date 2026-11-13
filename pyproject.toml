@@ -46,6 +46,7 @@ export = [
 ]
 telegram = [
     "python-telegram-bot==22.8",
+    "tzlocal>=5.4.5",
 ]
 
 [build-system]
