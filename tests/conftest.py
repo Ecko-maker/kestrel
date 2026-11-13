@@ -53,8 +53,23 @@ def under_real_logs(target: object) -> bool:
     )
 
 
+O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)  # not on Windows
+# Where each event's dir_fd arguments are (Python's audit events table). A path given with a dir_fd is
+# relative to that open folder, not to the current one: on Linux, shutil.rmtree removes a temporary
+# folder's own logs/ subfolder as os.open("logs", O_DIRECTORY) + os.rmdir("logs", dir_fd=parent).
+DIR_FDS = {"os.mkdir": (2,), "os.remove": (1,), "os.rmdir": (1,), "os.rename": (2, 3), "os.replace": (2, 3)}
+
+
+def relative_to_another_folder(event: str, args: tuple) -> bool:
+    if any(i < len(args) and args[i] not in (None, -1) for i in DIR_FDS.get(event, ())):
+        return True
+    # os.open's event carries no dir_fd (mode is None): a folder opened to list it changes nothing
+    # (rmtree's walk); creating or removing anything in it shows up as its own event above.
+    return event == "open" and len(args) > 2 and args[1] is None and bool((args[2] or 0) & O_DIRECTORY)
+
+
 def audit_hook(event: str, args: tuple) -> None:
-    if _watching and event in WATCHED and args:
+    if _watching and event in WATCHED and args and not relative_to_another_folder(event, args):
         for target in args[:2] if event in ("os.rename", "os.replace") else args[:1]:
             if under_real_logs(target):
                 touched.append(f"{event} {os.fspath(target)!s}")
