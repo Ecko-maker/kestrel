@@ -66,17 +66,19 @@ def test_a_path_relative_to_another_open_folder_is_not_the_real_logs(guard, monk
     parent it holds open (CI, 2026-11-13: the bench's task folder). Those events aren't the repo's logs/."""
     monkeypatch.chdir(ROOT)
     hook, g = guard.audit_hook, guard
-    flags = os.O_RDONLY | guard.O_DIRECTORY
+    walk = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)  # what Linux's rmtree passes (shutil.py, 3.14)
     events = [("os.rmdir", ("logs", 7)), ("os.remove", ("logs/x", 7)), ("os.mkdir", ("logs", 0o777, 7))]
-    events += [("os.rename", ("logs/a", "logs/b", 7, 7))]
-    if guard.O_DIRECTORY:
-        events.append(("open", ("logs", None, flags)))
+    events += [("os.rename", ("logs/a", "logs/b", 7, 7)), ("open", ("logs", None, walk))]
     for event, args in events:
         hook(event, args)
-    hook("os.rmdir", ("logs", -1))  # the same name with no dir_fd (CPython passes -1) *is* the real folder
+    # The same names with no dir_fd (CPython passes -1), or an os.open that creates: the real folder.
+    hook("os.rmdir", ("logs", -1))
+    hook("open", ("logs/telegram.lock", None, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+    hook("open", ("logs/traces.db", "r", 0))  # open() / Path.open(): mode is a string, always checked
+    hook("open", (str(REAL_LOGS), None, walk))  # an absolute path is never relative to another folder
     caught = list(g.touched)
     g.touched.clear()
-    assert caught == ["os.rmdir logs"]
+    assert caught == ["os.rmdir logs", "open logs/telegram.lock", "open logs/traces.db", f"open {REAL_LOGS}"]
 
 
 def test_removing_a_scratch_folder_that_has_its_own_logs_is_allowed(tmp_path, monkeypatch, guard):

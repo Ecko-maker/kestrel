@@ -53,19 +53,28 @@ def under_real_logs(target: object) -> bool:
     )
 
 
-O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)  # not on Windows
-# Where each event's dir_fd arguments are (Python's audit events table). A path given with a dir_fd is
+# Where each event's dir_fd arguments are (CPython passes -1 for none). A path given with a dir_fd is
 # relative to that open folder, not to the current one: on Linux, shutil.rmtree removes a temporary
-# folder's own logs/ subfolder as os.open("logs", O_DIRECTORY) + os.rmdir("logs", dir_fd=parent).
+# folder's own logs/ subfolder as os.open("logs", O_RDONLY | O_NONBLOCK, dir_fd=parent) and
+# os.rmdir("logs", dir_fd=parent) (CI on PR #96, the bench's task folder).
 DIR_FDS = {"os.mkdir": (2,), "os.remove": (1,), "os.rmdir": (1,), "os.rename": (2, 3), "os.replace": (2, 3)}
+WRITES = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
 
 
 def relative_to_another_folder(event: str, args: tuple) -> bool:
     if any(i < len(args) and args[i] not in (None, -1) for i in DIR_FDS.get(event, ())):
         return True
-    # os.open's event carries no dir_fd (mode is None): a folder opened to list it changes nothing
-    # (rmtree's walk); creating or removing anything in it shows up as its own event above.
-    return event == "open" and len(args) > 2 and args[1] is None and bool((args[2] or 0) & O_DIRECTORY)
+    # os.open's event (mode None) carries no dir_fd, so a read-only os.open of a relative name may be
+    # rmtree's walk: skipped. Any os.open that writes or creates is still checked, and so is every
+    # open()/Path.open() (their mode is a string) and every remove, rmdir and rename without a dir_fd.
+    return (
+        event == "open"
+        and len(args) > 2
+        and args[1] is None
+        and isinstance(args[2], int)
+        and not args[2] & WRITES
+        and not os.path.isabs(os.fsdecode(args[0]) if isinstance(args[0], bytes) else os.fspath(args[0]))
+    )
 
 
 def audit_hook(event: str, args: tuple) -> None:
