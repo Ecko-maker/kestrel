@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-12, from the Telegram post-merge docs session (log below); the same day, the v1.0 release PR (`release/v1.0`): owner decision 9 (Phase 4 done) and #90's measured CI runs. `main` = `440db5c` before that PR.
+2026-11-13, from the v1.0.0 release session (log below). `main` = `c8b72e5` before this PR.
 
 ## Now
 
@@ -15,14 +15,32 @@ PR #87), after section 8's FAIL (11-05). The router ships opt-in (`KESTREL_PROVI
 **Telegram channel in `main`** (PR #96, `c51c4f6`, 2026-11-12): `uv run kestrel telegram`, `docs/telegram.md`,
 decision 32, known issues 84-88.
 
+**v1.0.0 released** (2026-11-13): annotated tag `v1.0.0` on `c8b72e5`, GitHub release "Kestrel v1.0" (Latest).
+
+**Notifications design in `main`** (PR #100, `c8b72e5`): `docs/notifications-design.md`, `D-pending-notifications`
+with the owner's 11-13 decisions (section 11).
+
 **Open:**
-- **v1.0:** README, release notes and blog post 2 are merged (#91, #92) and the repo is public. The release notes'
-  final version (no draft banner, numbers re-checked against their sources) is in the `release/v1.0` PR; the tag
-  `v1.0.0` and the GitHub release follow its merge, on the owner's OK (`docs/release-checklist.md` section 5).
-- **Phase 4 is done** (owner decision 9, 2026-11-12): the gate passed on 11-09, and there's no retrain. Next in the
-  owner's order (2026-11-11): the Google tools, after the v1.0 tag; their measurement budget needs its own approval.
-- **PR #94,** the kestrel-data RCA design (docs only): open, built after Phase 4.
-- **Merged branches not yet deleted:** 14 on `origin` (Branches, below).
+- **Next: notifications stage 1, `/remind`** (branch `feature/notify-reminders`). Fingerprint unchanged, but the PR
+  touches `src/kestrel/`, so the CI subset runs on the PR and on the merge (~56k billable): **needs an approval line
+  here before the PR opens.** Built like Telegram: offline with a fake Telegram and a fake clock, then the owner's
+  live phone test, then one PR. Stages 2-3 come with the Google step (their measurement budget needs its own approval).
+- **PR #94,** the kestrel-data RCA design (docs only): still open, built after Phase 4.
+- **Fork-PR approval** (checklist 6.3): the repo setting is `first_time_contributors`, not "all outside
+  collaborators"; reported 11-13, not changed (owner's call).
+- **Merged branches not yet deleted:** 16 on `origin` (Branches, below).
+
+## 2026-11-13 (v1.0.0 release session; no Groq, no model calls)
+
+1. **Pre-checks:** `docs/readme-architecture` was already merged (PR #99, 11-13), so nothing to merge. `main` =
+   `c8b72e5`; the only commit since #98 is #100 (`docs/design-decisions.md`, `docs/notifications-design.md`, docs
+   only). Default agent fingerprint `8a8174d8f17d`, its 10 pin tests pass.
+2. **Release:** annotated tag `v1.0.0` (tag object `5db575d`) on `c8b72e5`, pushed; `gh release create --verify-tag`
+   with the notes body built from `docs/release-notes-v1.0.md`, its 48 relative links rewritten to `blob/v1.0.0` or
+   `tree/v1.0.0` (every target checked to exist, no BOM). On the release page the first line reads
+   "# Kestrel v1.0: release notes"; README, `phase4-section9-verdict.md`, `known-issues.md`, `router.py` and `servers/`
+   open (HTTP 200).
+3. **Draft release v0.2.0 deleted;** its tag `v0.2.0` (`f24552f`) is kept.
 
 ## 2026-11-12 (Telegram session; Groq only for #96's CI)
 
@@ -227,17 +245,17 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | 2 Evals | done, except judge calibration (#21): measured 2026-11-08 on 32 held-out answers, agreement 91% (78–100%), kappa 0.0, so not calibrated (`evals/reports/judge-calibration.md`) | README baseline 92%; `evals/baselines/` on `main`; labels in `evals/labels/human.jsonl` on `main` |
 | 3 Memory and safety | permission tiers **done** (v2.1 shipped 2026-10-29 with the tiers-v2 merge, PR #27, decision 17; `main` runs `tiers-v2.2` since PR #90, default agent fingerprint `8a8174d8f17d`); memory parked until after Phase 4 | `main` `02c1d2e` (`evals/reports/safety-after-v2.1.md`, `evals/reports/rule-c-verdict.md`); memory on the tags `archive/phase3/memory-rag` (`docs/memory-rag-design.md`, owner decision 2026-10-26) and `archive/phase3/memory` |
 | 4 Distillation | **done** (owner decision 9, 2026-11-12; no retrain): tooling **in `main`** (PR #37, `4290fc6`, 2026-10-30; student-eval tooling and the option a pins PR #50, `43d5522`, 2026-11-02), claim pre-registered (`docs/phase4-plan.md` section 8); teacher data collected 11-01/02 and the training set built (89: 71 / 18); student trained on Kaggle 11-02 (5/5 epochs, val loss 0.660 → 0.409) and served as `kestrel-student` (PR #53, `2cb2a4b`); free local runs F1-F3 done; section 8 runs done 11-05: **outcome FAIL** (safety gate) (`evals/reports/phase4-result.md`); section 9 after decision 9's fix: **PASS** (11-09), **gate passed**, router opt-in (PR #79) | `main` (`docs/phase4-plan.md`, `distill/*.md`, `evals/reports/phase4-section9-verdict.md`) |
-| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog posts 1 and 2 in `main` (#92); the 2 MCP servers in `main` (#90); Telegram channel in `main` (#96); v1.0 not tagged yet | `main` (`docs/voice-wake.md`, `docs/telegram.md`, `servers/`); [demo video](https://youtu.be/kglrGnkzt_I) |
+| 5 Voice and launch | in progress, started early: wake word and speech in/out; demo video ✓ done (2026-11-08); blog posts 1 and 2 in `main` (#92); the 2 MCP servers in `main` (#90); Telegram channel in `main` (#96); **v1.0.0 tagged and released** (2026-11-13); notifications designed (#100), stage 1 next | `main` (`docs/voice-wake.md`, `docs/telegram.md`, `servers/`); [demo video](https://youtu.be/kglrGnkzt_I) |
 
 ## Branches
 
-**Live branches** (2026-11-12, on `origin`; the same set locally):
+**Live branches** (2026-11-13, on `origin`):
 
 | Branch | Holds | Next |
 |---|---|---|
-| `main` | everything merged, up to PR #96 (`c51c4f6`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
+| `main` | everything merged, up to PR #100 (`c8b72e5`, tag `v1.0.0`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
 | `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; adds `D-pending-data-rca`, decision 33 if it merges next) | owner's decisions; built after Phase 4 |
-| merged, not deleted (14): `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
+| merged, not deleted (16): `release/v1.0` (#98, squash), `docs/readme-architecture` (#99, squash), `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
 
 **Archived as tags, branches deleted (2026-11-08, owner's OK).** Each tag sits at the branch's last commit:
 
