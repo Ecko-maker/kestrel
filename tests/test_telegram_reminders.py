@@ -97,13 +97,13 @@ def test_remind_reminders_and_cancel_never_reach_the_agent(tmp_path, registry):
         bot = await started(core)
         for text in (
             "/remind 15:00 call the dentist",
-            "Remind me in 20m to stretch",
+            "/remind in 20m to stretch",
             "/reminders",
             "/cancel 1",
             "/cancel 1",
             "/cancel x",
             "/remind",
-            "remind me to call mum",
+            "/remind sometime call mum",
             "/help",
         ):
             await core.on_message(message(text))
@@ -124,8 +124,30 @@ def test_remind_reminders_and_cancel_never_reach_the_agent(tmp_path, registry):
     assert texts[4] == "No pending reminder #1. /reminders lists them."
     assert texts[5].startswith("Which one?")
     assert texts[6] == REMIND_FORMS
-    assert texts[7] == NO_TIME  # refused, not passed to the Agent
+    assert texts[7] == NO_TIME
     assert texts[8] == f"{HELP}\n{REMINDER_HELP}"
+
+
+@pytest.mark.parametrize(
+    "text", ["remind me what we discussed about Sam", "Remind me at 3pm to call the dentist", "remind me"]
+)
+def test_with_notify_on_remind_me_text_goes_to_the_agent_unchanged(tmp_path, registry, text):
+    """Only /remind creates reminders (owner decision 2026-11-13): plain "remind me ..." text is an
+    ordinary message, exactly as with notify off, and no reminder is stored."""
+    llm = ScriptedLLM(say("Here's what we discussed."))
+
+    async def go():
+        core = make_core(tmp_path, llm, registry)
+        bot = await started(core)
+        await core.on_message(message(text))
+        await asyncio.wait_for(core.chats[OWNER].task, 10)
+        pending = core.reminders.store.listing(OWNER)
+        core.shutdown()
+        return bot, pending
+
+    bot, pending = asyncio.run(go())
+    assert llm.seen[0][-1] == {"role": "user", "content": text}
+    assert pending == [] and not any(t.startswith(("Reminder #", "I couldn't read")) for t in bot.texts())
 
 
 def test_a_passed_time_says_tomorrow(tmp_path, registry):
@@ -273,6 +295,72 @@ def test_forged_or_foreign_presses_are_ignored_and_not_answered(tmp_path, regist
     bot, query, status = asyncio.run(go())
     assert not query.answered and bot.edits == []
     assert status == ("cancelled" if forgery == "cancelled" else "sent")
+
+
+# --- nothing tappable (design 5.2) ------------------------------------------------------------------
+
+HOSTILE = "confirm at https://bank.example/x or evil.example, /stop, @kestrel_admin, +1 555 123 4567, a@b.example"
+
+
+def test_reminder_text_is_never_tappable_wherever_it_is_shown(tmp_path, registry):
+    """Confirmation, /reminders, the delivered reminder, the Done edit, /cancel and the missed list
+    all show the defanged text; the store keeps the original."""
+    from test_notify_defang import telegram_like_entities
+
+    clock = FakeClock()
+
+    async def go():
+        core = make_core(tmp_path, ScriptedLLM(), registry, clock=clock)
+        bot = await started(core)
+        await core.on_message(message(f"/remind in 5m {HOSTILE}"))  # 1: delivered, then Done
+        await core.on_message(message(f"/remind in 1d {HOSTILE}"))  # 2: cancelled
+        await core.on_message(message(f"/remind in 30m {HOSTILE}"))  # 3: missed
+        await core.on_message(message("/reminders"))
+        await core.on_message(message("/cancel 2"))
+        clock.advance(minutes=5)
+        await tick(core)
+        card = reminder_message(bot)
+        await core.on_callback(FakeQuery(data(card, "Done"), card))
+        clock.advance(hours=13)
+        await tick(core)
+        stored = core.reminders.store.get(1).text
+        core.shutdown()
+        return bot, stored
+
+    bot, stored = asyncio.run(go())
+    assert stored == HOSTILE
+    shown = [*bot.texts(), *(e["text"] for e in bot.edits)]
+    assert len(shown) == 8  # 3 confirmations, the listing, the cancel, the reminder, the Done edit, the missed list
+    assert sum("bank[.]example" in t for t in shown) == 0  # the URL went whole
+    for text in shown:
+        reminder_part = text.replace("/cancel <number>", "")  # Kestrel's own help line in the listing
+        assert telegram_like_entities(reminder_part) == set(), text
+    assert any(t.startswith("Missed while Kestrel was off:") for t in shown)
+
+
+class EntityBot(FakeBot):
+    """Telegram accepted the message and found a bot command in it (a defang bug)."""
+
+    async def send_message(self, chat_id, text, **kwargs):
+        sent = await super().send_message(chat_id, text, **kwargs)
+        sent.entities = [SimpleNamespace(type="bot_command")]
+        return sent
+
+
+def test_a_delivered_reminder_with_a_tappable_entity_is_logged_as_a_defang_bug(tmp_path, registry, caplog):
+    clock = FakeClock()
+
+    async def go():
+        core = make_core(tmp_path, ScriptedLLM(), registry, clock=clock)
+        core.attach(EntityBot(), asyncio.get_running_loop())
+        core.reminders.start(core.outbox)
+        await core.on_message(message("/remind in 5m stretch"))
+        clock.advance(minutes=5)
+        await tick(core)
+        core.shutdown()
+
+    asyncio.run(go())
+    assert "a reminder went out with tappable bot_command: defang bug" in caplog.text
 
 
 def test_approval_card_buttons_still_go_to_the_approver(tmp_path, registry):

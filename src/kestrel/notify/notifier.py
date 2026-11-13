@@ -11,6 +11,7 @@ ticks can't send the same one; a failed send is retried at most 3 times in all, 
 labelled as a possible repeat.
 
 `send(text, buttons)` is the channel's: it sends one plain-text message and returns its message id.
+The owner's text is defanged (defang.py) in every message built here: nothing in it is tappable.
 """
 
 import asyncio
@@ -19,6 +20,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 
 from kestrel.notify.clock import Clock
+from kestrel.notify.defang import defang
 from kestrel.notify.parse import local
 from kestrel.notify.store import MAX_ATTEMPTS, Reminder, Store
 from kestrel.tracing import redact
@@ -45,14 +47,14 @@ def reminder_text(reminder: Reminder, *, late: bool = False, repeat: bool = Fals
     lines = [REPEAT] if repeat else []
     if late:
         lines.append(f"Late: due {local(reminder.due, reminder.zone)} (the laptop was asleep or Kestrel was off)")
-    lines.append(f"⏰ Reminder (you set this on {local(reminder.created, reminder.zone)}): {reminder.text}")
+    lines.append(f"⏰ Reminder (you set this on {local(reminder.created, reminder.zone)}): {defang(reminder.text)}")
     return "\n".join(lines)
 
 
 def missed_text(reminders: list[Reminder], *, repeat: bool = False) -> str:
     lines = [REPEAT] if repeat else []
     lines.append("Missed while Kestrel was off:")
-    lines += [f"- {local(r.due, r.zone)}: {r.text}" for r in reminders]
+    lines += [f"- {local(r.due, r.zone)}: {defang(r.text)}" for r in reminders]
     return "\n".join(lines)
 
 

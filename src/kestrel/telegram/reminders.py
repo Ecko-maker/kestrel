@@ -1,10 +1,11 @@
-"""Reminders in the Telegram channel (docs/notifications-design.md, section 2): `/remind`, "remind me",
-`/reminders`, `/cancel <n>`, and the Done / Snooze buttons. Only with KESTREL_NOTIFY=on.
+"""Reminders in the Telegram channel (docs/notifications-design.md, section 2): `/remind`, `/reminders`,
+`/cancel <n>`, and the Done / Snooze buttons. Only with KESTREL_NOTIFY=on.
 
-All of it runs in the bot, before any Agent: no model reads these messages and none of it is a tool,
-so the agent fingerprint is unchanged. A reminder's text is always the owner's own typed words (the
-bot already refuses forwarded messages and never passes quoted text). A "remind me" message the
-parser can't read gets a refusal; it is not passed to the Agent, which has no reminder tool.
+All of it runs in the bot, before any Agent: no model reads these commands and none of it is a tool,
+so the agent fingerprint is unchanged. Only `/remind` creates a reminder (owner decision 2026-11-13):
+plain text such as "remind me what we discussed" goes to the Agent unchanged, as with notify off. A
+reminder's text is always the owner's own typed words (the bot already refuses forwarded messages
+and never passes quoted text), and it is defanged wherever it is shown, so nothing in it is tappable.
 
 Button presses are checked like card presses: the allowed user (checked by the bot), a private chat
 that is the user's, a known reminder of that chat, and the message that carries its buttons now.
@@ -18,8 +19,9 @@ from zoneinfo import ZoneInfo
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from kestrel.notify.clock import Clock
+from kestrel.notify.defang import defang, tappable_entities
 from kestrel.notify.notifier import AWAKE, Buttons, Notifier, reminder_text, snooze_until
-from kestrel.notify.parse import HELP, ParseError, local, parse_reminder, remind_me_body
+from kestrel.notify.parse import HELP, ParseError, local, parse_reminder
 from kestrel.notify.settings import NotifySettings
 from kestrel.notify.store import Store, TooMany
 from kestrel.telegram.outbox import Outbox, describe
@@ -65,8 +67,11 @@ class Reminders:
         return self._outbox
 
     async def send(self, text: str, keyboard: Buttons | None) -> int | None:
-        """The notifier's send: one plain-text message to the owner. Errors go back to the notifier."""
+        """The notifier's send: one plain-text message to the owner. Errors go back to the notifier.
+        Design 5.2's runtime check: if Telegram found anything tappable in it, the template has a bug."""
         sent = await self.outbox.send(self.chat_id, text, reply_markup=markup(keyboard))
+        if found := tappable_entities(sent):
+            log.warning("a reminder went out with tappable %s: defang bug (design 5.2)", ", ".join(found))
         return getattr(sent, "message_id", None)
 
     async def say(self, chat_id: int, text: str) -> None:
@@ -78,23 +83,20 @@ class Reminders:
     # --- messages ---------------------------------------------------------------------------
 
     async def handle(self, chat_id: int, text: str) -> bool:
-        """True if the message was a reminder command or a "remind me" message (and was answered)."""
-        if text.startswith("/"):
-            name, _, rest = text.partition(" ")
-            name = name.split("@")[0].lower()
-            if name not in COMMANDS:
-                return False
-            if name == "/remind":
-                await (self.remind(chat_id, rest) if rest.strip() else self.say(chat_id, HELP))
-            elif name == "/reminders":
-                await self.say(chat_id, self.listing(chat_id))
-            else:
-                await self.cancel(chat_id, rest)
-            return True
-        body = remind_me_body(text)
-        if body is None:
+        """True if the message was one of the reminder commands (and was answered). Anything else,
+        "remind me ..." included, is left to the bot as before."""
+        if not text.startswith("/"):
             return False
-        await self.remind(chat_id, body)
+        name, _, rest = text.partition(" ")
+        name = name.split("@")[0].lower()
+        if name not in COMMANDS:
+            return False
+        if name == "/remind":
+            await (self.remind(chat_id, rest) if rest.strip() else self.say(chat_id, HELP))
+        elif name == "/reminders":
+            await self.say(chat_id, self.listing(chat_id))
+        else:
+            await self.cancel(chat_id, rest)
         return True
 
     async def remind(self, chat_id: int, body: str) -> None:
@@ -106,7 +108,7 @@ class Reminders:
             await self.say(chat_id, str(e))
             return
         zone = self.settings.zone
-        lines = [f"Reminder #{reminder.id} set: {local(parsed.due, zone)} ({zone}): {parsed.text}"]
+        lines = [f"Reminder #{reminder.id} set: {local(parsed.due, zone)} ({zone}): {defang(parsed.text)}"]
         if parsed.rolled:
             lines.append("That's tomorrow: the time has passed today.")
         if parsed.repeated:
@@ -121,7 +123,7 @@ class Reminders:
         lines = [f"Pending reminders ({self.settings.zone}):"]
         for r in found:
             note = "  NOT DELIVERED (Telegram refused it 3 times)" if r.status == "undelivered" else ""
-            lines.append(f"#{r.id}  {local(r.due, r.zone)}  {r.text}{note}")
+            lines.append(f"#{r.id}  {local(r.due, r.zone)}  {defang(r.text)}{note}")
         lines += ["Cancel one with /cancel <number>.", AWAKE]
         return "\n".join(lines)
 
@@ -138,7 +140,7 @@ class Reminders:
         ):
             await self.say(chat_id, f"No pending reminder #{number}. /reminders lists them.")
             return
-        await self.say(chat_id, f"Cancelled #{reminder.id}: {reminder.text}")
+        await self.say(chat_id, f"Cancelled #{reminder.id}: {defang(reminder.text)}")
 
     # --- buttons --------------------------------------------------------------------------
 

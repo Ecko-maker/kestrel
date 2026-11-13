@@ -97,11 +97,14 @@ the line to fix. With `KESTREL_NOTIFY` unset or `off`, the bot behaves exactly a
 | `/remind in 20m stretch` | in 20 minutes (`m`, `h`, `d`; `min`, `hours`, `days` too) |
 | `/remind tomorrow 9:00 send the form` | tomorrow 09:00 |
 | `/remind 2026-11-20 09:30 renew passport` | that date and time |
-| `remind me at 3pm to call the dentist` | a message starting with "remind me" reads the same forms |
 
-Anything else gets the forms back, never a guess. A "remind me" message Kestrel can't read is **not** passed to the
-model: it gets "I couldn't read the time. Try: /remind 15:00 <text>". The reply shows the time, the time zone and the
-reminder's number. On a day the clocks change, a time that doesn't exist (02:30 when they go forward) is refused, and
+`/remind at 3pm to call the dentist` reads too ("at" and "to" are optional). Anything else gets "I couldn't read the
+time. Try: /remind 15:00 <text>", never a guess; `/remind` alone shows the forms. The reply shows the time, the time
+zone and the reminder's number.
+
+**Only `/remind` sets a reminder.** A plain message such as "remind me what we discussed about Sam" goes to the
+model as any other message, exactly as with reminders off. The model has no reminder tool, so it can't set one, even
+if its answer says it will (known issue `KI-pending-agent-claims-reminder`). On a day the clocks change, a time that doesn't exist (02:30 when they go forward) is refused, and
 one that happens twice (when they go back) is the first, with a note. Limits: 300 characters, 100 pending, a year
 ahead.
 
@@ -120,6 +123,14 @@ nothing arrives on time. When Kestrel runs again:
 If Telegram refuses a reminder 3 times, `/reminders` shows it as NOT DELIVERED and the console log says why. If
 Kestrel stopped while sending one, it is sent once more at the next start, marked
 `(may be a repeat: Kestrel restarted while sending)`.
+
+**Nothing in a reminder is tappable.** Telegram apps turn links, domains, email addresses, `/commands`, `@names` and
+phone numbers into taps even in plain text, and a tappable `/stop` would send that command as you. So wherever a
+reminder's text is shown (the reply, `/reminders`, `/cancel`, the reminder itself, the missed list) it is defanged:
+links become `[link removed]`, dots in domains `[.]`, `/` before a word `∕`, `@` `＠`, and phone-like numbers are
+regrouped in pairs (`+1 555 123 4567` -> `15 55 12 34 56 7`). Dates and times stay as typed; `logs/notify.db` keeps
+your original text. If Telegram still finds a tappable part in a delivered reminder, the console logs
+`a reminder went out with tappable ...: defang bug`.
 
 Reminders are not a tool: the model can't create, read or cancel one, and only your own typed words become a
 reminder's text. Everything is in `logs/notify.db` (git-ignored).
@@ -143,8 +154,9 @@ cover strangers, groups, forwarded and quoted messages, presses from another use
 no session approval, splitting long answers, the gate overruling a buggy approver, a demo-mode run end to end, and
 the agent fingerprint pinned unchanged (`8a8174d8f17d`).
 
-Reminders: `uv run pytest tests/test_notify_parse.py tests/test_notify_notifier.py tests/test_telegram_reminders.py`,
-with a fake clock and the same fake bot. They cover every form and refusal, DST in two zones, a restart, catch-up
-after a 3-hour and a 14-hour gap, no double send from two ticks, a crash between send and mark, 3 failed sends,
-forged and stale button presses, notify off changing nothing, and the fingerprint pinned again after importing the
-reminder modules.
+Reminders: `uv run pytest tests/test_notify_parse.py tests/test_notify_notifier.py tests/test_notify_defang.py
+tests/test_telegram_reminders.py`, with a fake clock and the same fake bot. They cover every form and refusal, DST
+in two zones, a restart, catch-up after a 3-hour and a 14-hour gap, no double send from two ticks, a crash between
+send and mark, 3 failed sends, forged and stale button presses, "remind me ..." text reaching the model unchanged,
+nothing tappable in any message showing a reminder's text, notify off changing nothing, and the fingerprint pinned
+again after importing the reminder modules.

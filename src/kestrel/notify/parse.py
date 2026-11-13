@@ -1,6 +1,7 @@
 """Reminder text -> a due time, deterministically (design section 2.2). No model, no guessing.
 
-Forms (after `/remind` or a message starting with "remind me"):
+Forms (after `/remind`, the only way to create a reminder; plain text such as "remind me ..." is
+never read here and goes to the Agent as any message does, owner decision 2026-11-13):
 
     15:00 call the dentist           today, or tomorrow if 15:00 has passed (the reply says so)
     3pm call the dentist             the same; 3:30pm and "3 pm" too
@@ -8,7 +9,7 @@ Forms (after `/remind` or a message starting with "remind me"):
     tomorrow 9:00 send the form      tomorrow
     2026-11-20 09:30 renew passport  that date
 
-An optional "at" before a clock time and "to" before the text are allowed, so "remind me at 3pm to
+An optional "at" before a clock time and "to" before the text are allowed, so "/remind at 3pm to
 call the dentist" reads. Anything else raises ParseError with the help text.
 
 Local times are turned into UTC with the zone's real rules: a time that doesn't exist on a
@@ -50,7 +51,6 @@ IN_FORM = re.compile(rf"in\s+(?P<n>\d{{1,4}})\s?(?P<unit>{UNITS})\s+{TEXT}", re.
 TOMORROW_FORM = re.compile(rf"tomorrow\s+{CLOCK}\s+{TEXT}", re.I | re.S)
 DATE_FORM = re.compile(rf"(?P<date>\d{{4}}-\d{{2}}-\d{{2}})\s+{CLOCK}\s+{TEXT}", re.I | re.S)
 TIME_FORM = re.compile(rf"{CLOCK}\s+{TEXT}", re.I | re.S)
-REMIND_ME = re.compile(r"remind\s+me(?:\s+(?P<rest>.*))?", re.I | re.S)
 
 
 class ParseError(ValueError):
@@ -63,12 +63,6 @@ class Parsed:
     text: str
     rolled: bool = False  # the time had passed today, so it's tomorrow
     repeated: bool = False  # the clocks go back that night and the time happens twice: the first one
-
-
-def remind_me_body(message: str) -> str | None:
-    """The part after "remind me", or None if the message doesn't start with those words."""
-    m = REMIND_ME.fullmatch(message.strip())
-    return None if m is None else (m.group("rest") or "")
 
 
 def clock_time(m: re.Match[str]) -> time:
@@ -107,7 +101,7 @@ def checked_text(text: str) -> str:
 
 
 def parse_reminder(body: str, now: datetime, zone: ZoneInfo) -> Parsed:
-    """`body` is what follows `/remind` or "remind me"; `now` is aware (any zone)."""
+    """`body` is what follows `/remind`; `now` is aware (any zone)."""
     body = body.strip()
     local_now = now.astimezone(zone)
     if m := IN_FORM.fullmatch(body):

@@ -6,7 +6,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from kestrel.notify.parse import MAX_TEXT, NO_TIME, ParseError, local, parse_reminder, remind_me_body
+from kestrel.notify import parse
+from kestrel.notify.parse import MAX_TEXT, NO_TIME, ParseError, local, parse_reminder
 from kestrel.notify.settings import DEFAULT_DB, NotifyConfigError, load_notify_settings
 
 NY = ZoneInfo("America/New_York")
@@ -68,13 +69,15 @@ def test_tomorrow_and_a_date():
     assert local(p.due, "America/New_York") == "Fri 20 Nov 09:30"
 
 
-def test_remind_me_with_at_and_to():
-    assert remind_me_body("Remind me at 3pm to call the dentist") == "at 3pm to call the dentist"
-    assert remind_me_body("remind me") == ""
-    assert remind_me_body("reminder: buy milk") is None and remind_me_body("please remind me") is None
+def test_optional_at_and_to():
     p = at("at 3pm to call the dentist")
     assert local_of(p.due).hour == 15 and p.text == "call the dentist"
     assert at("in 20m to stretch").text == "stretch"
+
+
+def test_the_parser_has_no_plain_text_trigger():
+    """Only /remind creates reminders (owner decision 2026-11-13): no "remind me" entry point."""
+    assert not any("remind_me" in name.lower() for name in dir(parse))
 
 
 def test_text_keeps_a_word_that_looks_like_am():
