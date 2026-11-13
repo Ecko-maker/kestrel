@@ -158,11 +158,12 @@ def test_agent_uses_mcp_tools_with_approval_and_traces_them(registry, tmp_path):
 # --- failures -------------------------------------------------------------------
 
 
-def test_server_that_fails_to_start_is_reported_once_and_skipped():
+def test_server_that_fails_to_start_is_reported_once_and_skipped(tmp_path):
     problems = []
     m = MCPManager(
         {"ghost": StdioServerParameters(command="definitely-not-a-real-command-xyz")},
         on_problem=lambda s, msg: problems.append(s),
+        log_dir=tmp_path,  # never the real logs/ (tests/conftest.py fails a test that touches it)
     )
     try:
         m.start(timeout=30)

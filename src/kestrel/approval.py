@@ -161,12 +161,12 @@ class ApprovalGate:
     def __init__(
         self,
         approver: Approver | None = None,
-        log_path: Path = AUDIT_LOG,
+        log_path: Path | None = None,
         max_edits: int = MAX_EDITS,
         resolve: Resolver = system_resolver,
     ):
         self.approver = approver or DenyAllApprover()
-        self.log_path = log_path
+        self.log_path = AUDIT_LOG if log_path is None else log_path  # read now, so tests can redirect it
         self.max_edits = max_edits
         self.resolve = resolve  # for the private-network block (netguard); the bench passes no_dns
         self.session_approved: set[str] = set()

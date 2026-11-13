@@ -31,7 +31,7 @@ from typing import Any
 
 from kestrel import parse_feedback
 from kestrel.agent import MAX_CONTEXT_TOKENS, Agent, ChatModel
-from kestrel.approval import AUDIT_LOG, ApprovalGate
+from kestrel.approval import ApprovalGate
 from kestrel.bench.lock import pid_alive
 from kestrel.telegram.approver import APPROVAL_TIMEOUT, TelegramApprover
 from kestrel.telegram.events import TelegramEvents
@@ -129,7 +129,7 @@ class TelegramBot:
         tracer: Tracer,
         *,
         tools: ToolRegistry = default_registry,
-        audit_log: Path = AUDIT_LOG,
+        audit_log: Path | None = None,
         approval_timeout: float = APPROVAL_TIMEOUT,
         max_context_tokens: int = MAX_CONTEXT_TOKENS,
     ):
@@ -137,7 +137,7 @@ class TelegramBot:
         self.llm = llm
         self.tracer = tracer
         self.tools = tools
-        self.audit_log = audit_log
+        self.audit_log = audit_log  # None: ApprovalGate's default, approval.AUDIT_LOG
         self.approval_timeout = approval_timeout
         self.max_context_tokens = max_context_tokens
         self.chats: dict[int, Chat] = {}  # one Agent per chat_id (one in practice: private chats, one user)
