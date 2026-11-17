@@ -2,7 +2,7 @@
 
 **Status:** **frozen** (plan 2026-11-13; owner decisions 2026-11-17, **option C: lean and opt-in**, section 8). The
 decision rule (section 4) is frozen by this doc's merge to `main`. No code. No model calls except
-`kestrel bench run --dry-run`, and no Groq quota used. Decision: `D-pending-google-step` (`docs/design-decisions.md`),
+`kestrel bench run --dry-run`, and no Groq quota used. Decision: **34** (`docs/design-decisions.md`, was `D-pending-google-step`),
 numbered when the step 2a branch merges.
 
 **Target:** the Google tools ship **opt-in** (`--tools google` for the bench, a Google server in your own
@@ -44,7 +44,7 @@ can't be on by default for anyone else. **The default agent and its fingerprint 
 
 Writes come back as their own measured step: a Kestrel wrapper that calls `manage_event` with `action` fixed to
 "create", like `drive_upload`. **Decided by the owner 2026-11-17** (section 8, item 1). This is a change to decision
-32; it is recorded under `D-pending-google-step`.
+32; it is recorded under decision 34.
 
 ### 1.1 The server, verified 2026-11-13
 
