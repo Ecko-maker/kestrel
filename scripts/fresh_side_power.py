@@ -79,11 +79,18 @@ def main() -> int:
     print(f"Main suite: Beta({a:.2f}, {b:.2f}) on {len(post)} tasks, {args.sims} sims, margin {args.margin:g} pts")
     for before, after in DESIGNS:
         lows = simulate(post, before, after, args.sims)
-        share = sum(lo > -args.margin / 100 for lo in lows) / args.sims
-        margin80 = -lows[int(0.2 * args.sims)] * 100
+        # Lower bounds are rounded to 1e-9: with 1 run per side every per-task difference is -1, 0 or +1, so the
+        # bound takes few distinct values and many simulations land exactly on a margin. The gate is strict
+        # ("above -m"), so a bound equal to -m does not pass.
+        pts = [round(lo * 100, 7) for lo in lows]
+        m = args.margin
+        above = sum(x > -m for x in pts) / args.sims
+        tied = sum(x == -m for x in pts) / args.sims
+        strict80 = next(k / 10 for k in range(0, 501) if sum(x > -k / 10 for x in pts) / args.sims >= 0.8)
         print(
-            f"  before x{before}, after x{after}: P(lower bound > -{args.margin:g}) = {share:.0%}; "
-            f"margin cleared 80% of the time {margin80:.1f} pts; mean lower bound {sum(lows) / args.sims * 100:.1f}"
+            f"  before x{before}, after x{after}: P(lower bound > -{m:g}) = {above:.1%} (passes); "
+            f"exactly -{m:g}: {tied:.1%}; not shown by chance {1 - above:.1%}; "
+            f"smallest margin passed >= 80% (strict) {strict80:.1f} pts; mean lower bound {sum(pts) / args.sims:.1f}"
         )
     if args.benign_before:
         benign(args.benign_before, args.benign_sims)
