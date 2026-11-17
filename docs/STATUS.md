@@ -353,6 +353,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 7. ~~**Telegram and Google tools order**~~: decided 2026-11-11 (`docs/telegram-google-design.md`, "Owner decisions"): the Telegram channel → Phase 4 teacher data and measurements → Google tools. **Telegram done** (PR #96, 2026-11-12); the Phase 4 step is settled by decision 9. Google's measurement budget is **not approved**: it gets a fresh `--dry-run` estimate and its own approval line.
 8. **kestrel-data root-cause-analysis server:** design in PR #94 (docs only, open; `D-pending-data-rca`). Built after Phase 4, like Google.
 9. ~~**Phase 4 done or retrain**~~: decided 2026-11-12: **Phase 4 declared done** (the gate passed 11-09 with section 9; no retrain). "Retrain with memory" stays the planned follow-up once memory is built and measured.
+10. ~~**Google step plan**~~: decided 2026-11-17, **option C (lean + opt-in)**: Gmail and Calendar read only, `workspace-mcp` 2.3.0, opt-in and off by default (the default agent `8a8174d8f17d` doesn't change); main suite x1 / x1 at an 8-point margin; benign x3; G1 0/29 and G2 0/8 strict. Rule frozen in `docs/google-step-plan.md` (`D-pending-google-step`). The 60-150 MB download is approved. **No approval lines yet; each run gets its own.**
 
 ## Docs on unmerged branches
 
