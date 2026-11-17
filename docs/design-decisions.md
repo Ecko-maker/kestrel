@@ -656,9 +656,10 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 
 ---
 
-## D-pending-data-rca. Root-cause answers from a read-only data server, with confidence computed from evidence (proposed, 2026-11-12)
+## D-pending-data-rca. Root-cause answers from a read-only data server, with confidence computed from evidence (proposed, 2026-11-12; refreshed 2026-11-17)
 
-**Proposal:** a third MCP server, `kestrel-data` (code in `src/kestrel/data/`, served over MCP), built after Phase 4 (`docs/data-rca-design.md`):
+**Proposal:** a third MCP server, `kestrel-data` (code in `src/kestrel/data/`, served over MCP; `docs/data-rca-design.md`):
+- **Opt-in, off by default** (`--tools data` / `KESTREL_TOOLS=data`), like the router and the Google step: the default agent `8a8174d8f17d` doesn't change.
 - **Five read-only tools:** describe_dataset, query, compare_periods, detect_anomalies, decompose_change.
 - **Declared `reads_local`:** safe tier, results wrapped as untrusted, each call that returns data taints the session.
 - **DuckDB 2.0.0** opened with `read_only=True` + `enable_external_access=false` + `lock_configuration=true` over pre-built `.duckdb` files. `query` also accepts exactly one `SELECT`.
@@ -666,9 +667,12 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 - **Evals:**
   - a new `rca` split from a seeded generator (5 scenarios with distractors), graded by checks, with a judge only for explanation quality;
   - label calibration measured offline on held-out seeds;
-  - 5 data-cell injection attacks in the safety split.
+  - 5 data-cell injection attacks in the safety split (`s1.2`).
+- **Measurement, option C shape** (section 5, frozen if this merges): safety absolute on the after side (the 29 gated s1.0 attacks 0/29 and the 5 new 0/5, strict x3); main suite x1 / x1 with no card-caused worse flip and a paired lower bound above -8 points; `rca` after only, against pre-registered thresholds. PASS = shipped opt-in; FAIL = unshipped; not shown (main suite only) = opt-in with a known issue. Dry-run estimate ~0.97-1.69M billable including the build PR's CI (~64k).
+- **Queue:** offline build in parallel with the Google step; its Groq runs only after Google's after side (one consumer at a time).
 
 **Alternatives:**
+- On by default, measured with full before/after sides (the 11-12 draft, ~1.33-1.98M).
 - A Python execution tool: no sandbox on Windows (decision 13), and the gate can't see inside a call.
 - `read_only=True` alone: measured to still read any file, write with `COPY`, and install extensions.
 - `allowed_directories` with live CSV reads: `COPY ... TO` into the folder still writes.
