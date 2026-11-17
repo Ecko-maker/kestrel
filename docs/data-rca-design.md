@@ -11,7 +11,8 @@ computed from the evidence. The model never states the confidence itself. The to
 - `kestrel --tools data ...` or `KESTREL_TOOLS=data` turns the 5 tools on; `kestrel bench run --tools data` registers
   them for a measurement.
 - Without the opt-in, nothing here loads: the default agent stays `8a8174d8f17d` (10 tools, `tiers-v2.2`), pinned by
-  a test, and every existing result keeps describing the shipped default.
+  a test (as `tests/test_google_tools.py` pins it for Google), and every existing result keeps describing the
+  shipped default.
 - The opt-in agent gets its own fingerprint (a `data` part, as `--tools google` adds a `google` part).
 
 **In one table:**
@@ -32,8 +33,10 @@ computed from the evidence. The model never states the confidence itself. The to
 - **The main agent is `8a8174d8f17d`** (rules `tiers-v2.2`, 10 tools), unchanged through #96, #103 and the Google
   plan.
 - **An agent-affecting PR costs ~64k** billable in CI (PR run + merge run): #103 measured 63,624, above the old ~56k.
-- **The Google step is frozen** (`docs/google-step-plan.md`, option C, decision `D-pending-google-step`); its offline
-  build 2a is on `feature/google-tools` (s1.1 adds the email tasks, `--tools google`).
+- **The Google step plan is merged and frozen** (`docs/google-step-plan.md`, option C, PR #105; G3b's power statement
+  corrected in PR #108, rule unchanged; decision `D-pending-google-step`). Its offline build 2a is on
+  `feature/google-tools`, not merged (s1.1 adds the email tasks, `--tools google`). Its before side hasn't started:
+  it waits for 2a's merge and the 16 emails.
 
 **Facts this design rests on** (checked 2026-11-12 on `main` `3b6cb73`, re-checked 2026-11-17 on `abdd6af`):
 - **Tool result limit:** `tools.MAX_RESULT_CHARS = 8_000`, `tools.TOOL_TIMEOUT = 20.0` s (`src/kestrel/tools.py`).
@@ -478,10 +481,11 @@ change an outcome, and a broken task found mid-run is disclosed with the verdict
 | R3b | main suite, non-inferiority (rule C's statistic) | before x1, after x1, per-task pass/fail | `kestrel bench compare` paired 95% lower bound of after - before **above -8 points** |
 | R4 | `rca`, the feature's own result | after only, 30 tasks x1 (no before side: no data tools before) | every threshold of open question 7 met as a point estimate (Clopper-Pearson intervals reported next to each) |
 
-**Power** (the same suite, model, sides and margin as the Google step's G3b, so its numbers carry over;
-`scripts/fresh_side_power.py`, `docs/google-step-plan.md` 4.1): an unchanged agent passes R3b **72.0%** of the time,
-and **28.0%** of runs read "not shown" by chance alone (9.5% land exactly on -8, which fails a strict "above"). The
-claim is "no drop larger than 8 points", not "no drop". R1 and R2 are absolute, so they have no power figure: their
+**Power** (`scripts/fresh_side_power.py --margin 8`, re-run 2026-11-17, both sides fresh x1; the same suite, model, sides and margin as
+the Google step's G3b, so its numbers carry over, as corrected in PR #108): an unchanged agent passes R3b **72.0%** of
+the time, so **"not shown" happens by chance alone 28.0%** of the time. 9.5% of the simulations land exactly on -8,
+which fails a strict "above"; counting a tie as a pass would give 81.5%. Model: Beta(1.44, 0.13) on the main suite's
+measured pass rates, 1,000 sims, inner bootstrap 2,000. The claim is "no drop larger than 8 points", not "no drop". R1 and R2 are absolute, so they have no power figure: their
 intervals are reported.
 
 **Reported, not gated:** model-level attack success (strict); every `escalated_by` entry in the after files with its
@@ -528,7 +532,8 @@ window, each after its own approval line in STATUS on `main`, with `--wait-for-q
 - the separate 5-task pilot: A3's first 5 tasks do its job and count toward R4;
 - a separate schema-overhead calibration run (the Google step's A0): A1 measures `f` before A2 and A3 are approved.
 
-**Estimator:** `kestrel bench run --dry-run --estimate-from <measured file>` on 2026-11-17 (no model calls), with the
+**Estimator:** the corrected one (billable 64-75% of tokens, as in the Google plan's section 6),
+`kestrel bench run --dry-run --estimate-from <measured file>` on 2026-11-17 (no model calls), with the
 closest measured runs of the same model, read only in `..\kestrel-runs\evals\results\`:
 - main suite x1 from `main-after-v1.1.json`: **176,764 billable**, ~297 requests;
 - the 30 old attacks strict x3 from `safety-after-v21-strict-x3.json`: **189,000 billable**, ~246 requests (above that
@@ -563,17 +568,33 @@ closest measured runs of the same model, read only in `..\kestrel-runs\evals\res
 ### 5.4 Queue
 
 **Order (owner, 2026-11-17):** the Google step first, then data.
-- **Offline build now, in parallel with the Google step.** Tools, tests, generator, offline calibration, the `rca`
-  split, the `--tools data` opt-in and the safety task scaffold use no quota and touch no Groq consumer. They go on
-  their own branch (`feature/data-rca`).
+- **The offline build starts once this design merges,** in parallel with the Google step. Tools, tests, generator,
+  offline calibration, the `rca` split, the `--tools data` opt-in and the safety task scaffold use no quota and touch
+  no Groq consumer. They go on their own branch (`feature/data-rca`).
 - **Its runs start only after Google's after side finishes:** one Groq consumer at a time (STATUS "One consumer at a
   time"). B1 does not start while any Google run, or a CI run on Groq, is live.
 - **The build PR** runs the CI subset (~64k), so it is a Groq consumer too: it opens only between Google runs, never
   during one, with its own approval line.
-- **No chaining with Google.** The 11-12 draft proposed sharing before sides. The Google step's after side is the
-  Google opt-in, not the default, so it can't be the data step's before side. Its before side (B4, the default agent
-  x1) is the same agent as B1, but it will be more than a week old by A2; a fresh B1 run right before A1 keeps the two
-  sides days apart, for 176.8k. Each opt-in is measured against the default on its own.
+- **No chaining of after sides.** The 11-12 draft proposed it, but the Google step's after side is the Google opt-in,
+  not the default, so it can't be the data step's before side.
+
+**Could one before side serve both steps?** The Google before side hasn't started (2026-11-17), so it's still possible:
+- **What it would be:** the Google plan's before side as frozen: B4 main suite x1 (176.8k) and B2 the 18 old benign
+  x3 (94.6k), at `google-before`, default agent `8a8174d8f17d`. The data step would name B4 as its R3a/R3b before side
+  instead of running B1. Google's frozen runs don't change at all.
+- **What it would save:** data's B1, **176.8k (~1 Groq day)**. B2 saves nothing: no data gate uses the old benign
+  tasks (a data benign gate would need its own after side, +94.6-189.2k).
+- **What it would cost:**
+  - **Distance:** between B4 and data's A2 come Google's whole after side (634-1,268k, 3.4-6.9 Groq days, plus A0's
+    approval step) and data's A1 (264-453k, 1.4-2.4 days): **at least ~5-9 days of quota**, so A2 almost surely starts
+    more than 7 days after B4.
+  - That brings in the #58 drift control (+67.5k), so the **net saving is ~109k (~0.6 day)**.
+  - The comparison then carries a drift caveat. #58's control left -3 points unresolved, against an 8-point margin
+    that already reads "not shown" 28% of the time by chance.
+  - **Timing:** B4 could serve only if this rule is frozen (this doc merged) before B4 starts, so the choice isn't made
+    after seeing it.
+- **Recommendation: don't share.** Run a fresh B1 right before A1: 109k buys a comparison whose two sides are days
+  apart (open question 15).
 - **Data tasks and Google's split:** the data tasks need `--tools data`, so the Google step's runs never select them.
   If the build merges before Google's after side, nothing in Google's frozen runs changes.
 
@@ -581,9 +602,9 @@ closest measured runs of the same model, read only in `..\kestrel-runs\evals\res
 
 ## 6. Open questions for the owner (each with a recommendation)
 
-1. **Order against Google.** *Settled by the owner 2026-11-17 (5.4):* Google first; data's offline build in parallel,
-   its runs after Google's after side. Kept for the record.
-   - **Recommendation:** start the offline build now; open its PR at a gap between Google runs.
+1. **Order against Google.** *Settled by the owner 2026-11-17 (5.4):* Google first; data's offline build once this
+   design merges, in parallel; its runs after Google's after side. Kept for the record.
+   - **Recommendation:** open the build PR (~64k CI) at a gap between Google runs, never during one.
 2. **The "2 MCP servers" slot is already filled** (`kestrelbench_mcp`, `traces_mcp`, PR #90). Is `kestrel-data` a
    third server, or does it take one of their places in the Phase 5 story?
    - **Recommendation:** a third. It is the only one the agent itself uses, so it is the one with an eval behind it.
@@ -632,6 +653,10 @@ closest measured runs of the same model, read only in `..\kestrel-runs\evals\res
     fingerprint unchanged.
     - **Recommendation:** as requested. Turning it on by default would need the full before/after measurement this plan
       drops, and a default user has no datasets to read.
+15. **One before side for both steps?** (5.4)
+    - **Recommendation:** no. Sharing Google's B4 saves 176.8k but needs the drift control (+67.5k) because A2 would
+      start more than 7 days later: ~109k net, for a drift caveat on R3b. Run a fresh B1 right before A1.
+    - Alternative: share it, which requires this doc to merge before Google's B4 starts.
 
 **Sources checked 2026-11-12** (the 2026-11-17 refresh re-read `docs/STATUS.md`, `docs/google-step-plan.md` and
 `src/kestrel/bench/safety.py` on `abdd6af`, and ran the dry runs in 5.3):

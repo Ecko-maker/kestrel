@@ -669,7 +669,7 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
   - label calibration measured offline on held-out seeds;
   - 5 data-cell injection attacks in the safety split (`s1.2`).
 - **Measurement, option C shape** (section 5, frozen if this merges): safety absolute on the after side (the 29 gated s1.0 attacks 0/29 and the 5 new 0/5, strict x3); main suite x1 / x1 with no card-caused worse flip and a paired lower bound above -8 points; `rca` after only, against pre-registered thresholds. PASS = shipped opt-in; FAIL = unshipped; not shown (main suite only) = opt-in with a known issue. Dry-run estimate ~0.97-1.69M billable including the build PR's CI (~64k).
-- **Queue:** offline build in parallel with the Google step; its Groq runs only after Google's after side (one consumer at a time).
+- **Queue:** offline build once this design merges, in parallel with the Google step; its Groq runs only after Google's after side (one consumer at a time). No shared before side with Google (a fresh main x1 right before the after side; sharing would save ~109k net, with a drift caveat).
 
 **Alternatives:**
 - On by default, measured with full before/after sides (the 11-12 draft, ~1.33-1.98M).
