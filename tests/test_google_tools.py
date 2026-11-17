@@ -136,7 +136,7 @@ def test_the_pinned_schemas_are_the_checked_copy():
     for t in data["tools"]:
         assert "user_google_email" in t["input_schema"]["properties"]
         assert t["annotations"]["read_only_hint"] is True
-    assert google_tools.describe()["schemas"] == "fd03028536bc"
+    assert google_tools.describe()["schemas"] == "ff7049a77adf"
 
 
 # --- user_google_email never reaches the model, a trace, a card or the audit log ---------------------
@@ -337,3 +337,12 @@ def test_google_stubs_are_not_leak_channels_and_their_reads_are_declared():
 
 def test_path_of_the_schemas_file_ships_with_the_package():
     assert google_tools.SCHEMAS_FILE.parent == Path(google_tools.__file__).parent
+
+
+def test_the_schemas_hash_does_not_depend_on_line_endings(tmp_path, monkeypatch):
+    """Git may check the JSON out with CRLF on Windows and LF on Linux CI: the opt-in fingerprint must not differ."""
+    expected = google_tools.schemas_sha()
+    crlf = tmp_path / "schemas.json"
+    crlf.write_bytes(google_tools.SCHEMAS_FILE.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+    monkeypatch.setattr(google_tools, "SCHEMAS_FILE", crlf)
+    assert google_tools.schemas_sha() == expected and google_tools.pinned()

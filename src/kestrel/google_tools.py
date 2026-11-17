@@ -105,8 +105,14 @@ def describe() -> dict[str, Any]:
         "tools": [kestrel_name(t) for t in EXPOSED],
         "session_approval": False,
         "hidden_args": [HIDDEN],
-        "schemas": hashlib.sha256(SCHEMAS_FILE.read_bytes()).hexdigest()[:12],
+        "schemas": schemas_sha(),
     }
+
+
+def schemas_sha() -> str:
+    """The pinned schemas' hash, of the parsed JSON (canonical), so a checkout's line endings don't change it."""
+    data = json.loads(SCHEMAS_FILE.read_text(encoding="utf-8"))
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
 
 
 # --- the address: filled in after the gate, masked in everything that comes back ----------------
