@@ -95,8 +95,9 @@ Missing lines stop Kestrel before anything starts, with a message naming them. I
 - **What stays local:**
   - **Traces** keep tool results unless `KESTREL_TRACE_CONTENT=off`: email text read in a conversation ends up in
     `logs/traces.db` (git-ignored).
-  - **Distillation** never trains on these traces. The planned `google_tool` filter drops any trace with a Google
-    call; it isn't built yet (known issue `KI-pending-google-distill-filter`).
+  - **Distillation** never trains on these traces. `kestrel distill build`'s `google_tool` filter drops any trace
+    that called a Google tool or was tainted by one, and every later trace in that session, even with
+    `KESTREL_TRACE_CONTENT=off` (it reads the spans).
   - **The server's own log** (`logs/mcp-google.log`, git-ignored) contains your address, because workspace-mcp
     logs it. Kestrel can't filter it (known issue `KI-pending-google-server-log`).
   - **Tokens** live in the credentials folder, outside the project, and are never in git.

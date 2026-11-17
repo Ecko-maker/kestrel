@@ -346,3 +346,36 @@ def test_the_schemas_hash_does_not_depend_on_line_endings(tmp_path, monkeypatch)
     crlf.write_bytes(google_tools.SCHEMAS_FILE.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
     monkeypatch.setattr(google_tools, "SCHEMAS_FILE", crlf)
     assert google_tools.schemas_sha() == expected and google_tools.pinned()
+
+
+def test_trace_content_off_works_with_the_google_tools(tmp_path, monkeypatch):
+    """KESTREL_TRACE_CONTENT=off: the tool still runs, the trace keeps no mail text, query or address, and
+    `distill build` still sees from the spans that the trace used Google (google_tool filter)."""
+    from kestrel.distill import dataset as ds
+
+    monkeypatch.setenv("KESTREL_TRACE_CONTENT", "off")
+    server = FakeServer()
+    registry = google_registry(server)
+    call = {"id": "c1", "type": "function", "function": {"name": "google__search_gmail_messages"}}
+    call["function"]["arguments"] = json.dumps({"query": "from:bank statement"})
+    llm = ScriptedLLM(
+        {"role": "assistant", "content": None, "tool_calls": [call]},
+        {"role": "assistant", "content": "One email from the bank."},
+    )
+    tracer = Tracer(tmp_path / "traces.db", prices={})
+    assert tracer.record_content is False
+    gate = ApprovalGate(RecordingApprover(), log_path=tmp_path / "approvals.jsonl")
+    Agent(llm, tools=registry, tracer=tracer, gate=gate).run("any mail from my bank?")
+
+    assert server.calls and server.calls[0][0] == "search_gmail_messages"  # the tool ran
+    with sqlite3.connect(tmp_path / "traces.db") as db:
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        dump = json.dumps([list(db.execute(f"SELECT * FROM {t}")) for t in tables], default=str).lower()
+    for text in ("news@bank.example", "from:bank statement", "one email from the bank", ADDRESS.lower()):
+        assert text not in dump, text
+    conn = ds.open_readonly(tmp_path / "traces.db")
+    try:
+        traces = ds.read_traces(conn)
+    finally:
+        conn.close()
+    assert len(traces) == 1 and traces[0]["google"] is True and not traces[0]["messages"]

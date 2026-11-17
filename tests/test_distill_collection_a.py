@@ -64,7 +64,11 @@ def test_the_build_is_from_this_collection_at_its_commit() -> None:
     assert b["teachers"] == TEACHER and b["git"] == {"commit": COMMIT, "dirty": False}
     assert b["results"] == {c["results_file"]: {"sha256": c["results_sha256"], "source": "distill"}}
     assert b["input_db_sha256"] == c["traces_db_sha256"]
-    assert b["settings"]["filters"] == list(ds.FILTERS)  # today's pipeline, as train.py requires
+    # The pipeline of its build (2026-11-02): today's, minus the filters added since, which could not have matched:
+    # google_tool (2026-11-17) drops traces with Google tool calls, and no Google tool existed then. train.py
+    # requires today's pipeline, so it refuses this manifest until the set is rebuilt (tests/test_distill_export.py).
+    added_since = ("google_tool",)
+    assert b["settings"]["filters"] == [f for f in ds.FILTERS if f not in added_since]
     dropped = b["stats"]["dropped"]
     assert {k: v for k, v in dropped.items() if v} == {"quality": 20, "rubric_task": 22}
     assert (b["stats"]["kept"], b["stats"]["train"], b["stats"]["val"]) == (89, 71, 18)

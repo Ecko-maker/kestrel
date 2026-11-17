@@ -667,7 +667,10 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
   rule, not enforced by the tool.
 - **The address:** `user_google_email` is removed from the schemas, filled in after the gate, and masked in
   every result and error.
-- **Not built:** the `google_tool` distill filter (`KI-pending-google-distill-filter`).
+- **Distillation:** the `google_tool` filter (`src/kestrel/distill/dataset.py`, after `teacher`, no override)
+  drops a trace that called a Google tool or was tainted by one: in its messages, in its spans (so also with
+  `KESTREL_TRACE_CONTENT=off`), or through an earlier trace in its session. It is counted in `manifest.json` and
+  listed in `train_config.toml`. Decision 22's filter list gains it.
 
 ---
 

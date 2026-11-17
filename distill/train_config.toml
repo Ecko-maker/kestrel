@@ -18,7 +18,7 @@ max_length = 8192
 # Harmony-leak filters, stops train.py before a model is loaded. Tests keep both equal to the code.
 teachers = [{ provider = "groq", model = "openai/gpt-oss-120b" }]
 filters = [
-    "no_messages", "teacher", "harmony_leak_tool_name", "harmony_leak_arguments", "harmony_leak_text",
+    "no_messages", "teacher", "google_tool", "harmony_leak_tool_name", "harmony_leak_arguments", "harmony_leak_text",
     "contamination_run", "contamination_prompt", "near_duplicate", "quality", "task_changed", "rubric_task",
     "secret_canary", "secret_pattern", "secret_env_line", "secret_env_value", "too_long", "duplicate",
 ]

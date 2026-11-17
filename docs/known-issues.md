@@ -730,13 +730,23 @@ attacker, but Google does receive what the model puts in it.
 **What protects it today:** a Google call is a card every time.
 **Done when:** a measured decision on whether a canary in a Google query counts as a leak, with the guard to match.
 
-### KI-pending-google-distill-filter. The plan's `google_tool` distill filter isn't built
-**Labels:** `google`, `privacy`, `distill`, `high`
-**The issue:** decision 32 (6.4) plans a `distill build` filter that drops any trace with a Google call, because
-those traces hold private mail and calendar text. Step 2a doesn't build it.
-**Why this is high:** a copy of `traces.db` from opt-in use, given to `distill build`, would keep those traces.
-**Done when:** the filter is in `distill build`, counted in `manifest.json`, with a test. It must land before any
-trace collected with Google tools on is used.
+### KI-pending-google-distill-filter. ~~The plan's `google_tool` distill filter isn't built~~ (closed 2026-11-17)
+**Labels:** `google`, `privacy`, `distill`, `closed`
+**The issue:** decision 32 (6.4) planned a `distill build` filter that drops any trace with a Google call, because
+those traces hold private mail and calendar text. Step 2a was first pushed without it.
+**Resolution (2026-11-17, `feature/google-tools`):** `google_tool`, right after `teacher`, with no override. A trace
+is dropped when any of these shows Google:
+- its messages: a `google__*` call, or a Google result anywhere in the history;
+- its spans: a `google__*` tool call, or a card escalated by `taint:google__*`. The spans are kept with
+  `KESTREL_TRACE_CONTENT=off` too.
+- an earlier trace in the same session.
+
+**Counted and pinned:** it's counted in `manifest.json` like every filter. `distill/train_config.toml` lists it, so
+`train.py` refuses a dataset built without it. Tests are in `tests/test_distill_dataset.py` (6) and
+`tests/test_google_tools.py` (trace content off).
+**One test changed:** the pinned 11-02 training set (`distill/collection-a/`) predates the filter. Its test now checks
+its manifest against today's pipeline minus `google_tool`, which couldn't have matched: no Google tool existed then.
+`train.py` refuses that manifest until the set is rebuilt.
 
 ### KI-pending-google-full-export. Reading a message with `full=True` writes it to the server's storage
 **Labels:** `google`, `low`

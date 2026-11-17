@@ -58,14 +58,16 @@ class TraceDB:
         stop_reason: str = "answered",
         session: str | None = None,
         approvals: tuple[str, ...] = (),
+        spans: tuple[tuple[str, dict[str, Any]], ...] = (),
     ) -> str:
         self.n += 1
         trace_id = f"t{self.n:04d}"
         start = 1_790_000_000.0 + self.n
         steps = [TEACHER] if steps is None else steps
         user = next((m["content"] for m in reversed(messages or []) if m["role"] == "user"), None)
+        extra = spans
         spans = [("llm_call", {"gen_ai.provider.name": p, "gen_ai.request.model": m}) for p, m in steps]
-        spans += [("approval", {"kestrel.approval.decision": d}) for d in approvals]
+        spans = [*spans, *(("approval", {"kestrel.approval.decision": d}) for d in approvals), *extra]
         conn = sqlite3.connect(self.path)
         try:
             with conn:
@@ -466,3 +468,89 @@ def test_the_database_is_opened_read_only(db: TraceDB) -> None:
             conn.execute("DELETE FROM traces")
     finally:
         conn.close()
+
+
+# --- Google tools (docs/google.md): mail and calendar text never becomes training data ---------------
+
+
+def google_convo(question: str, answer: str) -> list[dict]:
+    """A turn that read the user's mail, in the stored message format."""
+    return [
+        {"role": "system", "content": "You are Kestrel."},
+        {"role": "user", "content": question},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "google__search_gmail_messages", "arguments": '{"query": "from:bank"}'},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "c1",
+            "content": '<untrusted_data source="google__search_gmail_messages">'
+            "1 message from the bank</untrusted_data>",
+        },
+        {"role": "assistant", "content": answer},
+    ]
+
+
+def test_a_trace_with_a_google_call_is_dropped(db: TraceDB) -> None:
+    db.add(google_convo("Any mail from my bank?", "One, about your statement."))
+    only_drop(build(db), "google_tool")
+
+
+def test_a_google_result_in_the_history_alone_drops_the_trace(db: TraceDB) -> None:
+    messages = [m for m in google_convo("Any mail from my bank?", "One.") if not m.get("tool_calls")]
+    db.add([*messages, {"role": "user", "content": "Thanks, and what's 2 + 2?"}, {"role": "assistant", "content": "4"}])
+    only_drop(build(db), "google_tool")
+
+
+def test_google_calls_are_found_in_the_spans_without_the_messages(db: TraceDB) -> None:
+    """The spans say a Google tool ran even when the stored conversation doesn't show it."""
+    span = ("tool_call", {"gen_ai.tool.name": "google__get_events", "kestrel.tool.server": "google"})
+    db.add(convo("What's in a.txt?", "It says hello."), spans=(span,))
+    only_drop(build(db), "google_tool")
+
+
+def test_a_card_tainted_by_a_google_read_drops_the_trace(db: TraceDB) -> None:
+    span = (
+        "approval",
+        {
+            "kestrel.approval.decision": "approved",
+            "kestrel.approval.escalated_by": ["taint:google__get_gmail_message_content"],
+        },
+    )
+    db.add(convo("What's in a.txt?", "It says hello."), spans=(span,))
+    only_drop(build(db), "google_tool")
+
+
+def test_every_later_trace_in_a_google_session_is_dropped_and_earlier_ones_kept(db: TraceDB) -> None:
+    before = db.add(convo("What's in a.txt?", "It says hello."), session="s1")
+    db.add(google_convo("Any mail from my bank?", "One."), session="s1")
+    db.add(convo("And what's in b.txt?", "Nothing much.", args='{"path": "b.txt"}'), session="s1")
+    other = db.add(convo("What's in c.txt?", "A list.", args='{"path": "c.txt"}'), session="s2")
+    d = build(db)
+    only_drop(d, "google_tool", 2)
+    assert kept(d) == {before, other}
+
+
+def test_with_trace_content_off_a_google_trace_still_taints_its_session(db: TraceDB) -> None:
+    """KESTREL_TRACE_CONTENT=off stores no messages (dropped as no_messages), but the spans still mark the
+    session, so a later trace stored with content is dropped as google_tool."""
+    span = ("tool_call", {"gen_ai.tool.name": "google__search_gmail_messages"})
+    db.add(None, spans=(span,), session="s1")
+    db.add(convo("What's in a.txt?", "It says hello."), session="s1")
+    d = build(db)
+    assert {k: v for k, v in d.dropped.items() if v} == {"no_messages": 1, "google_tool": 1}
+
+
+def test_the_filter_report_counts_google_tool(db: TraceDB) -> None:
+    db.add(google_convo("Any mail from my bank?", "One."))
+    report = ds.stats(build(db))["dropped"]
+    assert report["google_tool"] == 1 and list(report) == list(ds.FILTERS)
+    assert ds.FILTERS.index("google_tool") == ds.FILTERS.index("teacher") + 1

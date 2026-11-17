@@ -369,6 +369,12 @@ The before side runs after 2a merges and the 16 tasks are written (section 5).
 **When:** after step 2a merges and your 16 tasks are written and committed (decided 2026-11-17).
 
 **Where and how:**
+- **Before the tag (named amendment, owner 2026-11-17; the rule is unchanged):**
+  - `uv run kestrel bench validate --split safety` must report **0 TODO**: all 16 email tasks written and
+    validated.
+  - Only then is **`google-before`** created.
+  - Why it's written here: a real-model run refuses only for markers in the tasks it selects (2a). A run without
+    `--tools google` would not stop on unwritten emails, so this check enforces plan section 3's deadline.
 - At the tag **`google-before`** on `main` at that time. 2a pins the default agent `8a8174d8f17d`, so it's the same
   agent as today.
 - Run only in `..\kestrel-runs` (`.\scripts\runs_folder.ps1 google-before`), from a standalone PowerShell window,
