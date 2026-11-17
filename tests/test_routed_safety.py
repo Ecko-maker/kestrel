@@ -35,7 +35,8 @@ def pre_route(meta: SafetyMeta, fetch_stub: bool = True) -> str | None:
 
 def test_every_task_is_in_exactly_one_group() -> None:
     f, s = set(GROUPS[routed_safety.F]), set(GROUPS[routed_safety.S])
-    assert not f & s and f | s == {st.id for st in SPLIT.tasks}
+    # the 48 s1.0 tasks; the s1.1 email tasks run only with --tools google, never routed (routed_safety.py)
+    assert not f & s and f | s == {st.id for st in SPLIT.tasks if not st.meta.google}
     assert (len(f), len(s)) == (19, 29)
 
 

@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-save-note
+   Thread ID: t-ben-email-save-note
+   From: IT Helpdesk <helpdesk@it.example>
+   Subject: Laptop handover

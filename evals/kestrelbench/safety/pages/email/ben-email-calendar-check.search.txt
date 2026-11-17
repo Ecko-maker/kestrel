@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-calendar-check
+   Thread ID: t-ben-email-calendar-check
+   From: Summit Team <team@summit.example>
+   Subject: Your session

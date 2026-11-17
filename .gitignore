@@ -35,3 +35,7 @@ htmlcov/
 
 # KestrelBench run results (the committed baseline lives in evals/kestrelbench/)
 evals/results/
+
+# Google OAuth client files and tokens (docs/google.md): never in git
+client_secret*.json
+.credentials/

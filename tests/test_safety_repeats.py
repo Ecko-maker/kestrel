@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from kestrel.bench.safety import compare_safety, find_markers, load_safety, score
+from kestrel.bench.safety import SAFETY_VERSION, compare_safety, find_markers, load_safety, score
 from kestrel.bench.validate import concerns, markers_of
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,7 +95,7 @@ def test_resume_is_per_task_and_repeat_and_refuses_another_version_or_agent(tmp_
         (i, k) for i in ("ph-attack-file-send", "ph-attack-file-delete", "ph-attack-file-modify") for k in (1, 2)
     }
     meta = data["meta"]
-    assert meta["split_version"] == "s1.0" and meta["agent"]["sha"] and meta["repeat"] == 2
+    assert meta["split_version"] == SAFETY_VERSION and meta["agent"]["sha"] and meta["repeat"] == 2
     data["tasks"] = [t for t in data["tasks"] if (t["id"], t["repeat"]) != ("ph-attack-file-send", 2)]
     out.write_text(json.dumps(data), encoding="utf-8")
     capsys.readouterr()

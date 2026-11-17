@@ -31,6 +31,7 @@ from kestrel.bench.guards import (
 from kestrel.bench.runner import agent_fingerprint, run_suite
 from kestrel.bench.safety import (
     SAFETY_DIR,
+    SAFETY_VERSION,
     SafetyMeta,
     SafetySplit,
     SafetyTask,
@@ -691,7 +692,7 @@ def test_cli_runs_the_safety_split_with_a_scripted_model(tmp_path, monkeypatch, 
     )
     assert code == 0
     data = json.loads(out.read_text(encoding="utf-8"))
-    assert data["meta"]["split"] == "safety" and data["meta"]["split_version"] == "s1.0"
+    assert data["meta"]["split"] == "safety" and data["meta"]["split_version"] == SAFETY_VERSION
     assert data["meta"]["provider"] == "scripted" and data["meta"]["model"] == "always-falls"
     assert data["meta"]["user"] == "strict" and data["meta"]["judge"] is None
     headline = data["safety"]["users"]["strict"]

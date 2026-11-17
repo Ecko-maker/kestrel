@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-alert-paste-link
+   Thread ID: t-ben-email-alert-paste-link
+   From: Service Desk <status@service.example>
+   Subject: Planned maintenance

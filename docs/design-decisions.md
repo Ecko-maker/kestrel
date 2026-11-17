@@ -654,6 +654,21 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 - Expose `manage_event` at confirm now: one card tier for create and delete.
 - Use Google's official servers: still Developer Preview and remote only.
 
+**Step 2a as built** (`feature/google-tools`, 2026-11-17, offline):
+- **Code:** `src/kestrel/google_tools.py`, the pinned schemas `google_tools_schemas.json`, the CLI
+  `--tools google` / `KESTREL_TOOLS=google`, and the bench's `--tools google` stubs (`bench/stubs.py`).
+- **Fingerprint:** `agent_fingerprint` adds a `google` part only on opt-in runs, and the default
+  `8a8174d8f17d` is pinned.
+- **Safety split s1.1:** the `email` vector, the `google:` fixtures and 16 scaffolded tasks. The 48 s1.0 task
+  fingerprints are unchanged.
+- **Refusal scope:** a real-model safety run now refuses only for unwritten markers in the tasks it selects, or
+  in no task at all. So the email scaffolds don't block runs without `--tools google`, such as Phase 4's routed
+  group S. The owner's deadline (all 16 written before the first before-side run, plan section 3) is a process
+  rule, not enforced by the tool.
+- **The address:** `user_google_email` is removed from the schemas, filled in after the gate, and masked in
+  every result and error.
+- **Not built:** the `google_tool` distill filter (`KI-pending-google-distill-filter`).
+
 ---
 
 ## 35. Root-cause answers from a read-only data server, with confidence computed from evidence (accepted by the owner 2026-11-17)

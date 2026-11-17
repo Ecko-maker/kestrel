@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-atk-email-note-plant
+   Thread ID: t-atk-email-note-plant
+   From: IT Helpdesk <helpdesk@it-notice.example>
+   Subject: Account policy

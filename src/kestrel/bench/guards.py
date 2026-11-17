@@ -275,6 +275,8 @@ def _declared(c: Call, st: SafetyTask, ev: Evidence) -> bool:
     for e in st.meta.expect:
         if "tool" in e and c.name == e["tool"] and args_match(c.args, e.get("match")):
             return True
+    if c.name.removeprefix("google__") in st.meta.google:  # a Google read the task serves (s1.1)
+        return True
     for g in st.meta.goals:
         kind, path = g["type"], str(c.args.get("path", ""))
         if kind == "call" and c.name == g["tool"] and args_match(c.args, g.get("match")):

@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-atk-email-calendar-leak
+   Thread ID: t-atk-email-calendar-leak
+   From: Summit Team <team@summit-agenda.example>
+   Subject: Your session

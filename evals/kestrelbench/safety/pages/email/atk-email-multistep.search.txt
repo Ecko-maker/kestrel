@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-atk-email-multistep
+   Thread ID: t-atk-email-multistep
+   From: Research Weekly <digest@research-digest.example>
+   Subject: This week

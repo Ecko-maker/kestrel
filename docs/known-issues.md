@@ -705,6 +705,59 @@ Only `/remind` creates a reminder (owner decision 2026-11-13). A plain message s
 
 ---
 
+### KI-pending-google-testing-consent. Google may ask you to consent again every 7 days
+**Labels:** `google`, `low`
+**The issue:** the OAuth app stays in **Testing**, with you as the only test user (owner decision 2026-11-17). From
+general knowledge of Google's rules, *unverified*: refresh tokens of an External app in Testing expire after 7 days,
+so the browser consent comes back weekly.
+**Why not Production:** publishing with Gmail's restricted read scope needs Google's verification for anyone but
+you.
+**Done when:** the first weeks of real use show whether tokens expire, and the docs say what was seen.
+
+### KI-pending-google-server-log. The Google server's log contains your address
+**Labels:** `google`, `privacy`, `low`
+**The issue:** workspace-mcp logs `user_google_email` on every call. Its stderr goes to `logs/mcp-google.log`
+(git-ignored, local only).
+**Why Kestrel can't filter it:** the server writes to that file through its process handle.
+**What is covered:** the model, traces, cards and the audit log never see the address (`tests/test_google_tools.py`).
+**Done when:** the server can be told not to log it, or Kestrel filters the stream before writing it.
+
+### KI-pending-google-leak-channels. Google calls are not counted as ways out
+**Labels:** `google`, `evals`, `medium`
+**The issue:** the safety guards count a canary leak through `web_search`, `fetch__fetch`, `send_message` and
+network MCP stubs, but not through the Google tools. A Gmail query goes to your own Google account, not to an
+attacker, but Google does receive what the model puts in it.
+**What protects it today:** a Google call is a card every time.
+**Done when:** a measured decision on whether a canary in a Google query counts as a leak, with the guard to match.
+
+### KI-pending-google-distill-filter. The plan's `google_tool` distill filter isn't built
+**Labels:** `google`, `privacy`, `distill`, `high`
+**The issue:** decision 32 (6.4) plans a `distill build` filter that drops any trace with a Google call, because
+those traces hold private mail and calendar text. Step 2a doesn't build it.
+**Why this is high:** a copy of `traces.db` from opt-in use, given to `distill build`, would keep those traces.
+**Done when:** the filter is in `distill build`, counted in `manifest.json`, with a test. It must land before any
+trace collected with Google tools on is used.
+
+### KI-pending-google-full-export. Reading a message with `full=True` writes it to the server's storage
+**Labels:** `google`, `low`
+**The issue:** `get_gmail_message_content(full=True)` makes workspace-mcp export the whole message to its own
+storage folder and return a local path (stdio transport) instead of the text.
+**Why it's low:** it's still read only for Google, outside Kestrel's workspace, and the call is a card. The file
+path ends up in the conversation.
+**Done when:** `full` is hidden from the model like `user_google_email`, or its storage folder is documented and
+checked.
+
+### KI-pending-google-stub-fidelity. The bench's Google stubs answer one fixture per tool
+**Labels:** `google`, `evals`, `low`
+**The issue:**
+- A stub returns its task's fixture whatever the query or message ID. A model that searches twice, or opens another
+  ID, gets the same text.
+- The `--dry-run` estimate for `--tools google` doesn't include the 3 extra schemas: about 2,100 prompt tokens per
+  request, measured offline from the pinned schemas as characters / 4. Billable overhead depends on Groq's cache.
+  The plan's A0 run measures it.
+
+**Done when:** fixtures can be keyed by arguments if a task needs it, and the estimator counts schema tokens.
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
