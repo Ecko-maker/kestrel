@@ -618,7 +618,7 @@ Two more points:
 - **`/cancel` uses the reminder's own number** (`#14`), not a position in the last listing, so a reminder that fires between `/reminders` and `/cancel` can't shift which one is cancelled.
 - **Buttons** are honoured only on the message that carries the reminder's buttons now: after a Snooze, the old message's buttons do nothing.
 
-## D-pending-google-step. Google step: Gmail and Calendar read only, `workspace-mcp` 2.3.0, opt-in, a decision rule frozen before any run (owner decisions 2026-11-17, option C)
+## 34. Google step: Gmail and Calendar read only, `workspace-mcp` 2.3.0, opt-in, a decision rule frozen before any run (owner decisions 2026-11-17, option C)
 
 **Decision** (`docs/google-step-plan.md`, frozen by its merge to `main`):
 - **Scope:** Gmail read and Calendar read only, with read-only OAuth scopes (`gmail.readonly`, `calendar.readonly`
@@ -656,7 +656,7 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 
 ---
 
-## D-pending-data-rca. Root-cause answers from a read-only data server, with confidence computed from evidence (accepted by the owner 2026-11-17)
+## 35. Root-cause answers from a read-only data server, with confidence computed from evidence (accepted by the owner 2026-11-17)
 
 **Owner decisions (2026-11-17, `docs/data-rca-design.md` section 6):** all 15 recommendations accepted, including R5 (the 5 data twins x3: no twin fails all 3 runs because of a card, +~75k), 30 `rca` tasks with the first 5 as the cost check, and a fresh main-suite before side right before the safety after side (no shared before side with Google). Changed: every gated `rca` threshold is decided by deterministic checks against each dataset's planted ground truth (`truth.json`) and the run's tool results; the judge grades explanation quality only, reported and never gated; every `rca` and safety rate is reported with its Clopper-Pearson 95% interval next to its point threshold, which stays the pass bar. Rule frozen by the merge. Queued after the Google step's after side; no approval lines yet.
 

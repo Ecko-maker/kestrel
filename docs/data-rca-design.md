@@ -3,7 +3,7 @@
 **Status:** **accepted by the owner 2026-11-17** (all 15 recommendations of section 6, with the change to question 7:
 deterministic gates). Section 5.2's rule is **frozen by this doc's merge to `main`**. Design written 2026-11-12,
 refreshed 2026-11-17 on `main` `abdd6af`. No code, no model calls, no Groq quota; **no approval lines yet**. Decision:
-`D-pending-data-rca` (`docs/design-decisions.md`).
+**35** (`docs/design-decisions.md`, was `D-pending-data-rca`).
 
 **Goal:** Kestrel answers "why did sales drop?" with hypotheses, the evidence for each, and a confidence level that is
 computed from the evidence. The model never states the confidence itself. The tools come from a new MCP server,
@@ -36,7 +36,7 @@ computed from the evidence. The model never states the confidence itself. The to
   plan.
 - **An agent-affecting PR costs ~64k** billable in CI (PR run + merge run): #103 measured 63,624, above the old ~56k.
 - **The Google step plan is merged and frozen** (`docs/google-step-plan.md`, option C, PR #105; G3b's power statement
-  corrected in PR #108, rule unchanged; decision `D-pending-google-step`). Its offline build 2a is on
+  corrected in PR #108, rule unchanged; decision 34). Its offline build 2a is on
   `feature/google-tools`, not merged (s1.1 adds the email tasks, `--tools google`). Its before side hasn't started:
   it waits for 2a's merge and the 16 emails.
 
