@@ -27,7 +27,8 @@ Fingerprint unchanged (`8a8174d8f17d`); owner's phone test 9/9.
 **Open:**
 - **Notifications stages 2-3** (calendar alerts, email triage) come with the Google step; their measurement budget
   needs its own approval line.
-- **PR #94,** the kestrel-data RCA design (docs only): still open, built after Phase 4.
+- **kestrel-data RCA design accepted** (PR #94, 2026-11-17; owner decision 8): opt-in, queued after the Google
+  step's after side; offline build next, no approval lines yet.
 - **Fork-PR approval** (checklist 6.3): the repo setting is `first_time_contributors`, not "all outside
   collaborators"; reported 11-13, not changed (owner's call).
 - **Merged branches not yet deleted:** 16 on `origin` (Branches, below).
@@ -270,7 +271,7 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 | Branch | Holds | Next |
 |---|---|---|
 | `main` | everything merged, up to PR #103 (`b05d4ac`; tag `v1.0.0` on `c8b72e5`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
-| `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; adds `D-pending-data-rca`, decision 34 if it merges next) | owner's decisions; built after Phase 4 |
+| `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; `D-pending-data-rca`, accepted 2026-11-17) | merged by squash 2026-11-17; delete with the owner's OK |
 | merged, not deleted (16): `release/v1.0` (#98, squash), `docs/readme-architecture` (#99, squash), `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
 
 **Archived as tags, branches deleted (2026-11-08, owner's OK).** Each tag sits at the branch's last commit:
@@ -351,7 +352,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 5. ~~**Teacher decision (#72, Groq §6.3(e))**~~: decided 2026-11-01, **option a** (Groq's written confirmation, 10-31), design decision 29 on `phase4/kaggle-teacher`. The student weights are not published.
 6. Also waiting: labels for #21; tiers-v2 §6 questions 4–8. (`docs/phase4-plan.md` open question 13 is answered by section 8, 2026-10-30.)
 7. ~~**Telegram and Google tools order**~~: decided 2026-11-11 (`docs/telegram-google-design.md`, "Owner decisions"): the Telegram channel → Phase 4 teacher data and measurements → Google tools. **Telegram done** (PR #96, 2026-11-12); the Phase 4 step is settled by decision 9. Google's measurement budget is **not approved**: it gets a fresh `--dry-run` estimate and its own approval line.
-8. **kestrel-data root-cause-analysis server:** design in PR #94 (docs only, open; `D-pending-data-rca`). Built after Phase 4, like Google.
+8. ~~**kestrel-data root-cause-analysis server**~~: **data-rca design accepted 2026-11-17** (PR #94, `docs/data-rca-design.md`, `D-pending-data-rca`): **opt-in** (`--tools data` / `KESTREL_TOOLS=data`, off by default; the default agent `8a8174d8f17d` doesn't change). All 15 recommendations accepted, with R5 (benign twins x3), 30 `rca` tasks (the first 5 as the cost check) and a fresh main x1 before side right before the after side. Gated `rca` thresholds are deterministic checks against planted ground truth; the judge is reported only; every rate is reported with its Clopper-Pearson interval, and the point threshold is the bar. Rule frozen in section 5.2. **Queued after the Google step's after side** (one Groq consumer at a time); the offline build may start now. Estimate ~1.04-1.77M billable. **No approval lines yet; each run gets its own.**
 9. ~~**Phase 4 done or retrain**~~: decided 2026-11-12: **Phase 4 declared done** (the gate passed 11-09 with section 9; no retrain). "Retrain with memory" stays the planned follow-up once memory is built and measured.
 10. ~~**Google step plan**~~: decided 2026-11-17, **option C (lean + opt-in)**: Gmail and Calendar read only, `workspace-mcp` 2.3.0, opt-in and off by default (the default agent `8a8174d8f17d` doesn't change); main suite x1 / x1 at an 8-point margin; benign x3; G1 0/29 and G2 0/8 strict. Rule frozen in `docs/google-step-plan.md` (`D-pending-google-step`). The 60-150 MB download is approved. **No approval lines yet; each run gets its own.**
 
