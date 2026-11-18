@@ -1,0 +1,55 @@
+{
+  "cutoffs": {
+    "high_consistency": 0.75,
+    "high_share": 0.5,
+    "high_z": 3.0,
+    "medium_consistency": 0.5,
+    "medium_share": 0.25,
+    "medium_z": 2.0,
+    "z_total": 2.0
+  },
+  "frozen": "2026-11-17",
+  "seeds": [
+    10001,
+    11000
+  ],
+  "split": "held-out",
+  "targets": {
+    "high": {
+      "ci_high": 0.9999482858936342,
+      "ci_low": 0.9984584416174882,
+      "k": 4682,
+      "met": true,
+      "n": 4684,
+      "rate": 0.9995730145175064,
+      "target": "high >= 0.90"
+    },
+    "low": {
+      "ci_high": 0.030253626181605264,
+      "ci_low": 0.02773329492229916,
+      "k": 1995,
+      "met": true,
+      "n": 68856,
+      "rate": 0.028973509933774833,
+      "target": "low < 0.50"
+    },
+    "medium": {
+      "ci_high": 0.815591346018468,
+      "ci_low": 0.7333100175850227,
+      "k": 323,
+      "met": true,
+      "n": 416,
+      "rate": 0.7764423076923077,
+      "target": "0.50 <= medium <= 0.90"
+    },
+    "no_change_any": {
+      "ci_high": 0.0366848230519229,
+      "ci_low": 0.016242535696869523,
+      "k": 25,
+      "met": true,
+      "n": 1000,
+      "rate": 0.025,
+      "target": "no-change any <= 0.05"
+    }
+  }
+}
