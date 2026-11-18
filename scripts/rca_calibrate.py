@@ -26,9 +26,14 @@ OUT = Path(__file__).resolve().parents[1] / "evals" / "kestrelbench" / "rca" / "
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["tune", "report"])
+    parser.add_argument("command", choices=["tune", "report", "render"])
     parser.add_argument("--seeds", type=int, help="use only the first N seeds of the split (a quick look; not saved)")
     args = parser.parse_args()
+    if args.command == "render":  # rebuild heldout.md from heldout.json, no recomputation
+        text = render(json.loads((OUT / "heldout.json").read_text(encoding="utf-8")))
+        (OUT / "heldout.md").write_text(text, encoding="utf-8")
+        print(text)
+        return 0
     split = "dev" if args.command == "tune" else "held-out"
     seeds = list(cal.seeds_for(split))
     if args.seeds:
@@ -51,49 +56,67 @@ def main() -> int:
     if an.CUTOFFS == an.START and not (OUT / "tuning.json").is_file():
         sys.exit("Tune first: the held-out report uses the frozen cut-offs.")
     t = cal.targets(rows, an.CUTOFFS)
-    lines = [
-        f"# rca calibration, held-out seeds {seeds[0]}-{seeds[-1]} per scenario (frozen {an.FROZEN})",
-        "",
-        f"Cut-offs: `{asdict(an.CUTOFFS)}`",
-        "",
-        "| Target | k / n | Rate | 95% CI (Clopper-Pearson) | Met |",
-        "|---|---|---|---|---|",
-    ]
     met = cal.met(t)
-    names = {
-        "high": "high >= 0.90",
-        "medium": "0.50 <= medium <= 0.90",
-        "low": "low < 0.50",
-        "no_change_any": "no-change any <= 0.05",
+    report: dict = {
+        "split": split,
+        "seeds": [seeds[0], seeds[-1]],
+        "cutoffs": asdict(an.CUTOFFS),
+        "frozen": an.FROZEN,
+        "targets": {},
     }
-    report = {"split": split, "seeds": [seeds[0], seeds[-1]], "cutoffs": asdict(an.CUTOFFS), "targets": {}}
-    for key, label in names.items():
+    for key, target in TARGETS.items():
         k, n = t[key]["k"], t[key]["n"]
         low, high = cal.clopper_pearson(k, n)
-        rate = k / n if n else None
         report["targets"][key] = {
             "k": k,
             "n": n,
-            "rate": rate,
+            "rate": k / n if n else None,
             "ci_low": low,
             "ci_high": high,
-            "target": label,
-            "met": met[label],
+            "target": target,
+            "met": met[target],
         }
-        shown = "n/a" if rate is None else f"{rate:.1%}"
-        lines.append(
-            f"| P(planted cause | {key}) {label} | {k} / {n} | {shown} | {low:.1%}-{high:.1%} | "
-            f"{'yes' if met[label] else 'no'} |"
-            if key != "no_change_any"
-            else f"| P(any high or medium | no-change) {label.split()[-2:]} | {k} / {n} | {shown} | "
-            f"{low:.1%}-{high:.1%} | {'yes' if met[label] else 'no'} |"
-        )
-    text = "\n".join(lines) + "\n"
+    text = render(report)
     print(text)
     if not args.seeds:
         (OUT / "heldout.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         (OUT / "heldout.md").write_text(text, encoding="utf-8")
     return 0
+
+
+TARGETS = {
+    "high": "high >= 0.90",
+    "medium": "0.50 <= medium <= 0.90",
+    "low": "low < 0.50",
+    "no_change_any": "no-change any <= 0.05",
+}
+MEASURE = {
+    "high": ("share of candidates labelled high that are the planted cause", ">= 90%"),
+    "medium": ("share of candidates labelled medium that are the planted cause", "50% to 90%"),
+    "low": ("share of candidates labelled low that are the planted cause", "< 50%"),
+    "no_change_any": ("share of no-change datasets with any candidate above low", "<= 5%"),
+}
+
+
+def render(report: dict) -> str:
+    """The held-out page from its JSON (`render` rebuilds it without recomputing)."""
+    lines = [
+        f"# rca calibration: held-out seeds {report['seeds'][0]}-{report['seeds'][1]} per scenario",
+        "",
+        f"Cut-offs frozen {report.get('frozen', an.FROZEN)} from the dev seeds (`tuning.json`), unchanged here: "
+        f"`{report['cutoffs']}`. Read once; a missed target is reported, not re-tuned.",
+        "",
+        "| Measure | Target | k / n | Rate | 95% CI (Clopper-Pearson) | Met |",
+        "|---|---|---|---|---|---|",
+    ]
+    for key, (measure, target) in MEASURE.items():
+        v = report["targets"][key]
+        rate = "n/a" if v["rate"] is None else f"{v['rate']:.1%}"
+        lines.append(
+            f"| {measure} | {target} | {v['k']:,} / {v['n']:,} | {rate} | "
+            f"{v['ci_low']:.1%}-{v['ci_high']:.1%} | {'yes' if v['met'] else 'no'} |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

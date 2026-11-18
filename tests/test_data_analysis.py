@@ -121,6 +121,13 @@ def test_cutoffs_are_frozen_from_the_dev_tuning() -> None:
     assert an.FROZEN
 
 
+def test_the_held_out_report_used_the_frozen_cutoffs() -> None:
+    held = json.loads((TUNING.parent / "heldout.json").read_text(encoding="utf-8"))
+    assert held["split"] == "held-out" and held["seeds"] == [cal.HELD_OUT[0], cal.HELD_OUT[-1]]
+    assert held["cutoffs"] == asdict(an.CUTOFFS) and held["frozen"] == an.FROZEN
+    assert set(held["targets"]) == {"high", "medium", "low", "no_change_any"}
+
+
 def test_tuning_never_reads_held_out_seeds() -> None:
     assert not set(cal.DEV) & set(cal.HELD_OUT)
     assert max(cal.HELD_OUT) < cal.TASK_START
