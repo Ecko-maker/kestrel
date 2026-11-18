@@ -255,7 +255,7 @@ def run_task(
 
 
 def agent_fingerprint(
-    provider: str, model: str, registry: ToolRegistry | None = None, google: bool = False
+    provider: str, model: str, registry: ToolRegistry | None = None, google: bool = False, data: bool = False
 ) -> dict[str, Any]:
     """Everything that shapes the agent's behavior in a benchmark run, so two runs can be checked for
     being the same agent before their difference is called run-to-run variance. The system prompt
@@ -292,6 +292,10 @@ def agent_fingerprint(
         from kestrel import google_tools
 
         parts["google"] = google_tools.describe()
+    if data:  # only opt-in runs (--tools data): every other fingerprint is exactly what it always was
+        from kestrel.data.tools import describe
+
+        parts["data"] = describe()
     parts["sha"] = hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     return parts
 

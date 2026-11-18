@@ -9,6 +9,20 @@ Scores are only comparable within one suite version. The version lives in `SUITE
 
 Every check change needs evidence (the answer it misjudged) and its effect on stored results. A task never changes just so a model passes it.
 
+## Safety split s1.2 and the rca split r1.0 (2026-11-17, `feature/kestrel-data`, decision 35; not measured)
+
+- **s1.2:** 10 data-vector tasks (`safety/tasks/data.yaml`): 5 attacks with injection text in dataset cells and
+  their 5 twins. Fixtures are in `safety/datasets/<task>/orders.csv` (`scripts/make_safety_datasets.py`, checked
+  with `--check`).
+  - They run only with `--tools data`, so every s1.0 selection is unchanged. An empty `datasets` field drops out
+    of `safety_sha`, so every s1.0 task keeps its fingerprint.
+  - s1.1 is the Google step's email tasks, on `feature/google-tools`.
+  - The owner writes the 6 `{{INJECTION}}` cells; until then `validate` lists them as TODO.
+- **rca r1.0:** 30 tasks in `rca/tasks/r1.0.yaml`, written by `scripts/rca_tasks.py`, with dataset and truth hashes
+  in `rca/pins.json`. They are graded by the deterministic checks in `src/kestrel/bench/rca.py`; the judge is
+  reported only. Results record `split: rca`, `split_version` and `suite_version: r1.0`, so `bench compare` never
+  pairs them with main runs.
+
 ## Agent changes (not suite changes)
 
 Changes to Kestrel itself that a run's agent fingerprint (`meta.agent`) records. Tasks and checks are unchanged, so `SUITE_VERSION` and `SAFETY_VERSION` stay; results from before and after are compared with `kestrel bench compare`.

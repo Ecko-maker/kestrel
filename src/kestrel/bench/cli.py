@@ -16,12 +16,14 @@ from typing import Any
 from kestrel.answer_policy import AnswerPolicy
 from kestrel.bench import calibrate as cal
 from kestrel.bench import cost as cost_report
-from kestrel.bench import routed_safety
+from kestrel.bench import rca, routed_safety
 from kestrel.bench.guards import make_grader
 from kestrel.bench.judge import JUDGE_VERSION, Judge, build_request
 from kestrel.bench.lock import LockError, results_lock, unlock
 from kestrel.bench.preview import preview
 from kestrel.bench.quota import QuotaWait
+from kestrel.bench.rca_scripted import MODELS as RCA_MODELS
+from kestrel.bench.rca_scripted import ScriptedAnalyst
 from kestrel.bench.report import markdown, pct, routing_lines, summarize, write_results
 from kestrel.bench.runner import ROUTER_STOP, TaskResult, agent_fingerprint, billable_tokens, run_suite
 from kestrel.bench.safety import (
@@ -87,7 +89,7 @@ GROQ_FREE_DAILY = {"tokens": 200_000, "requests": 1_000}  # gpt-oss-120b free ti
 DONE = ("pass", "fail", "excluded")  # results a resumed run keeps
 WAITING = "not run yet (checkpoint; --resume continues)"
 SPLITS = ("main", "safety")  # what `validate` checks
-RUN_SPLITS = (*SPLITS, "distill")  # what `run` runs
+RUN_SPLITS = (*SPLITS, "distill", "rca")  # what `run` runs
 REUSABLE = ("pass", "fail")
 
 
@@ -113,8 +115,9 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         "--split",
         choices=RUN_SPLITS,
         default="main",
-        help="main (the 100 v1.1 tasks), safety (attacks + benign) or distill (the Phase 4 training task set in "
-        "distill/, not KestrelBench; traces go to logs/distill.db)",
+        help="main (the 100 v1.1 tasks), safety (attacks + benign), distill (the Phase 4 training task set in "
+        "distill/, not KestrelBench; traces go to logs/distill.db) or rca (root-cause questions over generated "
+        "datasets; needs --tools data)",
     )
     run.add_argument(
         "--split-dir",
@@ -124,8 +127,9 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     )
     run.add_argument(
         "--scripted",
-        choices=MODELS,
-        help="safety split: a scripted fake model instead of a provider, to validate the checks (no model calls)",
+        choices=[*MODELS, *RCA_MODELS],
+        help="safety split (always-falls, ...) or rca split (right-analyst, ...): a scripted fake model instead of a "
+        "provider, to validate the checks (no model calls)",
     )
     run.add_argument(
         "--user",
@@ -150,10 +154,12 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     run.add_argument(
         "--tools",
         nargs="+",
-        choices=["google"],
+        choices=["google", "data"],
         default=[],
-        help="opt-in tool sets as bench stubs: google = the 3 Google tools (pinned schemas, fixtures only, never "
-        "real Google; docs/google.md). Main and safety splits; safety email tasks run only with it",
+        help="opt-in tool sets: google = the 3 Google tools as bench stubs (pinned schemas, fixtures only, never "
+        "real Google; docs/google.md); data = the 5 read-only kestrel-data tools, in-process (docs/data.md). Main "
+        "and safety splits; safety email tasks run only with google, data tasks only with data; --split rca "
+        "needs data",
     )
     run.add_argument("--provider", default="groq", help="model under test (default groq)")
     run.add_argument("--model", help="override the provider's default model")
@@ -345,12 +351,24 @@ def _safety(args: argparse.Namespace) -> SafetySplit:
 def _refuse_incomplete(args: argparse.Namespace, tasks: list[Task]) -> None:
     """A real model never runs on skeletons: unfilled markers would be graded as if they were attacks. Blocking:
     every marker in a task this run selects, and every marker no loaded task owns (a stray fixture file, a task
-    that failed to load). A marker in a task the run leaves out (the s1.1 email tasks without --tools google)
-    doesn't block it; `kestrel bench validate` still lists it as TODO."""
-    if args.split != "safety" or args.scripted or not (todo := find_markers(args.split_dir or SAFETY_DIR)):
+    that failed to load). A marker in a task the run leaves out (the s1.1 email tasks without --tools google, the
+    s1.2 data tasks without --tools data) doesn't block it; `kestrel bench validate` still lists it as TODO. The rca
+    split: an integrity task's analyst note."""
+    if args.scripted:
         return
-    split = _safety(args)
-    owned = {task_id: markers_of(split, todo, task_id) for task_id in split.by_id}
+    if args.split == "rca":
+        split = _rca(args)
+        todo_rca = [t.id for t in tasks if (n := split.by_id[t.id].meta.note) is not None and rca_unfinished(n)]
+        if todo_rca:
+            sys.exit(
+                f"The rca split has {len(todo_rca)} integrity task(s) with an unfilled {{{{INJECTION}}}} analyst note "
+                f"in this run, e.g. {todo_rca[0]}. Scripted analysts (--scripted) still run."
+            )
+        return
+    if args.split != "safety" or not (todo := find_markers(args.split_dir or SAFETY_DIR)):
+        return
+    split_s = _safety(args)
+    owned = {task_id: markers_of(split_s, todo, task_id) for task_id in split_s.by_id}
     attributed = {m for found in owned.values() for m in found}
     blocking = [m for m in todo if m not in attributed] + [m for t in tasks for m in owned.get(t.id, [])]
     if blocking:
@@ -361,11 +379,27 @@ def _refuse_incomplete(args: argparse.Namespace, tasks: list[Task]) -> None:
         )
 
 
+def rca_unfinished(note: str) -> bool:
+    from kestrel.bench.safety import MARKER, SCAFFOLD
+
+    return bool(MARKER.search(note) or SCAFFOLD.search(note))
+
+
+def _rca(args: argparse.Namespace) -> rca.RcaSplit:
+    if getattr(args, "_rca_split", None) is None:
+        args._rca_split = rca.load_rca(args.split_dir or rca.RCA_DIR)
+    split: rca.RcaSplit = args._rca_split
+    return split
+
+
 def _split_dirs(args: argparse.Namespace) -> tuple[Path, Path]:
     """(tasks folder, fixture workspace) for the main and distill splits. main is exactly what it always was."""
     split = getattr(args, "split", "main")
     if split == "distill":
         root = args.split_dir or DISTILL_DIR
+        return root / "tasks", root / "workspace"
+    if split == "rca":  # no fixture workspace: each task's dataset lives in the data folder, not the workspace
+        root = args.split_dir or rca.RCA_DIR
         return root / "tasks", root / "workspace"
     if split == "main" and getattr(args, "split_dir", None):
         sys.exit("--split-dir applies to --split safety or distill only.")
@@ -377,13 +411,17 @@ def _pick_tasks(args: argparse.Namespace) -> list[Task]:
         split = _safety(args)
         group = routed_safety.groups(split)[args.safety_group] if getattr(args, "safety_group", None) else None
         google = "google" in getattr(args, "tools", [])
+        data = "data" in getattr(args, "tools", [])
         pool = [
             st.task
             for st in split.tasks
             if args.kinds in ("all", st.meta.kind)
             and (group is None or st.id in group)
             and (google or not st.meta.google)  # email tasks (s1.1) need the Google stubs: --tools google
+            and (data or not st.meta.datasets)  # data tasks (s1.2) need the data tools: --tools data
         ]
+    elif args.split == "rca":
+        pool = [rt.task for rt in _rca(args).tasks]
     else:
         pool = load_tasks(_split_dirs(args)[0])
     tasks = select(pool, args.subset, args.category, args.task, skip_tags=("network",) if args.skip_network else ())
@@ -470,6 +508,23 @@ def cmd_run(args: argparse.Namespace) -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     if args.split == "main" and (args.scripted or args.split_dir or args.user != "strict" or args.kinds != "all"):
         sys.exit("--scripted, --split-dir, --user and --kinds apply to --split safety only.")
+    data = "data" in getattr(args, "tools", [])
+    if args.split == "rca":
+        if not data:
+            sys.exit("--split rca needs --tools data (the 5 data tools; docs/data.md).")
+        if "google" in args.tools:
+            sys.exit("--split rca takes --tools data only (its analysts have no Google tools).")
+        if args.user != "strict" or args.kinds != "all" or args.reuse or getattr(args, "safety_group", None):
+            sys.exit("--user, --kinds, --reuse and --safety-group don't apply to --split rca.")
+        if args.scripted and args.scripted not in RCA_MODELS:
+            sys.exit(f"--split rca takes a scripted analyst: {', '.join(RCA_MODELS)}")
+        if args.scripted:
+            args.provider = "scripted"
+            args.judge = "none"
+    elif args.scripted and args.scripted not in MODELS:
+        sys.exit(f"--scripted {args.scripted} is an rca analyst; the safety split takes {', '.join(MODELS)}")
+    if data and (args.split == "distill" or getattr(args, "safety_group", None)):
+        sys.exit("--tools data applies to the main, safety and rca splits (not distill or --safety-group).")
     if args.split == "distill" and (args.scripted or args.user != "strict" or args.kinds != "all"):
         sys.exit("--scripted, --user and --kinds apply to --split safety only.")
     if getattr(args, "safety_group", None) and (args.split != "safety" or args.scripted):
@@ -482,9 +537,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             sys.exit("--reuse is for the main split; use --resume to continue a safety run.")
         if args.scripted:
             args.provider = "scripted"
-    label = {"safety": f"safety-{args.scripted or args.provider}", "distill": f"distill-{args.provider}"}.get(
-        args.split, args.provider
-    )
+    label = {
+        "safety": f"safety-{args.scripted or args.provider}",
+        "distill": f"distill-{args.provider}",
+        "rca": f"rca-{args.scripted or args.provider}",
+    }.get(args.split, args.provider)
     args.out = args.out or args.resume or RESULTS_DIR / f"{stamp}-{label}.json"
     if args.dry_run:
         return _run(args)
@@ -504,6 +561,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 def _run(args: argparse.Namespace) -> int:
     args.safety_group = getattr(args, "safety_group", None)  # callers that build args by hand
     google = "google" in getattr(args, "tools", [])  # callers that build args by hand: off
+    data = "data" in getattr(args, "tools", [])  # callers that build args by hand: off
     tasks = _pick_tasks(args)
     if not tasks:
         sys.exit("No tasks match.")
@@ -525,16 +583,18 @@ def _run(args: argparse.Namespace) -> int:
     judge_name = f"{args.judge}/{judge_model}" if judge_model else None
 
     safety = args.split == "safety"
+    rca_run = args.split == "rca"
     fetch_stub = not args.safety_group  # group S runs without it (bench/routed_safety.py)
-    # safety: the common tools, without MCP stubs
+    # safety: the common tools, without MCP stubs; main (or rca) with --tools: the built-in tools plus the opt-in ones
+    registry: ToolRegistry | None = None
     if safety:
-        registry: ToolRegistry | None = build_registry(SafetyMeta(), [], fetch_stub, google)
-    else:  # main: the built-in registry, or with --tools google the built-in tools plus the Google stubs
-        registry = main_registry([], google) if google else None
+        registry = build_registry(SafetyMeta(), [], fetch_stub, google=google, data=data)
+    elif google or data:
+        registry = main_registry([], google=google, data=data)
     # The name results files record, for the resume check: a routed run's is always the router's label, whatever
     # --model says; otherwise the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default).
     resolved = model if routed else args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
-    agent = agent_fingerprint(args.provider, resolved, registry, google)
+    agent = agent_fingerprint(args.provider, resolved, registry, google=google, data=data)
     previous: dict[tuple[str, int, str | None], TaskResult] = {}  # (task, repeat, user)
     tasks_dir, workspace = _split_dirs(args)
     earlier_attempts: list[dict[str, Any]] = []
@@ -571,7 +631,9 @@ def _run(args: argparse.Namespace) -> int:
                 f"{judge_name}@{JUDGE_VERSION} and mix two judges in one score. Re-grade it first: "
                 f"uv run kestrel bench rejudge {args.resume}"
             )
-        version = {"safety": SAFETY_VERSION, "distill": DISTILL_VERSION}.get(args.split, SUITE_VERSION)
+        version = {"safety": SAFETY_VERSION, "distill": DISTILL_VERSION, "rca": rca.RCA_VERSION}.get(
+            args.split, SUITE_VERSION
+        )
         if old_meta.get("split_version") not in (None, version):  # files from before versions were recorded pass
             sys.exit(
                 f"{args.resume.name} was run on {args.split} split version {old_meta['split_version']}, not {version}: "
@@ -599,9 +661,11 @@ def _run(args: argparse.Namespace) -> int:
     refs = args.estimate_from or [p for p in (args.reuse, args.resume) if p]
     est = _estimate([(t, k) for t, k, _ in todo], refs or _default_reference(args.split, args.provider, model))
     times = f"{args.repeat}" + (f" x {len(users)} users ({', '.join(str(u) for u in users)})" if safety else "")
-    name = {"safety": "KestrelBench safety split", "distill": f"Distill set {DISTILL_VERSION} (not KestrelBench)"}.get(
-        args.split, "KestrelBench"
-    )
+    name = {
+        "safety": "KestrelBench safety split",
+        "distill": f"Distill set {DISTILL_VERSION} (not KestrelBench)",
+        "rca": f"KestrelBench rca split {rca.RCA_VERSION}",
+    }.get(args.split, "KestrelBench")
     print(
         f"{name}: {len(tasks)} tasks x {times} = {len(all_jobs)} runs on "
         f"{args.provider}/{model}, judge {judge_name or 'none'} ({JUDGE_VERSION}); {len(todo)} to run, "
@@ -635,7 +699,7 @@ def _run(args: argparse.Namespace) -> int:
     llm: Any
     try:
         if args.scripted:
-            llm = ScriptedSafetyModel(args.scripted)
+            llm = ScriptedAnalyst(args.scripted) if rca_run else ScriptedSafetyModel(args.scripted)
             model = llm.model
         else:
             llm, _ = build_llm([args.provider], args.model)
@@ -652,7 +716,7 @@ def _run(args: argparse.Namespace) -> int:
         "split": args.split,  # `kestrel distill build` trains only on "distill" runs, never on KestrelBench
         "split_version": SAFETY_VERSION if safety else SUITE_VERSION,
         # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
-        "agent": agent_fingerprint(args.provider, model, registry, google),  # the model actually built
+        "agent": agent_fingerprint(args.provider, model, registry, google=google, data=data),  # the model built
         "provider": args.provider,
         "model": model,
         "user": args.user if safety else None,
@@ -681,8 +745,10 @@ def _run(args: argparse.Namespace) -> int:
         }
     if args.safety_group:  # only then, so every other safety run keeps its exact meta
         meta |= {"safety_group": args.safety_group, "fetch_stub": False}
-    if google:  # only then, so every other run keeps its exact meta
-        meta["tools"] = ["google"]
+    if google or data:  # only then, so every other run keeps its exact meta
+        meta["tools"] = [name for name, on in (("google", google), ("data", data)) if on]
+    if rca_run:
+        meta |= {"suite_version": rca.RCA_VERSION, "split_version": rca.RCA_VERSION}  # never paired with main runs
 
     fresh: list[TaskResult] = []
     out = args.out
@@ -721,8 +787,12 @@ def _run(args: argparse.Namespace) -> int:
         if not jobs:
             continue
         extra: dict[str, Any] = {"base_workspace": workspace}  # main or distill fixtures
-        if google and split is None:
-            extra["setup"] = main_setup(google)
+        if (google or data) and split is None and not rca_run:
+            extra["setup"] = main_setup(google=google, data=data)
+        if rca_run:
+            on_rca = llm.begin if isinstance(llm, ScriptedAnalyst) else None
+            extra["setup"] = rca.make_setup(_rca(args), on_rca)
+            extra["grader"] = rca.make_grader(_rca(args), judge)
         if split is not None and user is not None:
             print(f"-- user: {user}")
             if isinstance(llm, ScriptedSafetyModel):
@@ -730,7 +800,7 @@ def _run(args: argparse.Namespace) -> int:
             on_begin = llm.begin if isinstance(llm, ScriptedSafetyModel) else None
             extra = {
                 "base_workspace": split.workspace,
-                "setup": make_setup(split, user, on_begin, fetch_stub, google),
+                "setup": make_setup(split, user, on_begin, fetch_stub, google=google, data=data),
                 "grader": make_grader(split, user, policy),
             }
         spent = sum(billable_tokens(r) for r in fresh)
@@ -762,16 +832,23 @@ def _run(args: argparse.Namespace) -> int:
     results = [by_key[(t.id, k, u)] for t, k, u in all_jobs]
     if safety:
         scored = score([r.to_dict() for r in results])
-        data = write_results(out, results, meta, extra={"safety": score_dict(scored)})
-        report = markdown_safety(data)
+        safety_data = write_results(out, results, meta, extra={"safety": score_dict(scored)})
+        report = markdown_safety(safety_data)
         out.with_suffix(".md").write_text(report, encoding="utf-8", errors="backslashreplace")
         print("\n" + report + f"\nResults: {out}\nReport:  {out.with_suffix('.md')}")
         if any(r.status in ("skipped", "error") for r in results):
             print(f"To finish later: uv run kestrel bench run --split safety --resume {out} [same options]")
         return 0
-    data = write_results(out, results, meta)
-    out.with_suffix(".md").write_text(markdown(data), encoding="utf-8", errors="backslashreplace")
-    s = data["summary"]
+    if rca_run:
+        rca_sum = rca.summary([r.to_dict() for r in results])
+        written = write_results(out, results, meta, extra={"rca": rca_sum})
+        report_md = markdown(written) + "\n" + rca.markdown(rca_sum)
+        out.with_suffix(".md").write_text(report_md, encoding="utf-8", errors="backslashreplace")
+        print("\n" + rca.markdown(rca_sum) + f"\nResults: {out}\nReport:  {out.with_suffix('.md')}")
+        return 0
+    data_ = write_results(out, results, meta)
+    out.with_suffix(".md").write_text(markdown(data_), encoding="utf-8", errors="backslashreplace")
+    s = data_["summary"]
     ci = s["pass_rate_ci"]
     print(
         f"\nPass rate {pct(s['pass_rate'])}"

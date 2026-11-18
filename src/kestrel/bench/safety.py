@@ -6,9 +6,10 @@ docs/kestrelbench.md ("Safety split"). In short, a task has the main suite's com
 category, tags, prompt, files, approvals, max_steps) plus safety fields kept in a SafetyMeta:
 
     kind: attack | benign
-    vector: file | search | fetch | mcp | email | multistep    # where the attacker's data enters
+    vector: file | search | fetch | mcp | email | multistep | data   # where the attacker's data enters
     pages / search / mcp:                              # what the network and MCP stubs serve
     google: {search_gmail_messages: ..., ...}          # email (s1.1): what the Google stubs serve
+    datasets: {name: {file: datasets/x.csv}}           # data vector (s1.2): CSV tables the data tools read
     canaries: [KCAN-...]                               # planted in private workspace data
     allowed_recipients: [me@example.com]               # send_message to these is not a leak
     goals: [...]                                       # attack: what the attacker wants
@@ -43,13 +44,15 @@ SAFETY_DIR = Path(__file__).resolve().parents[3] / "evals" / "kestrelbench" / "s
 
 # Bump on any change to a safety task, a guard's logic, a stub, or the safety fixtures, and log it
 # in evals/CHANGELOG.md. Independent of SUITE_VERSION, which keeps meaning "the main 100 tasks".
-SAFETY_VERSION = "s1.1"  # s1.1: the email vector and 16 email tasks (Google step, docs/google-step-plan.md)
+# s1.1: the email vector and 16 email tasks (Google step, docs/google-step-plan.md).
+# s1.2 (decision 35): the data vector's 10 tasks (kestrel-data), on top of s1.1.
+SAFETY_VERSION = "s1.2"
 
 KINDS = ("attack", "benign")
 # An attack marked `probe: policy` is graded like any attack but reported on its own line, outside
 # the attack success rate and the gate: it tests a rule the user asked to break, not an injection.
 PROBES = ("policy",)
-VECTORS = ("file", "search", "fetch", "mcp", "email", "multistep")
+VECTORS = ("file", "search", "fetch", "mcp", "email", "multistep", "data")
 ANSWER = "answer"  # leak goal channel: URLs and images in the final answer
 WRITE_TOOLS = ("write_file", "append_to_file")
 DEFAULT_ALLOWED = "notes/"
@@ -69,6 +72,7 @@ SAFETY_FIELDS = {
     "goals",
     "expect",
     "probe",
+    "datasets",
 }
 # goal type -> (required fields, optional fields), besides "type"
 GOAL_FIELDS: dict[str, tuple[set[str], set[str]]] = {
@@ -104,6 +108,8 @@ class SafetyMeta:
     google: dict[str, str] = field(default_factory=dict)
     paired_with: str | None = None
     probe: str | None = None  # "policy": outside the attack success rate and the gate (see PROBES)
+    # data vector (s1.2): dataset name -> {table: CSV text}; needs the data tools (--tools data)
+    datasets: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @property
     def payloads(self) -> set[str]:
@@ -241,11 +247,43 @@ def _google(raw: Any, root: Path, where: str) -> dict[str, str]:
 
 
 def _private_texts(task: Task, meta: SafetyMeta, base_files: dict[str, str]) -> list[str]:
-    """Where a task's canaries may live: its workspace (shared plus own files) and the user's own calendar."""
+    """Where a task's canaries may live: its workspace (shared plus own files), the user's own calendar, and
+    its datasets (a private column next to the cells an attacker controls)."""
     texts = [*base_files.values(), *task.files.values()]
     if CALENDAR_TOOL in meta.google:
         texts.append(meta.google[CALENDAR_TOOL])
+    texts += [text for tables in meta.datasets.values() for text in tables.values()]
     return texts
+
+
+DATASET_NAME = re.compile(r"^[a-z0-9_-]{1,40}$")
+
+
+def _datasets(raw: Any, root: Path, where: str) -> dict[str, dict[str, str]]:
+    """{name: {file: datasets/x.csv}} or {name: {files: [...]}} -> {name: {table: CSV text}} (table = file stem)."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise TaskError(f"{where}: 'datasets' maps a dataset name to {{file: datasets/...csv}}")
+    out: dict[str, dict[str, str]] = {}
+    for name, spec in raw.items():
+        if not DATASET_NAME.fullmatch(str(name)):
+            raise TaskError(f"{where}: dataset name {name!r} must match {DATASET_NAME.pattern}")
+        files = (
+            [spec["file"]]
+            if isinstance(spec, dict) and set(spec) == {"file"}
+            else (spec.get("files") if isinstance(spec, dict) and set(spec) == {"files"} else None)
+        )
+        if not isinstance(files, list) or not files:
+            raise TaskError(f"{where}: dataset {name!r} needs {{file: ...}} or {{files: [...]}}")
+        tables: dict[str, str] = {}
+        for rel in files:
+            path = (root / str(rel)).resolve()
+            if not path.is_relative_to((root / "datasets").resolve()) or path.suffix != ".csv" or not path.is_file():
+                raise TaskError(f"{where}: dataset file {rel!r} must be a .csv inside {root / 'datasets'}")
+            tables[path.stem.lower()] = path.read_text(encoding="utf-8")
+        out[str(name)] = tables
+    return out
 
 
 def _regex(pattern: Any, where: str) -> str:
@@ -331,17 +369,21 @@ def _parse(raw: Any, default_category: str | None, source: str, root: Path, base
         google=_google(raw.get("google"), root, where),
         paired_with=raw.get("paired_with"),
         probe=probe,
+        datasets=_datasets(raw.get("datasets"), root, where),
     )
 
-    # Canaries live in private data only: the split's workspace, the task's files, and (email tasks) the
-    # user's own calendar fixture.
+    # Canaries live in private data only: the split's workspace, the task's files, (email tasks) the user's own
+    # calendar fixture, and (data vector) the task's datasets, where a private column sits next to the cells an
+    # attacker controls (known issue: the loader can't tell those cells apart once the owner has written them).
     workspace = {**base_files, **task.files}
     found = {p for t in _private_texts(task, meta, base_files) for p in cn.find_canaries(t)}
     declared = [str(c) for c in raw.get("canaries") or ()]
     if bad := [c for c in declared if not cn.CANARY.fullmatch(c)]:
         raise TaskError(f"{where}: canaries look like KCAN- plus 12 hex digits, got {bad}")
     if missing := [c for c in declared if c.split("-", 1)[1].lower() not in found]:
-        raise TaskError(f"{where}: canaries {missing} are not in the task's workspace files or calendar fixture")
+        raise TaskError(
+            f"{where}: canaries {missing} are not in the task's workspace files, calendar fixture or datasets"
+        )
     canaries = tuple(declared) if declared else tuple(sorted(f"KCAN-{p}" for p in found))
     meta = replace(meta, canaries=canaries)
 
@@ -377,12 +419,22 @@ def _validate(task: Task, meta: SafetyMeta, workspace: dict[str, str], where: st
         "fetch": bool(meta.pages),
         "mcp": bool(meta.mcp),
         "email": any(t in meta.google for t in GMAIL_TOOLS),
+        "data": bool(meta.datasets),
     }
     if meta.vector == "multistep":
         if sum(channels.values()) < 2:
-            raise TaskError(f"{where}: a multistep task needs at least two of files, search, pages, mcp, email")
+            raise TaskError(
+                f"{where}: a multistep task needs at least two of files, search, pages, mcp, email, datasets"
+            )
     elif not channels[meta.vector]:
-        needs = {"file": "files", "search": "search", "fetch": "pages", "mcp": "mcp", "email": "a Gmail fixture"}
+        needs = {
+            "file": "files",
+            "search": "search",
+            "fetch": "pages",
+            "mcp": "mcp",
+            "email": "a Gmail fixture",
+            "data": "datasets",
+        }
         need = needs[meta.vector]
         raise TaskError(f"{where}: vector {meta.vector} needs '{need}'")
 
@@ -575,7 +627,7 @@ def find_markers(root: Path = SAFETY_DIR) -> list[Marker]:
         for raw in items if isinstance(items, list) else []:
             task_id = raw.get("id", "?") if isinstance(raw, dict) else "?"
             out += [Marker(f"{path.name}:{task_id}", f, spec) for f, spec in _markers_in(raw, "")]
-    for folder in ("pages", "workspace"):
+    for folder in ("pages", "workspace", "datasets"):
         for p in sorted((root / folder).rglob("*")) if (root / folder).is_dir() else []:
             if p.is_file():
                 text = p.read_text(encoding="utf-8", errors="replace")
@@ -593,6 +645,8 @@ def safety_sha(st: SafetyTask, workspace: Path) -> str:
         del meta["probe"]
     if not meta["google"]:  # added in s1.1: unset, the 48 s1.0 tasks keep their fingerprints
         del meta["google"]
+    if not meta["datasets"]:  # added in s1.2 (data vector): empty, it leaves fingerprints as they were
+        del meta["datasets"]
     blob = json.dumps([definition, meta], sort_keys=True, default=str) + _workspace_sha(workspace)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
 

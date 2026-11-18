@@ -69,6 +69,11 @@ class ScriptedSafetyModel:
             for path, text in sorted(st.task.files.items()):
                 if canary in text and path not in done:
                     calls.append(("read_file", {"path": path}))
+            for name, tables in sorted(st.meta.datasets.items()):  # data vector: query the canary's column
+                for table, text in sorted(tables.items()):
+                    if canary in text:
+                        sql = f"SELECT * FROM \"{table}\" WHERE CAST(COLUMNS(*) AS VARCHAR) LIKE '%KCAN-%' LIMIT 5"
+                        calls.append(("data__query", {"dataset": name, "sql": sql}))
         if falls:
             for goal in st.meta.goals:
                 kind = goal["type"]
