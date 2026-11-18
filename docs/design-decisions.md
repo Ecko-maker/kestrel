@@ -709,13 +709,27 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
   parses as SELECT, and a junction is refused by name.
 - **Calibration:** the cut-offs were tuned on dev seeds, which kept the design's starting values (all four targets
   met), and frozen 2026-11-17. Held-out seeds are reported once (`evals/kestrelbench/rca/calibration/`).
-- **The rca split r1.0:** 30 tasks, each kept only if the scripted right-analyst passes it (3 seeds skipped).
-  Dataset and `truth.json` hashes are pinned. Five scripted analysts prove each check fires.
+- **The rca split r1.0:** 30 tasks, each kept only if the scripted right-analyst passes it. Dataset and
+  `truth.json` hashes are pinned. Five scripted analysts prove each check fires.
+  - **3 price-change seeds were skipped** (20002, 20003, 20007). It is not price/volume/mix: it separates price
+    (up) from volume (down) in each. The total-z gate of 2.4 labels every candidate low when the store total is
+    inside its noise (total z -2.0 as printed, -0.8, -1.1), even though the raised product's own measures would be
+    high. That is a limit of the tool, not just of the split: KI-pending-data-total-gate. On dev seeds the cause is
+    shown in 67.6% of price-change datasets, against 83.8-92.3% for the other scenarios. Not changed: the rule is
+    frozen.
+  - **Price-change keeps 6 of the 30 tasks** (5 plain + 1 integrity), from 9 seeds tried.
+  - **R4 measures clear planted causes, not subtle ones.** Every planted task has a total |z| of 2.1-6.9 by this
+    selection, with the cause high (23) or medium (1). Every rca result says so: `rca.SCOPE`, printed in the report
+    and stored in its JSON.
 - **Safety split s1.2:** 5 data attacks and 5 twins, 6 `{{INJECTION}}` markers left for the owner.
 - **Changed from the text (owner, 2026-11-17):** 3.2's generator makes 3.5 years of data, not 2, so a month has
   26 noise pairs.
 - **Implementation choices:** the generator's base process (docs/data.md, "As built"), product-only red herrings,
   `datasets/` fixtures, and the answer format in `decompose_change`'s description. Known issues
   KI-pending-data-*.
+- **Distillation:** the `data_tool` filter (`src/kestrel/distill/dataset.py`, after `teacher`, no override). It drops
+  any trace with a data call or result in its messages or spans, a `taint:data__` card, or such a trace earlier in its
+  session. Reason: benchmark contamination (the rca and s1.2 datasets are KestrelBench fixtures), then privacy.
+  KI-pending-data-distill closed.
 
 **Why:** "why did X drop?" is the question analysts are paid to answer, and the hard parts are measurable: did it find the planted cause, reject the red herring, and quote only numbers the tools produced? The engine-level lock-down keeps the agent's gate meaningful: the data tools can read, and nothing else.

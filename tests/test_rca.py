@@ -211,3 +211,10 @@ def test_the_judge_never_changes_a_pass(split: rca.RcaSplit) -> None:
         grader=rca.make_grader(split, Zero()),
     )
     assert r.status == "pass" and r.judge["score"] == 0.0 and r.judge["gated"] is False
+
+
+def test_every_rca_report_states_its_scope() -> None:
+    """R4 measures clear planted causes only (the right-analyst selection): the JSON and the page both say so."""
+    s = rca.summary([])
+    assert s["scope"] == rca.SCOPE and "clear planted causes only" in rca.SCOPE
+    assert rca.SCOPE in rca.markdown(s)
