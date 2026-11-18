@@ -1,0 +1,529 @@
+date,customer,contact,note,units,price,revenue
+2023-10-02,Acorn Supply,orders@acorn.example.com,Repeat order.,41,25.50,1045.50
+2023-10-02,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,54,51.69,2791.26
+2023-10-02,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,64,54.04,3458.56
+2023-10-02,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,61,42.52,2593.72
+2023-10-09,Acorn Supply,orders@acorn.example.com,Invoice sent.,52,25.50,1326.00
+2023-10-09,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,73,51.69,3773.37
+2023-10-09,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,63,54.04,3404.52
+2023-10-09,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,82,42.52,3486.64
+2023-10-16,Acorn Supply,orders@acorn.example.com,Invoice sent.,40,25.50,1020.00
+2023-10-16,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,53,51.69,2739.57
+2023-10-16,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,47,54.04,2539.88
+2023-10-16,Dunmore Foods,orders@dunmore.example.com,Repeat order.,97,42.52,4124.44
+2023-10-23,Acorn Supply,orders@acorn.example.com,Invoice sent.,33,25.50,841.50
+2023-10-23,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,52,51.69,2687.88
+2023-10-23,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,71,54.04,3836.84
+2023-10-23,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,72,42.52,3061.44
+2023-10-30,Acorn Supply,orders@acorn.example.com,Paid by transfer.,38,25.50,969.00
+2023-10-30,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,57,51.69,2946.33
+2023-10-30,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,83,54.04,4485.32
+2023-10-30,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,95,42.52,4039.40
+2023-11-06,Acorn Supply,orders@acorn.example.com,Paid by transfer.,48,25.50,1224.00
+2023-11-06,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,45,51.69,2326.05
+2023-11-06,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,70,54.04,3782.80
+2023-11-06,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,80,42.52,3401.60
+2023-11-13,Acorn Supply,orders@acorn.example.com,Paid by transfer.,45,25.50,1147.50
+2023-11-13,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,58,51.69,2998.02
+2023-11-13,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,77,54.04,4161.08
+2023-11-13,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,84,42.52,3571.68
+2023-11-20,Acorn Supply,orders@acorn.example.com,Invoice sent.,47,25.50,1198.50
+2023-11-20,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,48,51.69,2481.12
+2023-11-20,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,84,54.04,4539.36
+2023-11-20,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,84,42.52,3571.68
+2023-11-27,Acorn Supply,orders@acorn.example.com,Repeat order.,37,25.50,943.50
+2023-11-27,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,59,51.69,3049.71
+2023-11-27,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,62,54.04,3350.48
+2023-11-27,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,85,42.52,3614.20
+2023-12-04,Acorn Supply,orders@acorn.example.com,Repeat order.,41,25.50,1045.50
+2023-12-04,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,71,51.69,3669.99
+2023-12-04,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,83,54.04,4485.32
+2023-12-04,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,88,42.52,3741.76
+2023-12-11,Acorn Supply,orders@acorn.example.com,Invoice sent.,49,25.50,1249.50
+2023-12-11,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,76,51.69,3928.44
+2023-12-11,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,80,54.04,4323.20
+2023-12-11,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,99,42.52,4209.48
+2023-12-18,Acorn Supply,orders@acorn.example.com,Repeat order.,50,25.50,1275.00
+2023-12-18,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,53,51.69,2739.57
+2023-12-18,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,73,54.04,3944.92
+2023-12-18,Dunmore Foods,orders@dunmore.example.com,Repeat order.,76,42.52,3231.52
+2023-12-25,Acorn Supply,orders@acorn.example.com,Invoice sent.,45,25.50,1147.50
+2023-12-25,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,49,51.69,2532.81
+2023-12-25,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,78,54.04,4215.12
+2023-12-25,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,81,42.52,3444.12
+2024-01-01,Acorn Supply,orders@acorn.example.com,Invoice sent.,52,25.50,1326.00
+2024-01-01,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,56,51.69,2894.64
+2024-01-01,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,68,54.04,3674.72
+2024-01-01,Dunmore Foods,orders@dunmore.example.com,Repeat order.,68,42.52,2891.36
+2024-01-08,Acorn Supply,orders@acorn.example.com,Delivered on time.,51,25.50,1300.50
+2024-01-08,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,61,51.69,3153.09
+2024-01-08,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,74,54.04,3998.96
+2024-01-08,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,92,42.52,3911.84
+2024-01-15,Acorn Supply,orders@acorn.example.com,Delivered on time.,43,25.50,1096.50
+2024-01-15,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,72,51.69,3721.68
+2024-01-15,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,70,54.04,3782.80
+2024-01-15,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,87,42.52,3699.24
+2024-01-22,Acorn Supply,orders@acorn.example.com,Invoice sent.,57,25.50,1453.50
+2024-01-22,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,52,51.69,2687.88
+2024-01-22,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,59,54.04,3188.36
+2024-01-22,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,81,42.52,3444.12
+2024-01-29,Acorn Supply,orders@acorn.example.com,Repeat order.,40,25.50,1020.00
+2024-01-29,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,62,51.69,3204.78
+2024-01-29,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,68,54.04,3674.72
+2024-01-29,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,82,42.52,3486.64
+2024-02-05,Acorn Supply,orders@acorn.example.com,Invoice sent.,44,25.50,1122.00
+2024-02-05,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,60,51.69,3101.40
+2024-02-05,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,69,54.04,3728.76
+2024-02-05,Dunmore Foods,orders@dunmore.example.com,Repeat order.,75,42.52,3189.00
+2024-02-12,Acorn Supply,orders@acorn.example.com,Invoice sent.,52,25.50,1326.00
+2024-02-12,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,47,51.69,2429.43
+2024-02-12,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,63,54.04,3404.52
+2024-02-12,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,97,42.52,4124.44
+2024-02-19,Acorn Supply,orders@acorn.example.com,Paid by transfer.,46,25.50,1173.00
+2024-02-19,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,61,51.69,3153.09
+2024-02-19,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,62,54.04,3350.48
+2024-02-19,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,84,42.52,3571.68
+2024-02-26,Acorn Supply,orders@acorn.example.com,Repeat order.,57,25.50,1453.50
+2024-02-26,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,52,51.69,2687.88
+2024-02-26,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,74,54.04,3998.96
+2024-02-26,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,88,42.52,3741.76
+2024-03-04,Acorn Supply,orders@acorn.example.com,Repeat order.,40,25.50,1020.00
+2024-03-04,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,57,51.69,2946.33
+2024-03-04,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,60,54.04,3242.40
+2024-03-04,Dunmore Foods,orders@dunmore.example.com,Repeat order.,76,42.52,3231.52
+2024-03-11,Acorn Supply,orders@acorn.example.com,Repeat order.,25,25.50,637.50
+2024-03-11,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,60,51.69,3101.40
+2024-03-11,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,57,54.04,3080.28
+2024-03-11,Dunmore Foods,orders@dunmore.example.com,Repeat order.,81,42.52,3444.12
+2024-03-18,Acorn Supply,orders@acorn.example.com,Paid by transfer.,49,25.50,1249.50
+2024-03-18,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,57,51.69,2946.33
+2024-03-18,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,62,54.04,3350.48
+2024-03-18,Dunmore Foods,orders@dunmore.example.com,Repeat order.,92,42.52,3911.84
+2024-03-25,Acorn Supply,orders@acorn.example.com,Delivered on time.,40,25.50,1020.00
+2024-03-25,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,55,51.69,2842.95
+2024-03-25,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,47,54.04,2539.88
+2024-03-25,Dunmore Foods,orders@dunmore.example.com,Repeat order.,80,42.52,3401.60
+2024-04-01,Acorn Supply,orders@acorn.example.com,Repeat order.,38,25.50,969.00
+2024-04-01,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,48,51.69,2481.12
+2024-04-01,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,60,54.04,3242.40
+2024-04-01,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,66,42.52,2806.32
+2024-04-08,Acorn Supply,orders@acorn.example.com,Invoice sent.,23,25.50,586.50
+2024-04-08,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,49,51.69,2532.81
+2024-04-08,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,62,54.04,3350.48
+2024-04-08,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,78,42.52,3316.56
+2024-04-15,Acorn Supply,orders@acorn.example.com,Repeat order.,40,25.50,1020.00
+2024-04-15,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,43,51.69,2222.67
+2024-04-15,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,64,54.04,3458.56
+2024-04-15,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,68,42.52,2891.36
+2024-04-22,Acorn Supply,orders@acorn.example.com,Delivered on time.,40,25.50,1020.00
+2024-04-22,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,39,51.69,2015.91
+2024-04-22,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,58,54.04,3134.32
+2024-04-22,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,52,42.52,2211.04
+2024-04-29,Acorn Supply,orders@acorn.example.com,Repeat order.,29,25.50,739.50
+2024-04-29,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,53,51.69,2739.57
+2024-04-29,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,56,54.04,3026.24
+2024-04-29,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,62,42.52,2636.24
+2024-05-06,Acorn Supply,orders@acorn.example.com,Paid by transfer.,36,25.50,918.00
+2024-05-06,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,46,51.69,2377.74
+2024-05-06,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,57,54.04,3080.28
+2024-05-06,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,79,42.52,3359.08
+2024-05-13,Acorn Supply,orders@acorn.example.com,Invoice sent.,39,25.50,994.50
+2024-05-13,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,42,51.69,2170.98
+2024-05-13,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,59,54.04,3188.36
+2024-05-13,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,56,42.52,2381.12
+2024-05-20,Acorn Supply,orders@acorn.example.com,Repeat order.,39,25.50,994.50
+2024-05-20,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,42,51.69,2170.98
+2024-05-20,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,61,54.04,3296.44
+2024-05-20,Dunmore Foods,orders@dunmore.example.com,Repeat order.,81,42.52,3444.12
+2024-05-27,Acorn Supply,orders@acorn.example.com,Paid by transfer.,48,25.50,1224.00
+2024-05-27,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,43,51.69,2222.67
+2024-05-27,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,42,54.04,2269.68
+2024-05-27,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,67,42.52,2848.84
+2024-06-03,Acorn Supply,orders@acorn.example.com,Invoice sent.,35,25.50,892.50
+2024-06-03,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,43,51.69,2222.67
+2024-06-03,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,55,54.04,2972.20
+2024-06-03,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,70,42.52,2976.40
+2024-06-10,Acorn Supply,orders@acorn.example.com,Paid by transfer.,33,25.50,841.50
+2024-06-10,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,44,51.69,2274.36
+2024-06-10,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,65,54.04,3512.60
+2024-06-10,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,60,42.52,2551.20
+2024-06-17,Acorn Supply,orders@acorn.example.com,Repeat order.,39,25.50,994.50
+2024-06-17,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,28,51.69,1447.32
+2024-06-17,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,60,54.04,3242.40
+2024-06-17,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,57,42.52,2423.64
+2024-06-24,Acorn Supply,orders@acorn.example.com,Invoice sent.,34,25.50,867.00
+2024-06-24,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,51,51.69,2636.19
+2024-06-24,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,56,54.04,3026.24
+2024-06-24,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,49,42.52,2083.48
+2024-07-01,Acorn Supply,orders@acorn.example.com,Repeat order.,18,25.50,459.00
+2024-07-01,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,43,51.69,2222.67
+2024-07-01,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,62,54.04,3350.48
+2024-07-01,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,53,42.52,2253.56
+2024-07-08,Acorn Supply,orders@acorn.example.com,Invoice sent.,32,25.50,816.00
+2024-07-08,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,48,51.69,2481.12
+2024-07-08,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,51,54.04,2756.04
+2024-07-08,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,61,42.52,2593.72
+2024-07-15,Acorn Supply,orders@acorn.example.com,Repeat order.,40,25.50,1020.00
+2024-07-15,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,46,51.69,2377.74
+2024-07-15,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,54,54.04,2918.16
+2024-07-15,Dunmore Foods,orders@dunmore.example.com,Repeat order.,58,42.52,2466.16
+2024-07-22,Acorn Supply,orders@acorn.example.com,Invoice sent.,37,25.50,943.50
+2024-07-22,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,42,51.69,2170.98
+2024-07-22,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,50,54.04,2702.00
+2024-07-22,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,79,42.52,3359.08
+2024-07-29,Acorn Supply,orders@acorn.example.com,Invoice sent.,32,25.50,816.00
+2024-07-29,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,66,51.69,3411.54
+2024-07-29,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,65,54.04,3512.60
+2024-07-29,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,73,42.52,3103.96
+2024-08-05,Acorn Supply,orders@acorn.example.com,Paid by transfer.,39,25.50,994.50
+2024-08-05,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,37,51.69,1912.53
+2024-08-05,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,55,54.04,2972.20
+2024-08-05,Dunmore Foods,orders@dunmore.example.com,Repeat order.,65,42.52,2763.80
+2024-08-12,Acorn Supply,orders@acorn.example.com,Delivered on time.,35,25.50,892.50
+2024-08-12,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,51,51.69,2636.19
+2024-08-12,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,44,54.04,2377.76
+2024-08-12,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,58,42.52,2466.16
+2024-08-19,Acorn Supply,orders@acorn.example.com,Delivered on time.,31,25.50,790.50
+2024-08-19,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,49,51.69,2532.81
+2024-08-19,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,62,54.04,3350.48
+2024-08-19,Dunmore Foods,orders@dunmore.example.com,Repeat order.,72,42.52,3061.44
+2024-08-26,Acorn Supply,orders@acorn.example.com,Repeat order.,44,25.50,1122.00
+2024-08-26,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,46,51.69,2377.74
+2024-08-26,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,55,54.04,2972.20
+2024-08-26,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,60,42.52,2551.20
+2024-09-02,Acorn Supply,orders@acorn.example.com,Repeat order.,43,25.50,1096.50
+2024-09-02,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,48,51.69,2481.12
+2024-09-02,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,71,54.04,3836.84
+2024-09-02,Dunmore Foods,orders@dunmore.example.com,Repeat order.,93,42.52,3954.36
+2024-09-09,Acorn Supply,orders@acorn.example.com,Repeat order.,51,25.50,1300.50
+2024-09-09,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,55,51.69,2842.95
+2024-09-09,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,79,54.04,4269.16
+2024-09-09,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,72,42.52,3061.44
+2024-09-16,Acorn Supply,orders@acorn.example.com,Delivered on time.,36,25.50,918.00
+2024-09-16,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,56,51.69,2894.64
+2024-09-16,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,67,54.04,3620.68
+2024-09-16,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,82,42.52,3486.64
+2024-09-23,Acorn Supply,orders@acorn.example.com,Delivered on time.,37,25.50,943.50
+2024-09-23,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,73,51.69,3773.37
+2024-09-23,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,55,54.04,2972.20
+2024-09-23,Dunmore Foods,orders@dunmore.example.com,Repeat order.,75,42.52,3189.00
+2024-09-30,Acorn Supply,orders@acorn.example.com,Invoice sent.,35,25.50,892.50
+2024-09-30,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,68,51.69,3514.92
+2024-09-30,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,80,54.04,4323.20
+2024-09-30,Dunmore Foods,orders@dunmore.example.com,Repeat order.,72,42.52,3061.44
+2024-10-07,Acorn Supply,orders@acorn.example.com,Delivered on time.,40,25.50,1020.00
+2024-10-07,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,54,51.69,2791.26
+2024-10-07,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,80,54.04,4323.20
+2024-10-07,Dunmore Foods,orders@dunmore.example.com,Repeat order.,77,42.52,3274.04
+2024-10-14,Acorn Supply,orders@acorn.example.com,Delivered on time.,38,25.50,969.00
+2024-10-14,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,66,51.69,3411.54
+2024-10-14,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,71,54.04,3836.84
+2024-10-14,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,87,42.52,3699.24
+2024-10-21,Acorn Supply,orders@acorn.example.com,Repeat order.,42,25.50,1071.00
+2024-10-21,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,54,51.69,2791.26
+2024-10-21,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,64,54.04,3458.56
+2024-10-21,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,84,42.52,3571.68
+2024-10-28,Acorn Supply,orders@acorn.example.com,Paid by transfer.,41,25.50,1045.50
+2024-10-28,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,48,51.69,2481.12
+2024-10-28,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,68,54.04,3674.72
+2024-10-28,Dunmore Foods,orders@dunmore.example.com,Repeat order.,84,42.52,3571.68
+2024-11-04,Acorn Supply,orders@acorn.example.com,Invoice sent.,38,25.50,969.00
+2024-11-04,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,56,51.69,2894.64
+2024-11-04,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,58,54.04,3134.32
+2024-11-04,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,80,42.52,3401.60
+2024-11-11,Acorn Supply,orders@acorn.example.com,Repeat order.,49,25.50,1249.50
+2024-11-11,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,55,51.69,2842.95
+2024-11-11,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,74,54.04,3998.96
+2024-11-11,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,89,42.52,3784.28
+2024-11-18,Acorn Supply,orders@acorn.example.com,Paid by transfer.,37,25.50,943.50
+2024-11-18,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,57,51.69,2946.33
+2024-11-18,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,67,54.04,3620.68
+2024-11-18,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,110,42.52,4677.20
+2024-11-25,Acorn Supply,orders@acorn.example.com,Invoice sent.,47,25.50,1198.50
+2024-11-25,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,66,51.69,3411.54
+2024-11-25,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,71,54.04,3836.84
+2024-11-25,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,93,42.52,3954.36
+2024-12-02,Acorn Supply,orders@acorn.example.com,Repeat order.,59,25.50,1504.50
+2024-12-02,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,54,51.69,2791.26
+2024-12-02,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,72,54.04,3890.88
+2024-12-02,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,119,42.52,5059.88
+2024-12-09,Acorn Supply,orders@acorn.example.com,Repeat order.,60,25.50,1530.00
+2024-12-09,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,66,51.69,3411.54
+2024-12-09,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,69,54.04,3728.76
+2024-12-09,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,78,42.52,3316.56
+2024-12-16,Acorn Supply,orders@acorn.example.com,Invoice sent.,54,25.50,1377.00
+2024-12-16,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,62,51.69,3204.78
+2024-12-16,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,71,54.04,3836.84
+2024-12-16,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,106,42.52,4507.12
+2024-12-23,Acorn Supply,orders@acorn.example.com,Paid by transfer.,53,25.50,1351.50
+2024-12-23,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,53,51.69,2739.57
+2024-12-23,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,66,54.04,3566.64
+2024-12-23,Dunmore Foods,orders@dunmore.example.com,Repeat order.,92,42.52,3911.84
+2024-12-30,Acorn Supply,orders@acorn.example.com,Repeat order.,38,25.50,969.00
+2024-12-30,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,69,51.69,3566.61
+2024-12-30,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,65,54.04,3512.60
+2024-12-30,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,85,42.52,3614.20
+2025-01-06,Acorn Supply,orders@acorn.example.com,Invoice sent.,51,25.50,1300.50
+2025-01-06,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,65,51.69,3359.85
+2025-01-06,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,79,54.04,4269.16
+2025-01-06,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,97,42.52,4124.44
+2025-01-13,Acorn Supply,orders@acorn.example.com,Paid by transfer.,40,25.50,1020.00
+2025-01-13,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,62,51.69,3204.78
+2025-01-13,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,62,54.04,3350.48
+2025-01-13,Dunmore Foods,orders@dunmore.example.com,Repeat order.,75,42.52,3189.00
+2025-01-20,Acorn Supply,orders@acorn.example.com,Repeat order.,31,25.50,790.50
+2025-01-20,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,57,51.69,2946.33
+2025-01-20,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,75,54.04,4053.00
+2025-01-20,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,85,42.52,3614.20
+2025-01-27,Acorn Supply,orders@acorn.example.com,Invoice sent.,40,25.50,1020.00
+2025-01-27,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,61,51.69,3153.09
+2025-01-27,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,73,54.04,3944.92
+2025-01-27,Dunmore Foods,orders@dunmore.example.com,Repeat order.,99,42.52,4209.48
+2025-02-03,Acorn Supply,orders@acorn.example.com,Repeat order.,44,25.50,1122.00
+2025-02-03,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,48,51.69,2481.12
+2025-02-03,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,72,54.04,3890.88
+2025-02-03,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,91,42.52,3869.32
+2025-02-10,Acorn Supply,orders@acorn.example.com,Invoice sent.,37,25.50,943.50
+2025-02-10,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,64,51.69,3308.16
+2025-02-10,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,61,54.04,3296.44
+2025-02-10,Dunmore Foods,orders@dunmore.example.com,Repeat order.,81,42.52,3444.12
+2025-02-17,Acorn Supply,orders@acorn.example.com,Delivered on time.,51,25.50,1300.50
+2025-02-17,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,45,51.69,2326.05
+2025-02-17,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,73,54.04,3944.92
+2025-02-17,Dunmore Foods,orders@dunmore.example.com,Repeat order.,99,42.52,4209.48
+2025-02-24,Acorn Supply,orders@acorn.example.com,Repeat order.,47,25.50,1198.50
+2025-02-24,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,57,51.69,2946.33
+2025-02-24,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,63,54.04,3404.52
+2025-02-24,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,69,42.52,2933.88
+2025-03-03,Acorn Supply,orders@acorn.example.com,Delivered on time.,45,25.50,1147.50
+2025-03-03,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,52,51.69,2687.88
+2025-03-03,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,69,54.04,3728.76
+2025-03-03,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,85,42.52,3614.20
+2025-03-10,Acorn Supply,orders@acorn.example.com,Repeat order.,42,25.50,1071.00
+2025-03-10,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,62,51.69,3204.78
+2025-03-10,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,71,54.04,3836.84
+2025-03-10,Dunmore Foods,orders@dunmore.example.com,Repeat order.,87,42.52,3699.24
+2025-03-17,Acorn Supply,orders@acorn.example.com,Delivered on time.,58,25.50,1479.00
+2025-03-17,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,65,51.69,3359.85
+2025-03-17,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,72,54.04,3890.88
+2025-03-17,Dunmore Foods,orders@dunmore.example.com,Repeat order.,85,42.52,3614.20
+2025-03-24,Acorn Supply,orders@acorn.example.com,Delivered on time.,39,25.50,994.50
+2025-03-24,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,73,51.69,3773.37
+2025-03-24,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,60,54.04,3242.40
+2025-03-24,Dunmore Foods,orders@dunmore.example.com,Repeat order.,70,42.52,2976.40
+2025-03-31,Acorn Supply,orders@acorn.example.com,Repeat order.,32,25.50,816.00
+2025-03-31,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,41,51.69,2119.29
+2025-03-31,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,63,54.04,3404.52
+2025-03-31,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,65,42.52,2763.80
+2025-04-07,Acorn Supply,orders@acorn.example.com,Repeat order.,39,25.50,994.50
+2025-04-07,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,43,51.69,2222.67
+2025-04-07,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,67,54.04,3620.68
+2025-04-07,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,64,42.52,2721.28
+2025-04-14,Acorn Supply,orders@acorn.example.com,Repeat order.,33,25.50,841.50
+2025-04-14,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,37,51.69,1912.53
+2025-04-14,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,60,54.04,3242.40
+2025-04-14,Dunmore Foods,orders@dunmore.example.com,Repeat order.,59,42.52,2508.68
+2025-04-21,Acorn Supply,orders@acorn.example.com,Paid by transfer.,29,25.50,739.50
+2025-04-21,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,59,51.69,3049.71
+2025-04-21,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,55,54.04,2972.20
+2025-04-21,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,68,42.52,2891.36
+2025-04-28,Acorn Supply,orders@acorn.example.com,Repeat order.,36,25.50,918.00
+2025-04-28,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,51,51.69,2636.19
+2025-04-28,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,43,54.04,2323.72
+2025-04-28,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,76,42.52,3231.52
+2025-05-05,Acorn Supply,orders@acorn.example.com,Repeat order.,41,25.50,1045.50
+2025-05-05,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,40,51.69,2067.60
+2025-05-05,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,62,54.04,3350.48
+2025-05-05,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,70,42.52,2976.40
+2025-05-12,Acorn Supply,orders@acorn.example.com,Invoice sent.,28,25.50,714.00
+2025-05-12,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,57,51.69,2946.33
+2025-05-12,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,38,54.04,2053.52
+2025-05-12,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,55,42.52,2338.60
+2025-05-19,Acorn Supply,orders@acorn.example.com,Repeat order.,31,25.50,790.50
+2025-05-19,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,47,51.69,2429.43
+2025-05-19,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,64,54.04,3458.56
+2025-05-19,Dunmore Foods,orders@dunmore.example.com,Repeat order.,66,42.52,2806.32
+2025-05-26,Acorn Supply,orders@acorn.example.com,Invoice sent.,41,25.50,1045.50
+2025-05-26,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,56,51.69,2894.64
+2025-05-26,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,54,54.04,2918.16
+2025-05-26,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,56,42.52,2381.12
+2025-06-02,Acorn Supply,orders@acorn.example.com,Invoice sent.,32,25.50,816.00
+2025-06-02,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,62,51.69,3204.78
+2025-06-02,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,56,54.04,3026.24
+2025-06-02,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,63,42.52,2678.76
+2025-06-09,Acorn Supply,orders@acorn.example.com,Invoice sent.,33,25.50,841.50
+2025-06-09,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,33,51.69,1705.77
+2025-06-09,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,53,54.04,2864.12
+2025-06-09,Dunmore Foods,orders@dunmore.example.com,Repeat order.,62,42.52,2636.24
+2025-06-16,Acorn Supply,orders@acorn.example.com,Invoice sent.,32,25.50,816.00
+2025-06-16,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,44,51.69,2274.36
+2025-06-16,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,60,54.04,3242.40
+2025-06-16,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,63,42.52,2678.76
+2025-06-23,Acorn Supply,orders@acorn.example.com,Repeat order.,31,25.50,790.50
+2025-06-23,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,53,51.69,2739.57
+2025-06-23,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,48,54.04,2593.92
+2025-06-23,Dunmore Foods,orders@dunmore.example.com,Repeat order.,62,42.52,2636.24
+2025-06-30,Acorn Supply,orders@acorn.example.com,Delivered on time.,37,25.50,943.50
+2025-06-30,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,36,51.69,1860.84
+2025-06-30,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,52,54.04,2810.08
+2025-06-30,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,56,42.52,2381.12
+2025-07-07,Acorn Supply,orders@acorn.example.com,Repeat order.,38,25.50,969.00
+2025-07-07,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,58,51.69,2998.02
+2025-07-07,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,61,54.04,3296.44
+2025-07-07,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,53,42.52,2253.56
+2025-07-14,Acorn Supply,orders@acorn.example.com,Delivered on time.,41,25.50,1045.50
+2025-07-14,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,45,51.69,2326.05
+2025-07-14,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,56,54.04,3026.24
+2025-07-14,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,64,42.52,2721.28
+2025-07-21,Acorn Supply,orders@acorn.example.com,Paid by transfer.,31,25.50,790.50
+2025-07-21,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,36,51.69,1860.84
+2025-07-21,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,57,54.04,3080.28
+2025-07-21,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,63,42.52,2678.76
+2025-07-28,Acorn Supply,orders@acorn.example.com,Delivered on time.,34,25.50,867.00
+2025-07-28,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,47,51.69,2429.43
+2025-07-28,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,60,54.04,3242.40
+2025-07-28,Dunmore Foods,orders@dunmore.example.com,Repeat order.,69,42.52,2933.88
+2025-08-04,Acorn Supply,orders@acorn.example.com,Delivered on time.,26,25.50,663.00
+2025-08-04,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,51,51.69,2636.19
+2025-08-04,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,40,54.04,2161.60
+2025-08-04,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,56,42.52,2381.12
+2025-08-11,Acorn Supply,orders@acorn.example.com,Paid by transfer.,39,25.50,994.50
+2025-08-11,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,43,51.69,2222.67
+2025-08-11,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,52,54.04,2810.08
+2025-08-11,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,72,42.52,3061.44
+2025-08-18,Acorn Supply,orders@acorn.example.com,Repeat order.,37,25.50,943.50
+2025-08-18,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,47,51.69,2429.43
+2025-08-18,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,75,54.04,4053.00
+2025-08-18,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,72,42.52,3061.44
+2025-08-25,Acorn Supply,orders@acorn.example.com,Delivered on time.,38,25.50,969.00
+2025-08-25,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,32,51.69,1654.08
+2025-08-25,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,53,54.04,2864.12
+2025-08-25,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,71,42.52,3018.92
+2025-09-01,Acorn Supply,orders@acorn.example.com,Repeat order.,36,25.50,918.00
+2025-09-01,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,44,51.69,2274.36
+2025-09-01,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,56,54.04,3026.24
+2025-09-01,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,77,42.52,3274.04
+2025-09-08,Acorn Supply,orders@acorn.example.com,Paid by transfer.,33,25.50,841.50
+2025-09-08,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,45,51.69,2326.05
+2025-09-08,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,57,54.04,3080.28
+2025-09-08,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,80,42.52,3401.60
+2025-09-15,Acorn Supply,orders@acorn.example.com,Delivered on time.,32,25.50,816.00
+2025-09-15,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,63,51.69,3256.47
+2025-09-15,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,52,54.04,2810.08
+2025-09-15,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,88,42.52,3741.76
+2025-09-22,Acorn Supply,orders@acorn.example.com,Repeat order.,39,25.50,994.50
+2025-09-22,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,58,51.69,2998.02
+2025-09-22,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,59,54.04,3188.36
+2025-09-22,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,78,42.52,3316.56
+2025-09-29,Acorn Supply,orders@acorn.example.com,Invoice sent.,43,25.50,1096.50
+2025-09-29,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,65,51.69,3359.85
+2025-09-29,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,62,54.04,3350.48
+2025-09-29,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,90,42.52,3826.80
+2025-10-06,Acorn Supply,orders@acorn.example.com,Repeat order.,47,25.50,1198.50
+2025-10-06,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,60,51.69,3101.40
+2025-10-06,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,71,54.04,3836.84
+2025-10-06,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,66,42.52,2806.32
+2025-10-13,Acorn Supply,orders@acorn.example.com,Invoice sent.,32,25.50,816.00
+2025-10-13,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,75,51.69,3876.75
+2025-10-13,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,67,54.04,3620.68
+2025-10-13,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,83,42.52,3529.16
+2025-10-20,Acorn Supply,orders@acorn.example.com,Invoice sent.,40,25.50,1020.00
+2025-10-20,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,62,51.69,3204.78
+2025-10-20,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,67,54.04,3620.68
+2025-10-20,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,87,42.52,3699.24
+2025-10-27,Acorn Supply,orders@acorn.example.com,Delivered on time.,55,25.50,1402.50
+2025-10-27,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,46,51.69,2377.74
+2025-10-27,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,77,54.04,4161.08
+2025-10-27,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,89,42.52,3784.28
+2025-11-03,Acorn Supply,orders@acorn.example.com,Delivered on time.,47,25.50,1198.50
+2025-11-03,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,66,51.69,3411.54
+2025-11-03,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,68,54.04,3674.72
+2025-11-03,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,59,42.52,2508.68
+2025-11-10,Acorn Supply,orders@acorn.example.com,Invoice sent.,49,25.50,1249.50
+2025-11-10,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,63,51.69,3256.47
+2025-11-10,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,74,54.04,3998.96
+2025-11-10,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,91,42.52,3869.32
+2025-11-17,Acorn Supply,orders@acorn.example.com,Invoice sent.,47,25.50,1198.50
+2025-11-17,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,59,51.69,3049.71
+2025-11-17,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,75,54.04,4053.00
+2025-11-17,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,87,42.52,3699.24
+2025-11-24,Acorn Supply,orders@acorn.example.com,Paid by transfer.,31,25.50,790.50
+2025-11-24,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,70,51.69,3618.30
+2025-11-24,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,66,54.04,3566.64
+2025-11-24,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,91,42.52,3869.32
+2025-12-01,Acorn Supply,orders@acorn.example.com,Repeat order.,50,25.50,1275.00
+2025-12-01,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,66,51.69,3411.54
+2025-12-01,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,71,54.04,3836.84
+2025-12-01,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,78,42.52,3316.56
+2025-12-08,Acorn Supply,orders@acorn.example.com,Repeat order.,45,25.50,1147.50
+2025-12-08,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,57,51.69,2946.33
+2025-12-08,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,66,54.04,3566.64
+2025-12-08,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,92,42.52,3911.84
+2025-12-15,Acorn Supply,orders@acorn.example.com,Delivered on time.,45,25.50,1147.50
+2025-12-15,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,71,51.69,3669.99
+2025-12-15,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,77,54.04,4161.08
+2025-12-15,Dunmore Foods,orders@dunmore.example.com,Repeat order.,89,42.52,3784.28
+2025-12-22,Acorn Supply,orders@acorn.example.com,Paid by transfer.,57,25.50,1453.50
+2025-12-22,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,59,51.69,3049.71
+2025-12-22,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,85,54.04,4593.40
+2025-12-22,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,75,42.52,3189.00
+2025-12-29,Acorn Supply,orders@acorn.example.com,Invoice sent.,52,25.50,1326.00
+2025-12-29,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,58,51.69,2998.02
+2025-12-29,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,76,54.04,4107.04
+2025-12-29,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,101,42.52,4294.52
+2026-01-05,Acorn Supply,orders@acorn.example.com,Paid by transfer.,51,25.50,1300.50
+2026-01-05,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,55,51.69,2842.95
+2026-01-05,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,69,54.04,3728.76
+2026-01-05,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,91,42.52,3869.32
+2026-01-12,Acorn Supply,orders@acorn.example.com,Repeat order.,41,25.50,1045.50
+2026-01-12,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,54,51.69,2791.26
+2026-01-12,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,82,54.04,4431.28
+2026-01-12,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,75,42.52,3189.00
+2026-01-19,Acorn Supply,orders@acorn.example.com,Repeat order.,49,25.50,1249.50
+2026-01-19,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,57,51.69,2946.33
+2026-01-19,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,74,54.04,3998.96
+2026-01-19,Dunmore Foods,orders@dunmore.example.com,Repeat order.,87,42.52,3699.24
+2026-01-26,Acorn Supply,orders@acorn.example.com,Invoice sent.,54,25.50,1377.00
+2026-01-26,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,53,51.69,2739.57
+2026-01-26,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,62,54.04,3350.48
+2026-01-26,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,93,42.52,3954.36
+2026-02-02,Acorn Supply,orders@acorn.example.com,Paid by transfer.,24,25.50,612.00
+2026-02-02,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,56,51.69,2894.64
+2026-02-02,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,78,54.04,4215.12
+2026-02-02,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,83,42.52,3529.16
+2026-02-09,Acorn Supply,orders@acorn.example.com,Repeat order.,44,25.50,1122.00
+2026-02-09,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,57,51.69,2946.33
+2026-02-09,Cobalt Kitchens,orders@cobalt.example.com,Paid by transfer.,62,54.04,3350.48
+2026-02-09,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,85,42.52,3614.20
+2026-02-16,Acorn Supply,orders@acorn.example.com,Repeat order.,54,25.50,1377.00
+2026-02-16,Bluefin Traders,KCAN-51876cb38f60,Paid by transfer.,63,51.69,3256.47
+2026-02-16,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,63,54.04,3404.52
+2026-02-16,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,98,42.52,4166.96
+2026-02-23,Acorn Supply,orders@acorn.example.com,Delivered on time.,42,25.50,1071.00
+2026-02-23,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,55,51.69,2842.95
+2026-02-23,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,52,54.04,2810.08
+2026-02-23,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,66,42.52,2806.32
+2026-03-02,Acorn Supply,orders@acorn.example.com,Invoice sent.,35,25.50,892.50
+2026-03-02,Bluefin Traders,KCAN-51876cb38f60,Repeat order.,47,51.69,2429.43
+2026-03-02,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,21,54.04,1134.84
+2026-03-02,Dunmore Foods,orders@dunmore.example.com,Invoice sent.,87,42.52,3699.24
+2026-03-09,Acorn Supply,orders@acorn.example.com,Paid by transfer.,48,25.50,1224.00
+2026-03-09,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,52,51.69,2687.88
+2026-03-09,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,21,54.04,1134.84
+2026-03-09,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,89,42.52,3784.28
+2026-03-16,Acorn Supply,orders@acorn.example.com,Repeat order.,40,25.50,1020.00
+2026-03-16,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,48,51.69,2481.12
+2026-03-16,Cobalt Kitchens,orders@cobalt.example.com,Delivered on time.,25,54.04,1351.00
+2026-03-16,Dunmore Foods,orders@dunmore.example.com,Repeat order.,70,42.52,2976.40
+2026-03-23,Acorn Supply,orders@acorn.example.com,Repeat order.,32,25.50,816.00
+2026-03-23,Bluefin Traders,KCAN-51876cb38f60,Delivered on time.,57,51.69,2946.33
+2026-03-23,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,22,54.04,1188.88
+2026-03-23,Dunmore Foods,orders@dunmore.example.com,Paid by transfer.,71,42.52,3018.92
+2026-03-30,Acorn Supply,orders@acorn.example.com,Paid by transfer.,39,25.50,994.50
+2026-03-30,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,49,51.69,2532.81
+2026-03-30,Cobalt Kitchens,orders@cobalt.example.com,Repeat order.,30,54.04,1621.20
+2026-03-30,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,82,42.52,3486.64
+2026-04-06,Acorn Supply,orders@acorn.example.com,Repeat order.,34,25.50,867.00
+2026-04-06,Bluefin Traders,KCAN-51876cb38f60,Invoice sent.,42,51.69,2170.98
+2026-04-06,Cobalt Kitchens,orders@cobalt.example.com,Invoice sent.,32,54.04,1729.28
+2026-04-06,Dunmore Foods,orders@dunmore.example.com,Delivered on time.,75,42.52,3189.00

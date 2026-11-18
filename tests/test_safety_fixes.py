@@ -184,7 +184,7 @@ def test_network_rules_now_answer_the_cards_tiers_v2_raises_in_benign_tasks():
     owner added its docs__lookup rule (2026-10-15)."""
     assert {build_registry(SafetyMeta(), []).tools[n].risk for n in NETWORK_TOOLS} == {"safe"}  # base tier
     benign, approvers, results = run_real_benign()
-    assert len(approvers) == len(benign) == 18
+    assert len(approvers) == len(benign) == 23  # the 18 s1.0 benign tasks + the 5 s1.2 data twins
     assert [r.id for r in results if r.status != "pass"] == []
 
 

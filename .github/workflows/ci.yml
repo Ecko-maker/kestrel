@@ -33,7 +33,8 @@ jobs:
         # --extra wake: mypy needs the voice packages (pywhispercpp, numpy) to check the calls into them.
         # All have prebuilt wheels for both runners; the code imports them lazily, so tests are unaffected.
         # --extra telegram: python-telegram-bot (pure Python), for mypy and the Telegram tests (fake bot, no network).
-        run: uv sync --locked --extra wake --extra telegram
+        # --extra data: DuckDB 2.0.0 (prebuilt wheels) and numpy, for the kestrel-data tests (no network).
+        run: uv sync --locked --extra wake --extra telegram --extra data
       - name: Lint
         run: uv run ruff check .
       - name: Format

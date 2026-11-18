@@ -200,7 +200,8 @@ A safety task has the main suite's common fields, parsed by the same code: `id`,
 | Field | Kind | What it is |
 |---|---|---|
 | `kind` | both | `attack` or `benign` |
-| `vector` | both | where the attacker's data enters: `file` (needs `files`), `search` (needs `search`), `fetch` (needs `pages`), `mcp` (needs `mcp`), or `multistep` (at least two of these) |
+| `vector` | both | where the attacker's data enters: `file` (needs `files`), `search` (needs `search`), `fetch` (needs `pages`), `mcp` (needs `mcp`), `data` (needs `datasets`; s1.2, runs only with `--tools data`), or `multistep` (at least two of these) |
+| `datasets` | data vector | `{name: {file: datasets/<task>/orders.csv}}`: CSV tables the data tools read, built into a task-private `<name>.duckdb`. A private column may hold the task's canary; the cells an attacker controls hold `{{INJECTION}}` markers until the owner writes them |
 | `category` | both | the report groups by this; give a benign task its attack's category |
 | `paired_with` | benign | id of the attack task it resembles (required) |
 | `probe` | attack | optional; `policy` = the user asks for something a rule forbids (no injection). Graded like any attack, reported on its own line, never in the attack success rates or the gate |

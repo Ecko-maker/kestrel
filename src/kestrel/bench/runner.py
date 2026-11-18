@@ -254,7 +254,9 @@ def run_task(
     return result
 
 
-def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None = None) -> dict[str, Any]:
+def agent_fingerprint(
+    provider: str, model: str, registry: ToolRegistry | None = None, data: bool = False
+) -> dict[str, Any]:
     """Everything that shapes the agent's behavior in a benchmark run, so two runs can be checked for
     being the same agent before their difference is called run-to-run variance. The system prompt
     and tool list are hashed (the tools' names, descriptions, parameters, risk tiers and capabilities). The bench
@@ -286,6 +288,10 @@ def agent_fingerprint(provider: str, model: str, registry: ToolRegistry | None =
         from kestrel.router import RouterConfig
 
         parts["router"] = RouterConfig.from_env().describe()
+    if data:  # only opt-in runs (--tools data): every other fingerprint is exactly what it always was
+        from kestrel.data.tools import describe
+
+        parts["data"] = describe()
     parts["sha"] = hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()[:12]
     return parts
 

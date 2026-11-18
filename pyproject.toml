@@ -23,6 +23,7 @@ dependencies = [
 [project.scripts]
 kestrel = "kestrel:main"
 kestrel-mcp = "kestrel.mcp_server:main"
+kestrel-data = "kestrel.data.server:main"
 
 [project.optional-dependencies]
 wake = [
@@ -47,6 +48,10 @@ export = [
 telegram = [
     "python-telegram-bot==22.8",
     "tzlocal>=5.4.5",
+]
+data = [
+    "duckdb==2.0.0",
+    "numpy>=2.5.4",
 ]
 
 [build-system]

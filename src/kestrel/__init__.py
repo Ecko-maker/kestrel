@@ -9,6 +9,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from kestrel import data as data_tools
+from kestrel import tools as tools_module
 from kestrel.agent import MAX_CONTEXT_TOKENS, Agent
 from kestrel.answer_policy import image_allowlist_from_env
 from kestrel.approval import ApprovalGate, TerminalApprover
@@ -140,6 +142,13 @@ def main() -> None:
     parser.add_argument("--list-models", action="store_true", help="show available model IDs")
     parser.add_argument("--debug", action="store_true", help="print full JSON of each tool call and result")
     parser.add_argument("--no-mcp", action="store_true", help="don't start the MCP servers in kestrel.mcp.json")
+    parser.add_argument(
+        "--tools",
+        dest="agent_tools",
+        nargs="+",
+        choices=["data"],
+        help="opt-in tool sets: data = read-only analysis of local datasets (docs/data.md; or KESTREL_TOOLS=data)",
+    )
     sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,telegram,bench,distill}")
     p = sub.add_parser("traces", help="list recent traces")
     p.add_argument("-n", type=int, default=20, help="how many (default 20)")
@@ -156,6 +165,12 @@ def main() -> None:
     bench_cli.add_parser(sub)
     distill.add_parser(sub)
     args = parser.parse_args()
+    args.data = None
+    if args.command not in ("bench", "distill") and data_tools.requested(args.agent_tools):
+        try:  # checked before any model is touched
+            args.data = data_tools.load_settings(workspace=tools_module.WORKSPACE)
+        except data_tools.DataConfigError as e:
+            sys.exit(str(e))
     if os.getenv("KESTREL_MCP", "on").strip().lower() in ("off", "0", "false", "no"):
         args.no_mcp = True
 
@@ -191,11 +206,13 @@ def main() -> None:
         sys.exit(f"Kestrel can't start: {e}")
 
     mcp = None if args.no_mcp else start_mcp()
+    data = start_data(args)
     try:
         chat(llm, tracer, args)
     finally:
-        if mcp:
-            mcp.close()
+        for manager in (mcp, data):
+            if manager:
+                manager.close()
 
 
 def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
@@ -219,6 +236,7 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
         problem = str(e)
         print(f"{YELLOW}Chat is disabled: {problem}. Traces and stats still work.{RESET}")
     mcp = None if args.no_mcp else start_mcp()
+    data = start_data(args)
 
     def make_agent(on_event, approver):
         if llm is None:
@@ -266,8 +284,9 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     try:
         uvicorn.run(app, host=config.host, port=args.port, log_level="warning")
     finally:
-        if mcp:
-            mcp.close()
+        for manager in (mcp, data):
+            if manager:
+                manager.close()
 
 
 def run_telegram(args: argparse.Namespace) -> None:
@@ -295,13 +314,31 @@ def run_telegram(args: argparse.Namespace) -> None:
     for warning in skipped:
         dim(f"[skip] {warning}")
     mcp = None if args.no_mcp else start_mcp()
+    data = start_data(args)
     try:
         telegram_bot.run(llm, max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)))
     except telegram_bot.AlreadyRunning as e:
         sys.exit(str(e))
     finally:
-        if mcp:
-            mcp.close()
+        for manager in (mcp, data):
+            if manager:
+                manager.close()
+
+
+def start_data(args: argparse.Namespace) -> MCPManager | None:
+    """The opt-in data tools (`--tools data`), or None. Settings were checked in main()."""
+    settings = getattr(args, "data", None)
+    if settings is None:
+        return None
+    dim(f"[data] starting kestrel-data over {settings.folder} (read only)...")
+
+    def problem(server: str, message: str) -> None:
+        print(f"{YELLOW}[data] {message}{RESET}")
+
+    manager: MCPManager = data_tools.start(settings, registry, problem)
+    added = [t.name for t in registry.tools.values() if t.server == data_tools.SERVER]
+    dim("[data] " + (", ".join(added) or "no tools registered"))
+    return manager
 
 
 def start_mcp() -> MCPManager | None:

@@ -41,6 +41,8 @@ def groups(split: SafetySplit) -> dict[str, dict[str, str]]:
     """{"F": {task id: reason}, "S": {task id: ""}}, in the split's order."""
     out: dict[str, dict[str, str]] = {F: {}, S: {}}
     for st in split.tasks:
+        if st.meta.datasets:  # a data task (s1.2): --tools data only, never routed (the 48 s1.0 tasks define them)
+            continue
         reason = needs_untrained_tool(st.meta)
         out[F if reason else S][st.id] = reason or ""
     return out

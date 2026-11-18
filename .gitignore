@@ -22,8 +22,13 @@ workspace/*
 # Approval audit log (local record of your decisions)
 logs/
 
-# Exported training data (from your conversations)
+# Exported training data (from your conversations), and any folder named data (the safety split's git check relies on it)
 data/
+# ...except the kestrel-data package's code
+!src/kestrel/data/
+
+# Local datasets for the opt-in data tools (KESTREL_DATA_DIR default; docs/data.md)
+/datasets/
 
 # Test and tool output
 .coverage
