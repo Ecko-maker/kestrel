@@ -91,10 +91,15 @@ The full method is in design section 2. In short:
 - **Measures per candidate:** its share of the gap, its effect size z, and its consistency (the share of weekly
   sub-periods that move the same way as the total).
 - **The rule:**
-  - **High** needs |total z| ≥ 2, share ≥ 50%, |z| ≥ 3 and consistent ≥ 75%.
+  - **No real change first:** if the total's |z| < 2, every candidate is low, however strong it looks on its own.
+  - **High** needs share ≥ 50%, |z| ≥ 3 and consistent ≥ 75%.
   - **Medium** needs share ≥ 25%, |z| ≥ 2 and consistent ≥ 50%.
   - Anything else is **low**.
 - **Every measure must clear its bar:** one strong number can't hide a weak one.
+- **The cost of the first gate is recall** (KI-pending-data-total-gate): a cause in one product can be labelled low
+  when the store total stays inside its noise. On dev seeds, the planted cause is shown (medium or high) in 67.6% of
+  price-change datasets, 83.8% of stockouts, 91.7% of channel shifts and 92.3% of lost customers. Most misses are
+  this gate alone: the cause's own measures would clear the bar.
 
 **Calibrated offline, no model** (`scripts/rca_calibrate.py`, `evals/kestrelbench/rca/calibration/`):
 - **Tuned on development seeds** (1-1000 per scenario). The design's starting values already met all four targets
@@ -117,6 +122,15 @@ The full method is in design section 2. In short:
   - 30 tasks over generated datasets: 5 scenarios × (5 plain + 1 integrity);
   - graded by deterministic checks against each dataset's planted ground truth (`truth.json`);
   - the judge scores explanation quality only: reported, never gated.
+- **What it measures: clear planted causes, not subtle ones.**
+  - Every planted task was kept only if the tools show its cause as medium or high. In r1.0, all 24 have a total
+    |z| between 2.1 and 6.9, and the cause is labelled high in 23 and medium in 1.
+  - The 6 no-change tasks have no candidate above low. In 5 of them the total is within its noise; in
+    `rca-no-change-1` the total's z is -2.1, but no single value explains it.
+  - So R4 measures how the model reports a cause the tools already show: naming it, rejecting the red herring,
+    quoting only real numbers, keeping the labels. It does not measure whether a subtle cause is found.
+  - **Every result must say so.** The rca report and its JSON carry this scope line (`rca.SCOPE`), so a quoted R4
+    result can't be read as more.
 - **Scripted analysts** check the checks offline: `--scripted right-analyst` and four analysts that each break one
   rule.
 - **Safety split s1.2:** 5 CSV-injection attacks and 5 twins, run only with `--tools data`. Until you write the
@@ -136,11 +150,30 @@ The full method is in design section 2. In short:
   - **The red herring is a small product only:** every region is too large for a one-week dip to stay under 10% of
     the gap.
 - **The rca tasks:** a seed is kept only if the scripted right-analyst can pass it, i.e. the tools show its planted
-  truth with the frozen cut-offs. 3 price-change seeds were skipped (`selection.json`); the tools' own accuracy on
-  unselected seeds is the held-out report.
+  truth with the frozen cut-offs.
+  - **3 price-change seeds were skipped** (20002, 20003, 20007; `selection.json`). In each, price/volume/mix
+    separates price from volume correctly, and the raised product's own measures would be high (share 78-100%, z
+    -3.3 to -5.4, 4 of 4 weeks). But the store total's z (-2.0 as printed, just under 2; -0.8; -1.1) is inside its
+    noise, so the tool labels everything low. That is a limit of the tool, not just of the split:
+    KI-pending-data-total-gate.
+  - **Price-change still has 6 of the 30 tasks** (5 plain + 1 integrity), from the 9 seeds tried, like every
+    scenario.
+  - The tools' own accuracy on unselected seeds is the held-out report.
 - **Price-change's planted candidate** is the product, not price/volume/mix's "price" component: a price rise with
   elastic demand shows up as lost volume.
 - **Safety fixtures** live in `evals/kestrelbench/safety/datasets/`, not `data/`: `.gitignore` hides every folder
   named `data` (exported training data, and the safety split's git check relies on it). The package's own folder is
   re-included (`!src/kestrel/data/`).
 - **Evidence ids** count per server process in the shipped path, and per task in the bench.
+
+## Never training data
+
+`kestrel distill build` drops every trace that touched a data tool (filter `data_tool`, right after `teacher`, no
+override):
+- **What counts:** a `data__*` call or result in the messages, the same in the spans (so it holds with
+  `KESTREL_TRACE_CONTENT=off`), an approval card tainted by one, or an earlier trace in the same session that did.
+- **Why:**
+  - **Benchmark contamination:** the rca and s1.2 datasets are KestrelBench fixtures, and a paraphrased prompt over the
+    same tool outputs would get past the prompt filters.
+  - **Privacy:** your own datasets.
+- **Where it shows:** each drop is counted in `manifest.json`.

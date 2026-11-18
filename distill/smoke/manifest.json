@@ -2,7 +2,7 @@
   "input_db_sha256": "12c838afedac8cdd06595687095f446659fc285027395f58ab57d41b926bde60",
   "results": {},
   "git": {
-    "commit": "97409f66dfc8b21ec9be1da44c5703f61e9927f2",
+    "commit": "987f3ba56b6859ab3a6fd56d359211507750de6d",
     "dirty": true
   },
   "teachers": [
@@ -15,7 +15,7 @@
     "max_tokens": 8000,
     "val_frac": 0.3,
     "split_salt": "2026",
-    "bench_prompts": 171,
+    "bench_prompts": 211,
     "bench_sources": [
       {
         "source": "disk",
@@ -39,6 +39,7 @@
       "no_messages",
       "teacher",
       "google_tool",
+      "data_tool",
       "harmony_leak_tool_name",
       "harmony_leak_arguments",
       "harmony_leak_text",
@@ -65,6 +66,7 @@
       "no_messages": 0,
       "teacher": 0,
       "google_tool": 0,
+      "data_tool": 0,
       "harmony_leak_tool_name": 0,
       "harmony_leak_arguments": 0,
       "harmony_leak_text": 0,

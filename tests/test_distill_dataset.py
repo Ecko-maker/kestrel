@@ -554,3 +554,134 @@ def test_the_filter_report_counts_google_tool(db: TraceDB) -> None:
     report = ds.stats(build(db))["dropped"]
     assert report["google_tool"] == 1 and list(report) == list(ds.FILTERS)
     assert ds.FILTERS.index("google_tool") == ds.FILTERS.index("teacher") + 1
+
+
+# --- kestrel-data tools (docs/data.md): bench datasets and private data never become training data ----------
+
+
+def data_convo(question: str, answer: str) -> list[dict]:
+    """A turn that read a dataset with a kestrel-data tool, in the stored message format."""
+    return [
+        {"role": "system", "content": "You are Kestrel."},
+        {"role": "user", "content": question},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "data__describe_dataset", "arguments": '{"dataset": "shop"}'},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "c1",
+            "content": '<untrusted_data source="data__describe_dataset">[E1] data__describe_dataset\n'
+            "| orders | 1,000 rows |</untrusted_data>",
+        },
+        {"role": "assistant", "content": answer},
+    ]
+
+
+def test_a_trace_with_a_data_call_is_dropped(db: TraceDB) -> None:
+    db.add(data_convo("What is in my shop dataset?", "One table, orders."))
+    only_drop(build(db), "data_tool")
+
+
+def test_a_data_result_in_the_history_alone_drops_the_trace(db: TraceDB) -> None:
+    messages = [m for m in data_convo("What is in my shop dataset?", "Orders.") if not m.get("tool_calls")]
+    db.add([*messages, {"role": "user", "content": "Thanks, and what's 2 + 2?"}, {"role": "assistant", "content": "4"}])
+    only_drop(build(db), "data_tool")
+
+
+@pytest.mark.parametrize(
+    "span",
+    [
+        ("tool_call", {"gen_ai.tool.name": "data__decompose_change", "kestrel.tool.server": "data"}),
+        ("tool_call", {"gen_ai.tool.name": "renamed_by_a_config", "kestrel.tool.server": "data"}),
+        (
+            "llm_call",
+            {
+                "gen_ai.provider.name": TEACHER[0],
+                "gen_ai.request.model": TEACHER[1],
+                "kestrel.tool_calls": ["data__query"],
+            },
+        ),
+        (
+            "approval",
+            {"kestrel.approval.decision": "approved", "kestrel.approval.escalated_by": ["taint:data__query"]},
+        ),
+    ],
+    ids=["tool-span", "server-only", "model-step", "tainted-card"],
+)
+def test_data_calls_are_found_in_the_spans_without_the_messages(db: TraceDB, span: tuple[str, dict]) -> None:
+    """The spans say a data tool ran (or tainted a card) even when the stored conversation doesn't show it."""
+    db.add(convo("What's in a.txt?", "It says hello."), spans=(span,))
+    only_drop(build(db), "data_tool")
+
+
+def test_a_tool_that_merely_mentions_data_is_kept(db: TraceDB) -> None:
+    """Only the data__ prefix or the data server counts: `read_file` on data.csv is an ordinary trace."""
+    span = ("tool_call", {"gen_ai.tool.name": "read_file", "kestrel.tool.server": None})
+    keep = db.add(convo("What's in data.csv?", "Two rows.", args='{"path": "data.csv"}'), spans=(span,))
+    d = build(db)
+    assert kept(d) == {keep} and not d.dropped["data_tool"]
+
+
+def test_every_later_trace_in_a_data_session_is_dropped_and_earlier_ones_kept(db: TraceDB) -> None:
+    before = db.add(convo("What's in a.txt?", "It says hello."), session="s1")
+    db.add(data_convo("What is in my shop dataset?", "Orders."), session="s1")
+    db.add(convo("And what's in b.txt?", "Nothing much.", args='{"path": "b.txt"}'), session="s1")
+    other = db.add(convo("What's in c.txt?", "A list.", args='{"path": "c.txt"}'), session="s2")
+    d = build(db)
+    only_drop(d, "data_tool", 2)
+    assert kept(d) == {before, other}
+
+
+def test_with_trace_content_off_a_data_trace_still_taints_its_session(db: TraceDB) -> None:
+    """KESTREL_TRACE_CONTENT=off stores no messages (dropped as no_messages), but the spans still mark the
+    session, so a later trace stored with content is dropped as data_tool."""
+    span = ("tool_call", {"gen_ai.tool.name": "data__query"})
+    db.add(None, spans=(span,), session="s1")
+    db.add(convo("What's in a.txt?", "It says hello."), session="s1")
+    d = build(db)
+    assert {k: v for k, v in d.dropped.items() if v} == {"no_messages": 1, "data_tool": 1}
+
+
+def test_the_filter_report_counts_data_tool(db: TraceDB) -> None:
+    db.add(data_convo("What is in my shop dataset?", "Orders."))
+    report = ds.stats(build(db))["dropped"]
+    assert report["data_tool"] == 1 and list(report) == list(ds.FILTERS)
+    assert ds.FILTERS.index("data_tool") == ds.FILTERS.index("google_tool") + 1  # Google first, then data
+
+
+def test_the_prefix_is_the_data_servers(db: TraceDB) -> None:
+    """dataset.py doesn't import kestrel.data (distill needs no `data` extra), so pin the names here."""
+    tools = pytest.importorskip("kestrel.data.tools")
+    assert ds.DATA_SERVER == tools.SERVER
+    assert all(ds.is_data_tool(tools.kestrel_name(n)) for n in tools.NAMES)
+
+
+def test_a_real_rca_bench_trace_is_marked_from_its_spans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """End to end: a scripted rca run's own traces database (as the bench writes it) is caught by read_traces."""
+    pytest.importorskip("duckdb")
+    pytest.importorskip("numpy")
+    from kestrel.bench import cli
+
+    monkeypatch.setattr(cli, "BENCH_DB", tmp_path / "bench.db")
+    parser = argparse.ArgumentParser()
+    cli.add_parser(parser.add_subparsers(dest="command"))
+    argv = ["bench", "run", "--split", "rca", "--tools", "data", "--scripted", "right-analyst"]
+    argv += ["--tasks", "rca-lost-customer-1", "--out", str(tmp_path / "rca.json")]
+    assert cli.main(parser.parse_args(argv)) == 0
+    copy = tmp_path / "copy.db"  # open_readonly refuses a file named bench.db: never training data
+    copy.write_bytes((tmp_path / "bench.db").read_bytes())
+    conn = ds.open_readonly(copy)
+    try:
+        traces = ds.read_traces(conn)
+    finally:
+        conn.close()
+    assert traces and all(t["data_tool"] for t in traces)
+    assert all(ds.data_in_messages(t["messages"]) for t in traces)

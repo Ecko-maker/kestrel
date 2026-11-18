@@ -892,12 +892,26 @@ after the Google step, with its own approval line.
 
 ## Process
 
-### KI-pending-data-distill. Traces with data-tool results can reach `distill build`
-**Labels:** `data`, `privacy`, `distill`, `high`
-**The issue:** with `--tools data` on, traces hold rows of your datasets (tool results). `distill build` has no filter
-for them, as it does for Google (`google_tool`, on `feature/google-tools`).
+### KI-pending-data-distill. ~~Traces with data-tool results can reach `distill build`~~ (closed 2026-11-18)
+**Labels:** `data`, `privacy`, `distill`, `closed`
+**The issue:** with `--tools data` on, traces hold rows of your datasets (tool results). `distill build` had no filter
+for them, as it has for Google (`google_tool`, on `feature/google-tools`).
 **Done when:** a `data_tool` filter drops any trace with a `data__*` call or a data taint, counted in `manifest.json`,
 with tests. It must land before any trace collected with the data tools on is used.
+**Resolution 2026-11-18 (`feature/kestrel-data`):** the `data_tool` filter (`src/kestrel/distill/dataset.py`, right
+after `teacher`, no override) drops a trace when:
+- its messages hold a `data__*` call or a result wrapped as `source="data__..."`, history included;
+- or its spans show one, which holds with `KESTREL_TRACE_CONTENT=off`: a `tool_call` span named `data__*` or from the
+  `data` server, a model step that called one, or an approval card escalated by `taint:data__...`;
+- or an earlier trace in the same session did.
+
+The main reason is **benchmark contamination**: the rca split's datasets and the s1.2 data tasks are KestrelBench
+fixtures. Their exact and near prompts are already caught by `contamination_prompt` / `near_duplicate`, but a
+paraphrased "why did revenue drop?" over the same tool outputs would not be. Privacy is the second: a user's own
+datasets. It is counted in `manifest.json` and in `train.py`'s required pipeline (`distill/train_config.toml`). The
+pinned 2026-11-02 build (`distill/collection-a/`) predates it and could not have matched (no data tool existed), so
+`tests/test_distill_collection_a.py` lists it as added since. Tests: `tests/test_distill_dataset.py` (each signal, the
+session rule, content off, the report, the names against `kestrel.data.tools`, and a real scripted rca bench trace).
 
 ### KI-pending-data-injected-cells. The loader can't tell an attacker's cell from a private one
 **Labels:** `data`, `safety`, `bench`
@@ -910,10 +924,44 @@ changes.
 ### KI-pending-data-task-selection. rca tasks are kept only where the tools can show the planted truth
 **Labels:** `data`, `bench`, `measurement`
 **The issue:** `scripts/rca_tasks.py` keeps a seed only if the scripted right-analyst passes it, so every task is
-answerable. That selects on the tools: 3 price-change seeds were skipped (`selection.json`). R4 measures the model's
-reporting, not the tools' accuracy.
+answerable. That selects on the tools: 3 price-change seeds were skipped (20002, 20003, 20007; `selection.json`), all
+for the tool limitation in KI-pending-data-total-gate. Price-change still has its 6 tasks of the 30 (5 plain + 1
+integrity, from the 9 seeds tried), like every scenario. R4 measures the model's reporting of clear planted causes,
+not the tools' accuracy or subtle causes; every rca report says so (`rca.SCOPE`).
 **Mitigation:** the tools' accuracy on unselected seeds is the held-out calibration report
-(`evals/kestrelbench/rca/calibration/heldout.md`).
+(`evals/kestrelbench/rca/calibration/heldout.md`); their miss rate per scenario is in KI-pending-data-total-gate.
+
+### KI-pending-data-total-gate. A clear single-product cause is labelled low when the store total stays in its noise
+**Labels:** `data`, `tool`, `measurement`
+**The issue:** `decompose_change` labels every candidate low when the total's |z| < 2 (design 2.4, "no real change").
+A price rise on one product, with elastic demand, moves the store total by about 1-3%, often inside the total's
+noise. The tool then says "total change within normal variation" and labels the product low, even when its own
+measures would make it high.
+- **Price/volume/mix is not the problem.** It separates the two in every case checked: price up, volume down. The
+  label gate is what hides the cause.
+- **The 3 skipped seeds (20002, 20003, 20007):**
+  - the product's share of the gap is 78-100%, its z -3.3 to -5.4, and it moved down in 4 of 4 weeks;
+  - but the total's z is -2.0 as printed (just under 2), -0.8 and -1.1;
+  - so the scripted right-analyst could only report it as low, and `cause_named` (medium or high) failed.
+- **How often, on dev seeds 1-1000 per scenario** (no held-out seed read; `cause` = the planted cause labelled medium
+  or high on its own dimension):
+
+  | Scenario | Cause shown | Missed by the total gate alone | Missed on its own measures |
+  |---|---|---|---|
+  | price-change | 676 / 1,000 | 284 | 40 |
+  | stockout | 838 / 1,000 | 159 | 3 |
+  | channel-shift | 917 / 1,000 | 83 | 0 |
+  | lost-customer | 923 / 1,000 | 77 | 0 |
+
+- **This is recall, not precision.** The calibration targets (`heldout.md`) are about precision: of the candidates
+  labelled high, how many are the cause. They don't measure how often a real cause is labelled low. The gate is the
+  rule's deliberate conservatism (no-change false alarms 2.5% held-out), and this is its cost: a user asking "why did
+  revenue drop?" when the store total barely moved gets "no cause found", even if one product clearly fell.
+
+**Done when:** a v2 rule is designed and calibrated on dev seeds, with its recall per scenario reported next to the
+four targets and the no-change false-alarm rate held at 5% or less. One option is a separate per-candidate path when
+the total is within noise ("one product moved though the total didn't"). The v1 rule is frozen (decision 35):
+nothing changes before the section 5 measurement.
 
 ### KI-pending-data-anomaly-noise. detect_anomalies' noise windows overlap
 **Labels:** `data`, `low`

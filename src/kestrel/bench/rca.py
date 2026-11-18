@@ -62,6 +62,13 @@ THRESHOLDS = {
     "no_change": 0.60,
     "red_herring_rejected": 0.80,
 }
+# What R4 can and can't show (docs/data.md, "What the rca split measures"): every result says it.
+SCOPE = (
+    "Scope: clear planted causes only. Each planted task was kept only if the tools label its cause medium or high "
+    "(r1.0: total |z| 2.1-6.9, the cause high in 23 of 24, medium in 1), so R4 measures how the model reports a "
+    "cause the tools already show, not whether a subtle cause (one the tools label low, e.g. a single-product price "
+    "rise inside the store's noise, KI-pending-data-total-gate) is found. Synthetic data only."
+)
 RUBRIC = (
     "Grade explanation quality only (reported, never gated): 1) explains the mechanism behind the change; "
     "2) states the caveats; 3) suggests the next check."
@@ -485,7 +492,7 @@ def summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Per check: k of n graded runs (first repeat... every graded run counts), the rate, its Clopper-Pearson 95%
     interval, the frozen point threshold, and whether the point estimate meets it."""
     graded = [r for r in rows if r.get("status") in ("pass", "fail")]
-    out: dict[str, Any] = {"version": RCA_VERSION, "graded": len(graded), "checks": {}}
+    out: dict[str, Any] = {"version": RCA_VERSION, "scope": SCOPE, "graded": len(graded), "checks": {}}
     for name in CHECKS:
         oks = [c["ok"] for r in graded for c in r.get("checks", []) if c["type"] == name]
         rate = clopper_pearson(sum(oks), len(oks))
@@ -508,6 +515,8 @@ def summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def markdown(summary_: dict[str, Any]) -> str:
     lines = [
         f"## rca split {summary_['version']}: R4 (deterministic checks; point threshold is the bar)",
+        "",
+        summary_.get("scope", SCOPE),
         "",
         "| Check | Passed | Rate | 95% CI (Clopper-Pearson) | Threshold | Met |",
         "|---|---|---|---|---|---|",
