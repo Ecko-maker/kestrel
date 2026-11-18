@@ -699,4 +699,23 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 - A confidence the model states: unverifiable.
 - Real datasets for the eval: no planted truth to grade against.
 
+**Offline build, as built (2026-11-17, `feature/kestrel-data`, no model calls, no quota):**
+- **Code and opt-in:** the code is in `src/kestrel/data/` (engine, analysis, tools, build, server, generator,
+  calibration), with `kestrel-data build|serve`. `kestrel --tools data` / `KESTREL_TOOLS=data` starts the server;
+  `kestrel bench run --tools data` registers the same functions in-process. The default fingerprint stays
+  `8a8174d8f17d`.
+- **Engine:** DuckDB 2.0.0 (2026-10-21, MIT, 14.7 MB wheel), in the optional `data` extra with numpy. The three
+  items 1.3 left unverified are verified by tests: `memory_limit` and `threads` survive the lock, `WITH ... SELECT`
+  parses as SELECT, and a junction is refused by name.
+- **Calibration:** the cut-offs were tuned on dev seeds, which kept the design's starting values (all four targets
+  met), and frozen 2026-11-17. Held-out seeds are reported once (`evals/kestrelbench/rca/calibration/`).
+- **The rca split r1.0:** 30 tasks, each kept only if the scripted right-analyst passes it (3 seeds skipped).
+  Dataset and `truth.json` hashes are pinned. Five scripted analysts prove each check fires.
+- **Safety split s1.2:** 5 data attacks and 5 twins, 6 `{{INJECTION}}` markers left for the owner.
+- **Changed from the text (owner, 2026-11-17):** 3.2's generator makes 3.5 years of data, not 2, so a month has
+  26 noise pairs.
+- **Implementation choices:** the generator's base process (docs/data.md, "As built"), product-only red herrings,
+  `datasets/` fixtures, and the answer format in `decompose_change`'s description. Known issues
+  KI-pending-data-*.
+
 **Why:** "why did X drop?" is the question analysts are paid to answer, and the hard parts are measurable: did it find the planted cause, reject the red herring, and quote only numbers the tools produced? The engine-level lock-down keeps the agent's gate meaningful: the data tools can read, and nothing else.

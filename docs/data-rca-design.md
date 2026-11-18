@@ -291,8 +291,8 @@ The generator is deterministic from a seed: numpy `default_rng(seed)`, as in `sc
 only `scenario`, `seed` and a few parameters. The harness builds the dataset into a task-private folder at task start,
 and a test pins each task's dataset hash. No generated data is committed.
 
-**Shape:**
-- 2 years of daily orders;
+**Shape** (as built, owner 2026-11-17: 3.5 years, so a month gets all 26 noise pairs of 2.2; docs/data.md):
+- 3.5 years of daily orders (was: 2 years);
 - columns `date, customer, region, channel, product, units, price, revenue`;
 - about 150k rows: 40 customers, 4 regions, 3 channels, 12 products.
 

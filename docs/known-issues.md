@@ -892,6 +892,53 @@ after the Google step, with its own approval line.
 
 ## Process
 
+### KI-pending-data-distill. Traces with data-tool results can reach `distill build`
+**Labels:** `data`, `privacy`, `distill`, `high`
+**The issue:** with `--tools data` on, traces hold rows of your datasets (tool results). `distill build` has no filter
+for them, as it does for Google (`google_tool`, on `feature/google-tools`).
+**Done when:** a `data_tool` filter drops any trace with a `data__*` call or a data taint, counted in `manifest.json`,
+with tests. It must land before any trace collected with the data tools on is used.
+
+### KI-pending-data-injected-cells. The loader can't tell an attacker's cell from a private one
+**Labels:** `data`, `safety`, `bench`
+**The issue:** a data task's canary lives in its CSV (the private `contact` column), next to the cells the owner
+writes as injections. The loader's "no canary in attacker data" check can't separate the two once the markers are
+filled. `tests/test_data_safety.py` checks that canaries sit only in column 2, which stays true unless a task's CSV
+changes.
+**Done when:** the attacker's cells are their own fixture (a second table), or the check reads columns by name.
+
+### KI-pending-data-task-selection. rca tasks are kept only where the tools can show the planted truth
+**Labels:** `data`, `bench`, `measurement`
+**The issue:** `scripts/rca_tasks.py` keeps a seed only if the scripted right-analyst passes it, so every task is
+answerable. That selects on the tools: 3 price-change seeds were skipped (`selection.json`). R4 measures the model's
+reporting, not the tools' accuracy.
+**Mitigation:** the tools' accuracy on unselected seeds is the held-out calibration report
+(`evals/kestrelbench/rca/calibration/heldout.md`).
+
+### KI-pending-data-anomaly-noise. detect_anomalies' noise windows overlap
+**Labels:** `data`, `low`
+**The issue:** each point's expected value uses the 28 days before it, and its noise uses 26 earlier pairs stepped
+back 7 days at a time. Those windows overlap, so σ can be too small and more points flagged. The tool is reported, not
+gated, and the label never uses it.
+**Done when:** the step is the window length, or a calibration shows the flag rate on no-change data.
+
+### KI-pending-data-numbers-in-names. numbers_match reads digits in names as numbers
+**Labels:** `data`, `bench`, `low`
+**The issue:** a product code like `K-1000` holds the number 1000. An answer that names a product no tool printed in
+that run fails `numbers_match`, even if the name is right. That is deterministic and strict: a name the model never
+saw is one it made up.
+**Done when:** a task shows a correct answer failing only for this, in which case names come from `truth.json`.
+
+### KI-pending-data-synthetic-only. The rca split's data is synthetic
+**Labels:** `data`, `measurement`
+**The issue:**
+- The generator plants one cause in clean seasonal data, with a base process tuned so the planted causes are visible
+  (docs/data.md, "As built").
+- Real data has holidays, missing days, several causes at once and returns.
+- R4 and the calibration hold for this generator only.
+
+**Done when:** a small set of real datasets with known causes is graded the same way (needs owner data).
+
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
 **Labels:** `security`, `closed`
 During Phase 1, real-looking keys ended up in `.env.example` (tracked) and were staged by accident twice before being caught; `.env` itself held Python code instead of `KEY=value` lines. Both are local only and were never committed (gitleaks finds nothing in the history). The pre-commit gitleaks hook now blocks this.

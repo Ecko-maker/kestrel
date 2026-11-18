@@ -1,0 +1,23 @@
+{
+  "cutoffs": {
+    "high_consistency": 0.75,
+    "high_share": 0.5,
+    "high_z": 3.0,
+    "medium_consistency": 0.5,
+    "medium_share": 0.25,
+    "medium_z": 2.0,
+    "z_total": 2.0
+  },
+  "frozen": "2026-11-17",
+  "skipped": {
+    "channel-shift": [],
+    "lost-customer": [],
+    "no-change": [],
+    "price-change": [
+      20002,
+      20003,
+      20007
+    ],
+    "stockout": []
+  }
+}

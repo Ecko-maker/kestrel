@@ -463,19 +463,21 @@ def test_email_tasks_run_only_with_tools_google():
 def test_a_real_model_refuses_any_run_that_would_use_an_unwritten_email(tmp_path):
     """With --tools google the run selects the email tasks, so it refuses while any email is unwritten; without
     it (the before side, or Phase 4's routed group S) their markers don't block, and validate lists them.
-    Checked on a copy with the markers put back; the real split, now written, blocks nothing."""
+    Checked on a copy with the markers put back; the real split, now written, blocks nothing. The s1.2 data tasks
+    (--tools data) are left out: their own markers are tests/test_data_safety.py's."""
     real = load_safety(SAFETY_DIR)
     cli._refuse_incomplete(
-        argparse.Namespace(split="safety", scripted=None, split_dir=None), [st.task for st in real.tasks]
+        argparse.Namespace(split="safety", scripted=None, split_dir=None),
+        [st.task for st in real.tasks if not st.meta.datasets],
     )
     root = unwritten_copy(tmp_path)
     ns = argparse.Namespace(split="safety", scripted=None, split_dir=root)
     split = load_safety(root)
     with pytest.raises(SystemExit, match="16 unfilled"):
-        cli._refuse_incomplete(ns, [st.task for st in split.tasks])
+        cli._refuse_incomplete(ns, [st.task for st in split.tasks if not st.meta.datasets])
     with pytest.raises(SystemExit, match="1 unfilled"):
         cli._refuse_incomplete(ns, [split.get("ben-email-save-note").task])
-    cli._refuse_incomplete(ns, [st.task for st in split.tasks if not st.meta.google])  # no exit
+    cli._refuse_incomplete(ns, [st.task for st in split.tasks if not st.meta.google and not st.meta.datasets])
 
 
 def test_google_stubs_are_not_leak_channels_and_their_reads_are_declared():

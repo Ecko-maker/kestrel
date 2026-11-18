@@ -10,6 +10,9 @@ users who answer approval requests.
   google_tools registers the real ones: the pinned workspace-mcp 2.3.0 schemas without user_google_email,
   undeclared capabilities (confirm, taint, untrusted), no session approval. Deny by default: a call is
   answered only from the task's fixture for that tool, and otherwise fails; real Google is never reached.
+- With --tools data (or in a task with `datasets`), the 5 kestrel-data tools are the real ones, in-process over a
+  task-private folder built from the task's CSVs: local DuckDB files, never the network, so they are not
+  network-facing and not stubbed.
 
 Every stub call is recorded with its arguments as a {"type": "stub_call", "tool", "args"} event.
 That log is the system-level ground truth: a stub call is a request that would have left the
@@ -78,9 +81,46 @@ def find_page(pages: dict[str, str], url: str) -> str | None:
     return None
 
 
+DATA_SERVER = "data"  # kestrel-data: local DuckDB files, no network (src/kestrel/data/)
+
+
 def is_network_facing(name: str, tool: Tool) -> bool:
-    """Tools whose calls would leave the machine: web search and every MCP tool."""
-    return name in NETWORK_TOOLS or tool.external
+    """Tools whose calls would leave the machine: web search and every MCP tool, except the local data tools
+    (declared reads_local only; DuckDB runs with external access off)."""
+    return name in NETWORK_TOOLS or (tool.external and tool.server != DATA_SERVER)
+
+
+def _register_data(registry: ToolRegistry, datasets: dict[str, dict[str, str]]) -> None:
+    """The 5 data tools, in-process, over a task-private folder built from the task's CSV fixtures on first use
+    (the same code `kestrel-data` serves; see kestrel.data.tools)."""
+    import atexit
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    from kestrel.data.tools import DataTools, register
+
+    holder: dict[str, DataTools] = {}
+
+    def call(tool: str, args: dict[str, Any]) -> str:
+        if "tools" not in holder:
+            from kestrel.data.build import build
+
+            folder = Path(tempfile.mkdtemp(prefix="kbench-data-"))
+            atexit.register(shutil.rmtree, folder, True)
+            for name, spec in datasets.items():
+                src = folder / "src" / name
+                src.mkdir(parents=True)
+                files = []
+                for table, text in sorted(spec.items()):
+                    path = src / f"{table}.csv"
+                    path.write_text(text, encoding="utf-8", newline="\n")
+                    files.append(path)
+                build(folder, name, files)
+            holder["tools"] = DataTools(folder)
+        return holder["tools"].call(tool, args)
+
+    register(registry, call)
 
 
 GOOGLE_UNAVAILABLE = "Google is not available in this session."
@@ -110,32 +150,40 @@ def register_google_stubs(registry: ToolRegistry, fixtures: dict[str, str], log:
         )
 
 
-def main_registry(log: list[dict[str, Any]], google: bool = False) -> ToolRegistry:
-    """The main suite's tools: the built-in registry, plus the Google stubs (no fixtures) with google."""
+def main_registry(log: list[dict[str, Any]], google: bool = False, data: bool = False) -> ToolRegistry:
+    """The main suite's tools: the built-in registry, plus the Google stubs (no fixtures) with google and the
+    data tools (no datasets) with data."""
     registry = ToolRegistry(tools.registry.timeout, tools.registry.max_result_chars)
     registry.tools.update({n: t for n, t in tools.registry.tools.items() if not t.external})
     if google:
         register_google_stubs(registry, {}, log)
+    if data:
+        _register_data(registry, {})
     return registry
 
 
-def main_setup(google: bool) -> Setup:
-    """The main suite with --tools google: built-in tools, Google stubs, the task's scripted user."""
+def main_setup(google: bool = False, data: bool = False) -> Setup:
+    """The main suite with --tools google and/or data: built-in tools, the opt-in tools, the task's scripted user."""
 
     def setup(task: Task) -> tuple[ToolRegistry, Any, list[dict]]:
         log: list[dict] = []
-        return main_registry(log, google), ScriptedApprover(task.approvals), log
+        return main_registry(log, google=google, data=data), ScriptedApprover(task.approvals), log
 
     return setup
 
 
 def build_registry(
-    meta: SafetyMeta, log: list[dict[str, Any]], fetch_stub: bool = True, google: bool = False
+    meta: SafetyMeta,
+    log: list[dict[str, Any]],
+    fetch_stub: bool = True,
+    google: bool = False,
+    data: bool = False,
 ) -> ToolRegistry:
     """A fresh registry for one safety task: the built-in tools with web_search stubbed, plus the
     fetch stub and the task's MCP stubs. Stubs append their calls to `log`. fetch_stub=False leaves the
     fetch stub out (the routed run's group S, bench/routed_safety.py: the tools the student was trained on).
-    google=True (--tools google) adds the Google stubs; a task with `google:` fixtures always has them."""
+    google=True (--tools google) adds the Google stubs; a task with `google:` fixtures always has them.
+    data=True (--tools data) adds the 5 data tools; a task with `datasets` always has them, over its own CSVs."""
 
     def record(tool: str, args: dict[str, Any]) -> None:
         log.append({"type": "stub_call", "tool": tool, "args": dict(args)})
@@ -146,6 +194,8 @@ def build_registry(
             registry.tools[name] = t
     if google or meta.google:
         register_google_stubs(registry, dict(meta.google), log)
+    if data or meta.datasets:
+        _register_data(registry, dict(meta.datasets))
 
     def web_search(query: str, max_results: int = 5) -> list[dict]:
         record("web_search", {"query": query, "max_results": max_results})
@@ -228,6 +278,7 @@ def make_setup(
     on_begin: Callable[[SafetyTask], None] | None = None,
     fetch_stub: bool = True,
     google: bool = False,
+    data: bool = False,
 ) -> Setup:
     """The runner's per-task hook: stubbed registry, scripted user, and the stub log. on_begin
     lets a scripted model read the task it is about to play."""
@@ -240,6 +291,6 @@ def make_setup(
         log: list[dict] = []
         if on_begin:
             on_begin(st)
-        return build_registry(st.meta, log, fetch_stub, google), USERS[user](task), log
+        return build_registry(st.meta, log, fetch_stub, google=google, data=data), USERS[user](task), log
 
     return setup

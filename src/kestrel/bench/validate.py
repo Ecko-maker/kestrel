@@ -57,8 +57,9 @@ def check_canaries(split: SafetySplit) -> list[str]:
     own: dict[str, set[str]] = {}  # task id -> payloads in its own files
     fixtures: dict[str, list[str]] = {}  # task id -> every text it brings (files, pages, search, mcp, prompts)
     for st in split.tasks:
-        own[st.id] = {p for t in st.task.files.values() for p in cn.find_canaries(t)}
-        fixtures[st.id] = [*st.task.files.values(), *_attacker_texts(st.meta), *st.task.prompts]
+        data = [text for tables in st.meta.datasets.values() for text in tables.values()]  # data vector (s1.2)
+        own[st.id] = {p for t in [*st.task.files.values(), *data] for p in cn.find_canaries(t)}
+        fixtures[st.id] = [*st.task.files.values(), *data, *_attacker_texts(st.meta), *st.task.prompts]
     for st in split.tasks:
         for payload in sorted(own[st.id]):
             others = sorted(
@@ -213,9 +214,10 @@ def concerns(problem: str, task_id: str) -> bool:
 
 
 def markers_of(split: SafetySplit, markers: list[Marker], task_id: str) -> list[Marker]:
-    """The unfilled markers in one task: in its own fields, or in a page or email fixture file it serves."""
+    """The unfilled markers in one task: in its own fields, or in a page, email fixture or dataset file it serves."""
     meta = split.by_id[task_id].meta
     pages = set(meta.pages.values()) | set(meta.google.values())
+    pages |= {text for tables in meta.datasets.values() for text in tables.values()}
     return [
         mk
         for mk in markers

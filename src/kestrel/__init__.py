@@ -9,6 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from kestrel import data as data_tools
 from kestrel import google_tools
 from kestrel import tools as tools_module
 from kestrel.agent import MAX_CONTEXT_TOKENS, Agent
@@ -146,8 +147,9 @@ def main() -> None:
         "--tools",
         dest="agent_tools",
         nargs="+",
-        choices=["google"],
-        help="opt-in tool sets: google = Gmail and Calendar read (docs/google.md; or KESTREL_TOOLS=google)",
+        choices=["google", "data"],
+        help="opt-in tool sets: google = Gmail and Calendar read (docs/google.md); data = read-only analysis of "
+        "local datasets (docs/data.md); or KESTREL_TOOLS=google,data",
     )
     sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,telegram,bench,distill}")
     p = sub.add_parser("traces", help="list recent traces")
@@ -165,6 +167,12 @@ def main() -> None:
     bench_cli.add_parser(sub)
     distill.add_parser(sub)
     args = parser.parse_args()
+    args.data = None
+    if args.command not in ("bench", "distill") and data_tools.requested(args.agent_tools):
+        try:  # checked before any model is touched
+            args.data = data_tools.load_settings(workspace=tools_module.WORKSPACE)
+        except data_tools.DataConfigError as e:
+            sys.exit(str(e))
     if os.getenv("KESTREL_MCP", "on").strip().lower() in ("off", "0", "false", "no"):
         args.no_mcp = True
     args.google = None
@@ -207,10 +215,11 @@ def main() -> None:
 
     mcp = None if args.no_mcp else start_mcp()
     google = start_google(args)
+    data = start_data(args)
     try:
         chat(llm, tracer, args)
     finally:
-        for manager in (mcp, google):
+        for manager in (mcp, google, data):
             if manager:
                 manager.close()
 
@@ -237,6 +246,7 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
         print(f"{YELLOW}Chat is disabled: {problem}. Traces and stats still work.{RESET}")
     mcp = None if args.no_mcp else start_mcp()
     google = start_google(args)
+    data = start_data(args)
 
     def make_agent(on_event, approver):
         if llm is None:
@@ -284,7 +294,7 @@ def run_web(args: argparse.Namespace, tracer: Tracer) -> None:
     try:
         uvicorn.run(app, host=config.host, port=args.port, log_level="warning")
     finally:
-        for manager in (mcp, google):
+        for manager in (mcp, google, data):
             if manager:
                 manager.close()
 
@@ -315,12 +325,13 @@ def run_telegram(args: argparse.Namespace) -> None:
         dim(f"[skip] {warning}")
     mcp = None if args.no_mcp else start_mcp()
     google = start_google(args)
+    data = start_data(args)
     try:
         telegram_bot.run(llm, max_context_tokens=int(os.getenv("KESTREL_MAX_CONTEXT_TOKENS", MAX_CONTEXT_TOKENS)))
     except telegram_bot.AlreadyRunning as e:
         sys.exit(str(e))
     finally:
-        for manager in (mcp, google):
+        for manager in (mcp, google, data):
             if manager:
                 manager.close()
 
@@ -338,6 +349,22 @@ def start_google(args: argparse.Namespace) -> MCPManager | None:
     manager = google_tools.start(settings, registry, problem)
     added = [t.name for t in registry.tools.values() if t.server == google_tools.SERVER]
     dim("[google] " + (", ".join(added) or "no tools registered"))
+    return manager
+
+
+def start_data(args: argparse.Namespace) -> MCPManager | None:
+    """The opt-in data tools (`--tools data`), or None. Settings were checked in main()."""
+    settings = getattr(args, "data", None)
+    if settings is None:
+        return None
+    dim(f"[data] starting kestrel-data over {settings.folder} (read only)...")
+
+    def problem(server: str, message: str) -> None:
+        print(f"{YELLOW}[data] {message}{RESET}")
+
+    manager: MCPManager = data_tools.start(settings, registry, problem)
+    added = [t.name for t in registry.tools.values() if t.server == data_tools.SERVER]
+    dim("[data] " + (", ".join(added) or "no tools registered"))
     return manager
 
 

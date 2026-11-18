@@ -1,0 +1,110 @@
+{
+  "cutoffs": {
+    "high_consistency": 0.75,
+    "high_share": 0.5,
+    "high_z": 3.0,
+    "medium_consistency": 0.5,
+    "medium_share": 0.25,
+    "medium_z": 2.0,
+    "z_total": 2.0
+  },
+  "grid": {
+    "high_consistency": [
+      0.5,
+      0.75,
+      1.0
+    ],
+    "high_share": [
+      0.4,
+      0.5,
+      0.6
+    ],
+    "high_z": [
+      3.0,
+      4.0,
+      5.0
+    ],
+    "medium_consistency": [
+      0.25,
+      0.5,
+      0.75
+    ],
+    "medium_share": [
+      0.15,
+      0.25,
+      0.35
+    ],
+    "medium_z": [
+      2.0,
+      2.5,
+      3.0
+    ],
+    "z_total": [
+      2.0,
+      2.5,
+      3.0
+    ]
+  },
+  "met": {
+    "0.50 <= medium <= 0.90": true,
+    "high >= 0.90": true,
+    "low < 0.50": true,
+    "no-change any <= 0.05": true
+  },
+  "seeds": [
+    1,
+    1000
+  ],
+  "split": "dev",
+  "start": {
+    "high_consistency": 0.75,
+    "high_share": 0.5,
+    "high_z": 3.0,
+    "medium_consistency": 0.5,
+    "medium_share": 0.25,
+    "medium_z": 2.0,
+    "z_total": 2.0
+  },
+  "start_met": {
+    "0.50 <= medium <= 0.90": true,
+    "high >= 0.90": true,
+    "low < 0.50": true,
+    "no-change any <= 0.05": true
+  },
+  "start_targets": {
+    "high": {
+      "k": 4787,
+      "n": 4789
+    },
+    "low": {
+      "k": 1901,
+      "n": 68776
+    },
+    "medium": {
+      "k": 312,
+      "n": 400
+    },
+    "no_change_any": {
+      "k": 28,
+      "n": 1000
+    }
+  },
+  "targets": {
+    "high": {
+      "k": 4787,
+      "n": 4789
+    },
+    "low": {
+      "k": 1901,
+      "n": 68776
+    },
+    "medium": {
+      "k": 312,
+      "n": 400
+    },
+    "no_change_any": {
+      "k": 28,
+      "n": 1000
+    }
+  }
+}

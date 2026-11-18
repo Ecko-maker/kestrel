@@ -45,6 +45,8 @@ def groups(split: SafetySplit) -> dict[str, dict[str, str]]:
     for st in split.tasks:
         if st.meta.google:  # an email task (s1.1): --tools google only, never routed (see the docstring)
             continue
+        if st.meta.datasets:  # a data task (s1.2): --tools data only, never routed (the 48 s1.0 tasks define them)
+            continue
         reason = needs_untrained_tool(st.meta)
         out[F if reason else S][st.id] = reason or ""
     return out
