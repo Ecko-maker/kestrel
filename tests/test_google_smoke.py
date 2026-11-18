@@ -215,3 +215,24 @@ def test_main_runs_the_leak_check_with_the_settings_secret(logs, capsys):
     env = {"GOOGLE_OAUTH_CLIENT_ID": CLIENT_ID, "GOOGLE_OAUTH_CLIENT_SECRET": SECRET, "USER_GOOGLE_EMAIL": ADDRESS}
     assert smoke.main(["--leak-check", "--logs", str(logs)], env=env) == 0
     assert SECRET not in capsys.readouterr().out
+
+
+INSTALLED = r"C:\Users\someone\AppData\Local\kestrel\workspace-mcp-2.3.0\Scripts\workspace-mcp.exe"
+ENV = {"GOOGLE_OAUTH_CLIENT_ID": CLIENT_ID, "GOOGLE_OAUTH_CLIENT_SECRET": SECRET, "USER_GOOGLE_EMAIL": ADDRESS}
+
+
+def test_the_installed_command_is_used_and_nothing_comes_from_uvx():
+    settings = smoke._settings({**ENV, "KESTREL_GOOGLE_COMMAND": INSTALLED})
+    assert settings.command == INSTALLED
+    assert google_tools.PIN not in settings.args and "uvx" not in settings.args
+    assert list(settings.args) == list(google_tools.SERVER_ARGS)  # the same read-only flags
+    assert smoke.download_refused(settings, allow_download=False) is None
+    assert "no download" in smoke.server_source(settings)
+
+
+def test_without_the_command_the_run_stops_before_any_download(monkeypatch, capsys):
+    monkeypatch.setattr(smoke, "run", lambda settings: pytest.fail("must not start the server"))
+    assert smoke.main([], env=ENV) == 2
+    assert "KESTREL_GOOGLE_COMMAND" in capsys.readouterr().out
+    settings = smoke._settings(ENV)
+    assert settings.command == "uvx" and smoke.download_refused(settings, allow_download=True) is None

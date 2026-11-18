@@ -4,6 +4,9 @@
     uv run --no-sync python scripts/live/google_smoke.py                 # the run (you approve each card)
     uv run --no-sync python scripts/live/google_smoke.py --leak-check    # afterwards: search logs/
 
+The server is the installed one named by KESTREL_GOOGLE_COMMAND (docs/google.md). Without that line the script
+stops rather than let uvx download workspace-mcp, unless --allow-download is given.
+
 The run makes three calls, each through an approval card:
 1. google__search_gmail_messages, query "newer_than:2d", at most 3 results;
 2. google__get_gmail_message_content on the first result (skipped if there is none);
@@ -314,6 +317,23 @@ def _settings(env: Mapping[str, str]) -> google_tools.GoogleSettings | None:
         return None
 
 
+def server_source(settings: google_tools.GoogleSettings) -> str:
+    """Which server runs: the installed one (KESTREL_GOOGLE_COMMAND), or uvx, which may download it."""
+    if settings.command == "uvx":
+        return "uvx (may download ~190 MB on first use)"
+    return f"the installed command {settings.command} (KESTREL_GOOGLE_COMMAND; no download)"
+
+
+def download_refused(settings: google_tools.GoogleSettings, allow_download: bool) -> str | None:
+    """Without KESTREL_GOOGLE_COMMAND the server comes from uvx, which may download it: only on request."""
+    if settings.command == "uvx" and not allow_download:
+        return (
+            "KESTREL_GOOGLE_COMMAND isn't set, so the server would come from uvx and may be downloaded "
+            "(~190 MB). Add the line to .env (docs/google.md), or pass --allow-download."
+        )
+    return None
+
+
 def run(settings: google_tools.GoogleSettings) -> int:
     from kestrel.agent import Agent
     from kestrel.approval import ApprovalGate, TerminalApprover
@@ -323,7 +343,7 @@ def run(settings: google_tools.GoogleSettings) -> int:
 
     capture = LinkCapture()
     MCPManager.call = capture.wrap(MCPManager.call)  # type: ignore[method-assign]  # see the raw answer
-    print(f"[google] starting {google_tools.PIN} (read only). The first start may download it.")
+    print(f"[google] starting {google_tools.PIN} (read only) with {server_source(settings)}")
     manager = google_tools.start(
         settings, registry, lambda server, message: print(f"[google] {google_tools.mask(message, settings.address)}")
     )
@@ -349,6 +369,9 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--leak-check", action="store_true", help="search logs/ instead of running")
     parser.add_argument("--logs", type=Path, default=ROOT / "logs", help="folder to search (default logs/)")
+    parser.add_argument(
+        "--allow-download", action="store_true", help="without KESTREL_GOOGLE_COMMAND, let uvx fetch the server"
+    )
     args = parser.parse_args(argv)
     if env is None:
         from dotenv import load_dotenv
@@ -360,6 +383,9 @@ def main(argv: list[str] | None = None, env: Mapping[str, str] | None = None) ->
         return 2
     if args.leak_check:
         return leak_check(args.logs, settings.address, settings.env["GOOGLE_OAUTH_CLIENT_SECRET"])
+    if refused := download_refused(settings, args.allow_download):
+        print(refused)
+        return 2
     return run(settings)
 
 
