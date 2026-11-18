@@ -100,7 +100,14 @@ The full method is in design section 2. In short:
 - **Tuned on development seeds** (1-1000 per scenario). The design's starting values already met all four targets
   there (high 4,787/4,789; medium 312/400; low 1,901/68,776; no-change false alarm 28/1,000), so they were frozen
   unchanged on 2026-11-17.
-- **Reported once on held-out seeds** (10001-11000) with those frozen values: `heldout.md`.
+- **Reported once on held-out seeds** (10001-11000) with those frozen values (`heldout.md`). All four targets were
+  met:
+  - high: 4,682 / 4,684 (95% CI 99.8-100%);
+  - medium: 323 / 416 = 77.6% (73.3-81.6%);
+  - low: 1,995 / 68,856 = 2.9%;
+  - no-change false alarm: 25 / 1,000 = 2.5% (1.6-3.7%).
+
+  These hold for this generator only (KI-pending-data-synthetic-only).
 
 ## For the bench (no network, no keys)
 
