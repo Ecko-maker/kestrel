@@ -82,11 +82,17 @@ KESTREL_TOOLS=google            # optional: on for every run
 **3. First use:** `uv run kestrel --tools google`, then ask about your mail. The first call opens a browser for
 Google's consent screen on the computer Kestrel runs on (the server opens it; the model, traces and cards get the
 answer with the link removed, so the console and Telegram can't show it). It must list only reading your email,
-viewing your calendars and your basic profile; if it asks for anything more, stop and report it. If Google shows a
-box per permission, tick both Gmail and Calendar: a grant without them is saved but asked for again on the next
-call. Use the one tab the server opened: a second tab of the same link fails with "invalid or expired state". The
-tokens are saved in the credentials folder. While the app is in Testing, Google may make you consent again after 7
-days (known issue `KI-pending-google-testing-consent`).
+viewing your calendars and your basic profile; if it asks for anything more, stop and report it. The tokens are
+saved in the credentials folder.
+
+- **Tick both boxes.** Tick both the Gmail and Calendar boxes on the consent screen. An unticked box gives a
+  partial grant, and the next run asks again.
+- **Re-consent happens at the laptop.** Testing mode needs a fresh consent about every 7 days (known issue
+  `KI-pending-google-testing-consent`). The sign-in link opens in the laptop's browser only: it is stripped from
+  everything the agent and Telegram see.
+- **One tab per sign-in.** Use the tab the server opened. A second tab of the same link fails with "invalid or
+  expired state".
+- **"Authentication Processing Error" after Allow:** close the old sign-in tabs and start a fresh run.
 
 Missing lines stop Kestrel before anything starts, with a message naming them. It never prints their values.
 
