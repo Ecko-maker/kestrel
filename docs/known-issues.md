@@ -736,6 +736,35 @@ address in any case and encoding (URL-encoded once or twice, JSON-escaped, HTML 
 unsubscribe or mailto links are covered too. Tests replay the live shape, as an error and as a result, through the
 real Agent, gate and tracer (`tests/test_google_tools.py`). Rows written before the fix stay until cleaned by hand.
 
+### KI-pending-card-decoded-noise. Cards show "Decoded:" garbage for timestamps and IDs
+**Labels:** `approval`, `cards`, `telegram`, `low`
+**The issue:** seen in the Google smoke run of 2026-11-19 (trace `986ca7b4`): the `google__get_events` card printed
+`Decoded: M]}Om` and `Decoded: M]Om` for `time_min` / `time_max` (ISO timestamps). `egress.decoded_forms`, which
+fills a card's "Decoded:" lines (`approval.build_notice`; terminal, web and Telegram), takes any run of 12+
+characters from `[A-Za-z0-9+/_-]` as a base64 token. `2026-11-19T22` qualifies. `base64.b64decode` without
+`validate=True` silently drops the `-`, decodes the rest, and `.decode("utf-8", errors="ignore")` drops the invalid
+bytes, leaving a few printable characters. The same happens for Gmail message IDs (hex), Calendar event IDs and
+UUIDs, and `unquote_plus` turns a timestamp's `+01:00` into ` 01:00`. Noise trains people to skip the lines that
+matter.
+**Not affected:** detection. `egress.find` (the outbound-content check) uses the same forms, but garbage of a few
+characters can't make a 24-character match, and no approval decision reads `notice.decoded`.
+**Proposed fix (not applied; owner to review):** cards show only readable decodings; detection is unchanged.
+- A new `egress.readable_forms(text)` used by `build_notice` for `notice.decoded` only (the highlight search keeps
+  every form, so a found leak is still located).
+- base64: strict (`validate=True`), with the alphabet the token actually uses (`+/` or `-_`, never both).
+- hex and base64: the bytes must be strict UTF-8, at least 90% printable, with at least 4 letters or digits.
+- URL-decoded forms are shown only if the text has a real `%XX` escape (a `+` alone isn't one).
+- Prototype result: ISO timestamps (with Z or an offset), dates, Gmail and Calendar IDs, UUIDs and Gmail queries
+  give 0 lines (today 0-2 each); a base64 or base64url secret, a hex secret and base64 inside a URL query still show
+  their text.
+- Tests: those ordinary values give no "Decoded:" line; the payloads still do; `egress.decoded_forms` and
+  `egress.find` results stay byte for byte as today on the existing egress tests and the safety split's canaries.
+**Fingerprint and rules:** unchanged. Display only: no system prompt, tool schema, risk or capability, and
+`RULES_VERSION` (`tiers-v2.2`) stays, so the default fingerprint stays `8a8174d8f17d`.
+**Blind spot of the proposal:** a base64 token glued to neighbouring characters of its alphabet (`id_c2Vj…`)
+decodes as garbage and shows no line; detection still finds it, as today.
+**Done when:** the owner approves (or changes) the proposal and the fix is in with its tests.
+
 ### KI-pending-google-leak-channels. Google calls are not counted as ways out
 **Labels:** `google`, `evals`, `medium`
 **The issue:** the safety guards count a canary leak through `web_search`, `fetch__fetch`, `send_message` and
