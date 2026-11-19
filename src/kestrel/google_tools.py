@@ -12,8 +12,10 @@ What the model gets, whatever the server offers:
 - undeclared capabilities, so every call is confirm tier, taints the conversation and is untrusted, and session
   approval is off, so every call is a card in every front end;
 - schemas without `user_google_email`: Kestrel fills it in from USER_GOOGLE_EMAIL after the gate, and replaces
-  the address in every result and error with "[your Google account]". So the address never reaches the model,
-  a trace, an approval card or the audit log (all of them see only the model's arguments and the masked result).
+  the address in every result and error with "[your Google account]", in every case and encoding (URL-encoded,
+  JSON-escaped, HTML entity), after removing any Google sign-in link (its query holds the client ID and the
+  address as login_hint). So the address never reaches the model, a trace, an approval card or the audit log
+  (all of them see only the model's arguments and the masked result).
 
 The server's own log (logs/mcp-google.log, git-ignored) does contain the address: workspace-mcp logs it.
 """
@@ -21,6 +23,7 @@ The server's own log (logs/mcp-google.log, git-ignored) does contain the address
 from __future__ import annotations
 
 import copy
+import functools
 import hashlib
 import json
 import os
@@ -118,8 +121,33 @@ def schemas_sha() -> str:
 # --- the address: filled in after the gate, masked in everything that comes back ----------------
 
 
+# The server's sign-in answer (a result or an error) carries a Google sign-in link whose query holds the client
+# ID, a state, a PKCE challenge and login_hint=<the address, URL-encoded>. Nothing downstream needs it: the server
+# opens it in a browser itself. The whole link is replaced before the address is masked.
+SIGN_IN_LINK = re.compile(r"https?://accounts\.google\.com/[^\s\"'<>()\[\]*]*", re.IGNORECASE)
+LINK_MASK = "[Google sign-in link removed: finish signing in in the browser on this computer]"
+
+
+@functools.lru_cache(maxsize=8)
+def address_pattern(address: str) -> re.Pattern[str]:
+    """The address in any case and any encoding a result can carry it in: each character other than a letter or
+    digit (@ . + - _) as itself, URL-encoded (%40), double URL-encoded (%2540), JSON-escaped (\\u0040) or an HTML
+    entity (&#64; &#x40;). So a link's login_hint, a mailto: or an unsubscribe link in a message are masked too."""
+    parts = []
+    for ch in address:
+        if ch.isalnum():
+            parts.append(re.escape(ch))
+            continue
+        code = ord(ch)
+        forms = [re.escape(ch), f"%{code:02x}", f"%25{code:02x}", f"\\\\u{code:04x}", f"&#0*{code};", f"&#x0*{code:x};"]
+        parts.append(f"(?:{'|'.join(forms)})")
+    return re.compile("".join(parts), re.IGNORECASE)
+
+
 def mask(text: str, address: str) -> str:
-    return re.sub(re.escape(address), MASK, text, flags=re.IGNORECASE) if address else text
+    """The text with any Google sign-in link removed and the address, in every form, replaced by MASK."""
+    text = SIGN_IN_LINK.sub(LINK_MASK, text)
+    return address_pattern(address).sub(MASK, text) if address else text
 
 
 def with_address(call: Callable[..., str], address: str) -> Callable[..., str]:

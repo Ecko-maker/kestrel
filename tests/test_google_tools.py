@@ -7,6 +7,7 @@ import json
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import quote, urlencode
 
 import pytest
 
@@ -18,7 +19,7 @@ from kestrel.bench.runner import agent_fingerprint
 from kestrel.bench.safety import SAFETY_DIR, find_markers, load_safety
 from kestrel.bench.stubs import GOOGLE_UNAVAILABLE, build_registry, main_registry
 from kestrel.permissions import ALL
-from kestrel.tools import ToolRegistry
+from kestrel.tools import ExternalToolError, ToolRegistry
 from kestrel.tracing import Tracer
 
 ADDRESS = "Owner.Person@mail.example"
@@ -205,6 +206,139 @@ def test_errors_are_masked_too():
     google_tools.register(registry, live_tools(), failing, ADDRESS, report=lambda m: None)
     out = registry.execute("google__get_events", {}, approved=True)
     assert ADDRESS.lower() not in out.lower() and "[your Google account]" in out
+
+
+# The live run of 2026-11-19 (trace 510284df): workspace-mcp 2.3.0's sign-in answer, raised as an error by the MCP
+# client. The plain address was masked, but the link's login_hint held it URL-encoded (%40), which the literal mask
+# missed: 9 hits in traces.db (the tool message the model got, the span's error and its result). Same shape here,
+# with a fake address, client ID, state and challenge.
+CLIENT_ID = "123456789012-fakeclientidfortests.apps.googleusercontent.com"
+STATE = "fakestate0123456789abcdefghijklmnopqrstuv"
+CHALLENGE = "fakechallengeABCDEFGHIJKLMNOPQRSTUVWXYZ0123"
+
+
+def sign_in_answer(address: str) -> str:
+    query = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": "http://localhost:8000/oauth2callback",
+        "scope": " ".join([*google_tools.READ_SCOPES, *google_tools.SIGN_IN_SCOPES]),
+        "state": STATE,
+        "code_challenge": CHALLENGE,
+        "code_challenge_method": "S256",
+        "access_type": "offline",
+        "prompt": "consent",
+        "login_hint": address,
+    }
+    return (
+        "Error calling tool 'search_gmail_messages': **ACTION REQUIRED: Google Authentication Needed for Google "
+        f"Gmail for '{address}'**\n\n"
+        "1. The authorization page has been **automatically opened in your browser**. Please complete the "
+        "authorization there.\n   If it did not appear, open this URL manually:\n"
+        f"   Authorization URL: https://accounts.google.com/o/oauth2/auth?{urlencode(query)}\n"
+        "2. After successful authorization, **retry their original command**.\n\n"
+        f"The application will use the new credentials. If '{address}' was provided, it must match the "
+        "authenticated account."
+    )
+
+
+# Every form the address or the link's secrets could take; lowercase, compared with lowercased text.
+FORBIDDEN = [
+    ADDRESS.lower(),
+    quote(ADDRESS, safe="").lower(),  # login_hint: owner.person%40mail.example
+    "%40mail.example",
+    CLIENT_ID.lower(),
+    STATE.lower(),
+    CHALLENGE.lower(),
+    "accounts.google.com",
+    "login_hint",
+]
+
+
+def run_sign_in(tmp_path: Path, server) -> tuple[ScriptedLLM, RecordingApprover, Path, Path]:
+    registry = ToolRegistry()
+    google_tools.register(registry, live_tools(), server, ADDRESS, report=lambda m: None)
+    call = {"id": "c1", "type": "function", "function": {"name": "google__search_gmail_messages"}}
+    call["function"]["arguments"] = json.dumps({"query": "newer_than:2d", "page_size": 3})
+    llm = ScriptedLLM(
+        {"role": "assistant", "content": None, "tool_calls": [call]},
+        {"role": "assistant", "content": "Please finish signing in to Google in your browser."},
+    )
+    approver = RecordingApprover()
+    audit = tmp_path / "approvals.jsonl"
+    tracer = Tracer(tmp_path / "traces.db", record_content=True, prices={})
+    Agent(llm, tools=registry, tracer=tracer, gate=ApprovalGate(approver, log_path=audit)).run("recent mail?")
+    return llm, approver, audit, tmp_path / "traces.db"
+
+
+def assert_scrubbed(llm: ScriptedLLM, approver: RecordingApprover, audit: Path, db_path: Path) -> None:
+    with sqlite3.connect(db_path) as db:
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        trace = json.dumps([list(db.execute(f"SELECT * FROM {t}")) for t in tables], default=str).lower()
+    places = {
+        "model": "\n".join(llm.requests).lower(),  # every request the model got
+        "card": json.dumps(approver.seen).lower(),
+        "audit log": audit.read_text(encoding="utf-8").lower(),
+        "trace": trace,  # every row of every table: messages, span errors, span results
+    }
+    for place, text in places.items():
+        for needle in FORBIDDEN:
+            assert needle not in text, (place, needle)
+    assert google_tools.LINK_MASK.lower() in places["model"] and google_tools.LINK_MASK.lower() in places["trace"]
+    assert "[your google account]" in places["model"]
+
+
+@pytest.mark.parametrize("raised", [True, False], ids=["as an error (live shape)", "as a result"])
+def test_the_real_sign_in_answer_never_reaches_the_model_trace_card_or_log(tmp_path, raised):
+    def server(tool, args):
+        text = sign_in_answer(args["user_google_email"])
+        if raised:
+            raise ExternalToolError(text)
+        return text
+
+    assert_scrubbed(*run_sign_in(tmp_path, server))
+
+
+def test_a_message_with_the_address_encoded_in_its_links_is_masked(tmp_path):
+    def server(tool, args):
+        a = args["user_google_email"]
+        return (
+            f"Subject: hello\nTo: {a}\n\nUnsubscribe: https://news.example/u?e={quote(a, safe='')}&t=1\n"
+            f'<a href="mailto:{a.replace("@", "&#64;")}">me</a> {json.dumps(a).replace("@", "\\u0040")}'
+        )
+
+    llm, _, _, db_path = run_sign_in(tmp_path, server)
+    model = "\n".join(llm.requests).lower()
+    with sqlite3.connect(db_path) as db:
+        trace = json.dumps(list(db.execute("SELECT error, attributes FROM spans"))).lower()
+    for needle in (ADDRESS.lower(), "%40mail.example", "&#64;mail.example", "\\u0040mail.example"):
+        assert needle not in model and needle not in trace, needle
+    assert model.count("[your google account]") == 4
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        ADDRESS,
+        ADDRESS.upper(),
+        quote(ADDRESS, safe=""),
+        quote(ADDRESS, safe="").lower(),
+        quote(quote(ADDRESS, safe=""), safe=""),  # double-encoded: %2540
+        ADDRESS.replace("@", "\\u0040"),
+        ADDRESS.replace("@", "&#64;"),
+        ADDRESS.replace("@", "&#x40;"),
+        quote(ADDRESS, safe="@").replace(".", "%2E"),
+    ],
+)
+def test_mask_covers_every_form_and_leaves_other_addresses_alone(form):
+    out = google_tools.mask(f"to {form}, cc news@bank.example", ADDRESS)
+    assert out == f"to {google_tools.MASK}, cc news@bank.example"
+
+
+def test_mask_removes_any_google_sign_in_link_whole():
+    out = google_tools.mask(sign_in_answer(ADDRESS), ADDRESS)
+    assert "accounts.google.com" not in out and CLIENT_ID not in out and STATE not in out
+    assert out.count(google_tools.LINK_MASK) == 1 and "retry their original command" in out
 
 
 # --- settings -------------------------------------------------------------------------------------------

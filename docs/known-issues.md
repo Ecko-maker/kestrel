@@ -719,8 +719,22 @@ you.
 **The issue:** workspace-mcp logs `user_google_email` on every call. Its stderr goes to `logs/mcp-google.log`
 (git-ignored, local only).
 **Why Kestrel can't filter it:** the server writes to that file through its process handle.
-**What is covered:** the model, traces, cards and the audit log never see the address (`tests/test_google_tools.py`).
+**What is covered:** the model, traces, cards and the audit log never see the address, in any encoding
+(`tests/test_google_tools.py`; see `KI-pending-google-encoded-address`).
 **Done when:** the server can be told not to log it, or Kestrel filters the stream before writing it.
+
+### KI-pending-google-encoded-address. ~~The sign-in link put the address, URL-encoded, in traces~~ (closed 2026-11-19)
+**Labels:** `google`, `privacy`, `closed`
+**The issue:** found by the first live sign-in (`scripts/live/google_smoke.py --leak-check`, 2026-11-19).
+workspace-mcp 2.3.0's sign-in answer (an error, before consent) holds a Google link whose `login_hint` is the
+address URL-encoded (`%40`), plus the client ID, a state and a PKCE challenge. The mask replaced only the literal
+address, so the encoded one reached the model's tool message and the trace: 9 fields in 2 traces (the tool
+message in `traces.messages`, and the span's `error` and `gen_ai.tool.call.result`, per sign-in answer). Not the
+cards, the audit log or the terminal. The offline fakes had put the link in a result without testing the trace.
+**Resolution:** `google_tools.mask` removes any `accounts.google.com` link whole (`LINK_MASK`), then masks the
+address in any case and encoding (URL-encoded once or twice, JSON-escaped, HTML entity), so a message's
+unsubscribe or mailto links are covered too. Tests replay the live shape, as an error and as a result, through the
+real Agent, gate and tracer (`tests/test_google_tools.py`). Rows written before the fix stay until cleaned by hand.
 
 ### KI-pending-google-leak-channels. Google calls are not counted as ways out
 **Labels:** `google`, `evals`, `medium`

@@ -15,7 +15,7 @@ import pytest
 from kestrel import google_tools
 from kestrel.agent import Agent
 from kestrel.approval import ApprovalGate, Decision
-from kestrel.tools import ToolRegistry
+from kestrel.tools import ExternalToolError, ToolRegistry
 from kestrel.tracing import Tracer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,11 +60,19 @@ def live_tools() -> dict:
 class FakeServer:
     """workspace-mcp's shapes: a sign-in message first, then results that quote private text and the address."""
 
-    def __init__(self, url: str) -> None:
-        self.url, self.signed_in, self.calls = url, False, []
+    def __init__(self, url: str, opens: bool = False) -> None:
+        self.url, self.opens, self.signed_in, self.calls = url, opens, False, []
 
     def __call__(self, tool: str, args: dict) -> str:
         self.calls.append((tool, {k: v for k, v in args.items() if k != google_tools.HIDDEN}))
+        if not self.signed_in and self.opens:  # 2.3.0's live shape (2026-11-19), raised as an error
+            raise ExternalToolError(
+                "Error calling tool 'search_gmail_messages': **ACTION REQUIRED: Google Authentication Needed for "
+                f"Google Gmail for '{args['user_google_email']}'**\n\n1. The authorization page has been "
+                "**automatically opened in your browser**. Please complete the authorization there.\n"
+                f"   If it did not appear, open this URL manually:\n   Authorization URL: {self.url}\n"
+                "2. After successful authorization, **retry their original command**.\n"
+            )
         if not self.signed_in:
             return (
                 f"**ACTION REQUIRED: Google Authentication Needed for Google Gmail ('{args['user_google_email']}')**\n"
@@ -86,8 +94,8 @@ class Approve:
         return Decision("approved")
 
 
-def run(tmp_path: Path, url: str, answers: list[str]):
-    server = FakeServer(url)
+def run(tmp_path: Path, url: str, answers: list[str], opens: bool = False):
+    server = FakeServer(url, opens)
     capture = smoke.LinkCapture()
     registry = ToolRegistry()
     google_tools.register(registry, live_tools(), capture.wrap(server), ADDRESS, report=lambda m: None)
@@ -110,7 +118,11 @@ def run(tmp_path: Path, url: str, answers: list[str]):
     gate = ApprovalGate(approver, log_path=tmp_path / "approvals.jsonl")
     Agent(model, tools=registry, gate=gate, tracer=tracer, max_steps=10).run("Google smoke check")
     ok = smoke.report(model, approver, tmp_path / "creds", print_fn=printed.append)
-    return SimpleNamespace(server=server, model=model, approver=approver, opened=opened, out="\n".join(printed), ok=ok)
+    with contextlib.closing(sqlite3.connect(tmp_path / "traces.db")) as db:
+        trace = json.dumps([list(db.execute(f"SELECT * FROM {t}")) for t in ("traces", "spans")]).lower()
+    return SimpleNamespace(
+        server=server, model=model, approver=approver, opened=opened, out="\n".join(printed), ok=ok, trace=trace
+    )
 
 
 def test_a_full_run_signs_in_once_then_calls_the_three_tools_each_with_a_card(tmp_path):
@@ -129,6 +141,16 @@ def test_a_full_run_signs_in_once_then_calls_the_three_tools_each_with_a_card(tm
     assert r.opened == [link()]  # the raw link, login_hint intact (the model saw it masked)
     assert r.ok and "cards: 4 shown for 4 calls" in r.out and "-> OK" in r.out
     assert "search_gmail_messages:" in r.out and "2 message IDs" in r.out and "1 ID fields" in r.out
+
+
+def test_when_the_server_opened_the_page_no_second_tab_is_opened(tmp_path):
+    """2.3.0 opens the link itself; a second tab of the same link fails with "expired state" (2026-11-19 log)."""
+    r = run(tmp_path, link(), ["done"], opens=True)
+    assert r.opened == [] and "use that tab" in r.out
+    assert r.ok and r.approver.cards == 4 and len(r.server.calls) == 4
+    for needle in (ADDRESS.lower(), "%40mail.example", CLIENT_ID.lower(), "accounts.google.com", "login_hint"):
+        assert needle not in r.trace, needle  # the sign-in error reached the trace scrubbed
+    assert google_tools.LINK_MASK.lower() in r.trace
 
 
 def test_nothing_private_is_printed(tmp_path):

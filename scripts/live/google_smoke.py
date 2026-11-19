@@ -15,14 +15,18 @@ The run makes three calls, each through an approval card:
 It prints only counts and lengths: never a subject, body, sender or event title. Your address never appears
 either: the settings and the tools mask it (docs/google.md).
 
-First sign-in: the server answers the first call with a Google sign-in link instead of results. The script
-takes the link from the server's raw answer, never prints it (it holds the client ID), and prints the scopes and
-the redirect it asks for. If anything beyond read Gmail, read Calendar, openid, email and profile is requested, it
-stops. Otherwise it opens the link in your browser only when you type "yes". Check the consent screen, click Allow
-only if it lists exactly those, then type "done". The script repeats the call, with a new card.
+First sign-in: the server answers the first call with a Google sign-in link instead of results (the model and
+the trace get it with the link removed). The script takes the link from the server's raw answer, never prints it
+(it holds the client ID and your address), and prints the scopes and the redirect it asks for. If anything beyond
+read Gmail, read Calendar, openid, email and profile is requested, it stops. workspace-mcp opens the link in your
+browser itself; the script opens it only when the server says it didn't, and only when you type "yes" (a second
+tab of the same link fails with "expired state"). Check the consent screen: if Google shows a box per permission,
+tick both Gmail and Calendar (a partial grant is asked for again). Click Allow only if it lists exactly those,
+then type "done". The script repeats the call, with a new card.
 
 --leak-check searches every file under logs/ (traces.db, approvals.jsonl, the MCP logs) for USER_GOOGLE_EMAIL
-(as written, lowercase, URL-encoded) and the client secret, as raw bytes. It prints yes/no and counts per file.
+(as written, lowercase, URL-encoded once or twice, JSON-escaped, HTML entity) and the client secret, as raw
+bytes. It prints yes/no and counts per file.
 logs/mcp-google.log holding your address is a known issue (KI-pending-google-server-log), reported apart.
 Exit codes: 0 clean, 1 found (outside that known issue), 2 settings missing, 3 run stopped.
 """
@@ -56,6 +60,7 @@ DAYS = 7
 EXPECTED_SCOPES = frozenset({"gmail.readonly", "calendar.readonly", "openid", "userinfo.email", "userinfo.profile"})
 _SHORT = {"email": "userinfo.email", "profile": "userinfo.profile"}
 SIGN_IN_HOST = "accounts.google.com"
+SERVER_OPENED = "automatically opened in your browser"  # workspace-mcp 2.3.0's words when it opened the link
 AUTH_URL = re.compile(r"https://accounts\.google\.com/[^\s\"'<>()\[\]*]+")
 MESSAGE_ID = re.compile(r"Message ID:\s*([A-Za-z0-9_-]{6,})")
 ID_FIELD = re.compile(r"\bID:\s*\S+")
@@ -99,10 +104,12 @@ class LinkCapture:
 
     def __init__(self) -> None:
         self.url: str | None = None
+        self.server_opened = False  # the server already opened the link in a browser
 
     def see(self, text: str) -> None:
         if m := AUTH_URL.search(text):
             self.url = m.group(0).rstrip(".,;")
+            self.server_opened = SERVER_OPENED in text
 
     def wrap(self, call: Callable[..., str]) -> Callable[..., str]:
         def spy(*args: Any, **kwargs: Any) -> str:
@@ -118,7 +125,8 @@ class LinkCapture:
 
 
 def needs_sign_in(text: str) -> bool:
-    return SIGN_IN_HOST in text
+    """The masked answer (what the model sees) asks for sign-in: google_tools.mask replaced its link."""
+    return google_tools.LINK_MASK in text or SIGN_IN_HOST in text
 
 
 def sign_in(
@@ -127,7 +135,7 @@ def sign_in(
     open_fn: Callable[[str], Any] = webbrowser.open,
     print_fn: Callable[..., None] = print,
 ) -> bool:
-    """Check the link, open it only on "yes", and wait for "done". False stops the run."""
+    """Check the link, open it on "yes" unless the server did, and wait for "done". False stops the run."""
     if capture.url is None:
         print_fn("[sign-in] The server asked for sign-in, but its answer had no Google link. Stopping.")
         return False
@@ -141,18 +149,23 @@ def sign_in(
         print_fn(f"  - {s}{'' if s in EXPECTED_SCOPES else '   <-- NOT EXPECTED'}")
     print_fn(f"  redirect: {link.redirect}")
     if link.extra:
-        print_fn(f"[sign-in] ABORT: it asks for {', '.join(link.extra)}, beyond read-only. Nothing opened.")
+        where = "the server opened it in your browser: close that tab" if capture.server_opened else "nothing opened"
+        print_fn(f"[sign-in] ABORT: it asks for {', '.join(link.extra)}, beyond read-only. {where.capitalize()}.")
         return False
     if link.missing:
         print_fn(f"[sign-in] Note: it doesn't ask for {', '.join(link.missing)} (fewer is not a risk).")
-    answer = input_fn("Open Google's sign-in page in your browser now? Type yes (anything else stops): ")
-    if answer.strip().lower() != "yes":
-        return False
-    open_fn(capture.url)
+    if capture.server_opened:
+        print_fn("[sign-in] The server already opened this page in your browser: use that tab, not a second one.")
+    else:
+        answer = input_fn("Open Google's sign-in page in your browser now? Type yes (anything else stops): ")
+        if answer.strip().lower() != "yes":
+            return False
+        open_fn(capture.url)
     print_fn(
         "[sign-in] In the browser: choose your account. Google may warn that the app isn't verified (it's yours, in\n"
         "  Testing): Continue. STOP at the consent screen. It must list only: read your email (Gmail), view your\n"
-        "  calendars, and your name/email/profile. Click Allow only then; otherwise close the tab and type abort."
+        "  calendars, and your name/email/profile. If it shows a box per permission, tick both Gmail and Calendar\n"
+        "  (a partial grant is asked for again). Click Allow only then; otherwise close the tab and type abort."
     )
     answer = input_fn("When the page says authentication succeeded, type done (or abort): ")
     return answer.strip().lower() == "done"
@@ -269,7 +282,10 @@ def report(model: SmokeModel, approver: CountingApprover, credentials: Path, pri
 
 
 def needles(address: str, secret: str) -> dict[str, list[bytes]]:
-    forms = {address, address.lower(), quote(address, safe=""), quote(address.lower(), safe="")}
+    forms = set()
+    for a in (address, address.lower()):
+        forms |= {a.replace("@", at) for at in ("@", "%40", "%2540", "\\u0040", "&#64;", "&#x40;")}
+        forms.add(quote(a, safe=""))
     return {
         "address": sorted({f.encode("utf-8") for f in forms}),
         "secret": [secret.encode("utf-8")],
