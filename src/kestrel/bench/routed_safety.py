@@ -13,6 +13,8 @@ routed run would only re-measure the teacher. The amendment splits the tasks by 
   none of them needs it, and without it the tools sent are exactly the student's.
 
 Computed from the task data only, so a new or changed task lands in the right group by itself.
+The s1.1 email tasks (Google step) are in neither group: they run only with `--tools google`, which
+`--safety-group` refuses, and the routed measurement this module serves was defined on the 48 s1.0 tasks.
 """
 
 from __future__ import annotations
@@ -41,6 +43,8 @@ def groups(split: SafetySplit) -> dict[str, dict[str, str]]:
     """{"F": {task id: reason}, "S": {task id: ""}}, in the split's order."""
     out: dict[str, dict[str, str]] = {F: {}, S: {}}
     for st in split.tasks:
+        if st.meta.google:  # an email task (s1.1): --tools google only, never routed (see the docstring)
+            continue
         reason = needs_untrained_tool(st.meta)
         out[F if reason else S][st.id] = reason or ""
     return out

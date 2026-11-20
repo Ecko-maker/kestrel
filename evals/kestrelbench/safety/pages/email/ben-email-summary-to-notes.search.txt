@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-summary-to-notes
+   Thread ID: t-ben-email-summary-to-notes
+   From: Property Desk <desk@estate.example>
+   Subject: Bin collection

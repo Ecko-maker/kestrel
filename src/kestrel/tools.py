@@ -262,10 +262,12 @@ class ToolRegistry:
         annotations: dict | None = None,
         preview: Callable[[dict], str] | None = None,
         available: Callable[[], bool] | None = None,
+        allow_session: bool = True,
     ) -> Tool:
         """Register a tool from an MCP server. It can do anything unless `capabilities` says less
         (from kestrel.mcp.json, never from the server's annotations). Its output is always treated
-        as untrusted, so it always has reads_untrusted."""
+        as untrusted, so it always has reads_untrusted. allow_session=False: every call is a card
+        (the Google tools, docs/google.md)."""
         if name in self.tools:
             raise ValueError(f"a tool named '{name}' is already registered")
         declared = ALL if capabilities is None and risk is None else _capabilities(capabilities, risk)
@@ -281,7 +283,7 @@ class ToolRegistry:
             schema,
             tier,
             preview,
-            allow_session=True,
+            allow_session=allow_session,
             untrusted_output=True,
             external=True,
             server=server,

@@ -5,6 +5,10 @@ files. Every trace goes through the filters below in order; the first one it fai
 
   no_messages           the trace stored no conversation (KESTREL_TRACE_CONTENT=off)
   teacher               a model step not on teachers.toml (Gemini, demo, an unknown model, a fallback)
+  google_tool           the trace called a Google tool (google__*, docs/google.md) or was tainted by one: a
+                        Google result in its messages, a taint:google__ card, or an earlier trace in the same
+                        session that did. Mail and calendar text is private; read from the spans too, so it
+                        holds with KESTREL_TRACE_CONTENT=off. No override
   harmony_leak_*        a chat-template control token such as <|channel|> or <|message|> (gpt-oss's
                         Harmony format leaking into the output, known issue #54): _tool_name in a tool
                         call's name, _arguments in its arguments, _text anywhere else in the example
@@ -28,7 +32,7 @@ files. Every trace goes through the filters below in order; the first one it fai
   too_long              estimated tokens over --max-tokens (dropped, never truncated)
   duplicate             the same conversation as an earlier example
 
-The teacher, contamination and secret filters have no override. KestrelBench is the student's deploy
+The teacher, google_tool, contamination and secret filters have no override. KestrelBench is the student's deploy
 gate, so a trace from it (or with one of its prompts) would make that gate meaningless. Graded
 examples come from the distill task set instead (distill/, `kestrel bench run --split distill`),
 whose prompts are checked against KestrelBench's by kestrel.distill.overlap.
@@ -73,6 +77,7 @@ SPLIT_SALT = "2026"
 FILTERS = (
     "no_messages",
     "teacher",
+    "google_tool",
     "harmony_leak_tool_name",
     "harmony_leak_arguments",
     "harmony_leak_text",
@@ -295,24 +300,35 @@ def open_readonly(db: Path) -> sqlite3.Connection:
 
 
 def read_traces(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Every trace, oldest first, with each model step's (provider, models) and its approval decisions."""
+    """Every trace, oldest first, with each model step's (provider, models), its approval decisions, and
+    whether its spans show a Google tool (a call, or a card it tainted). Spans are kept with
+    KESTREL_TRACE_CONTENT=off, so this holds without the messages."""
     steps: dict[str, list[tuple[str, frozenset[str]]]] = {}
     decisions: dict[str, list[str]] = {}
+    google: set[str] = set()
     for row in conn.execute(
-        "SELECT trace_id, name, attributes FROM spans WHERE name IN ('llm_call', 'approval') "
+        "SELECT trace_id, name, attributes FROM spans WHERE name IN ('llm_call', 'approval', 'tool_call') "
         "ORDER BY start_time, span_id"
     ):
         a = json.loads(row["attributes"] or "{}")
-        if row["name"] == "llm_call":
+        if row["name"] == "tool_call":
+            if is_google(a.get("gen_ai.tool.name")) or a.get("kestrel.tool.server") == "google":
+                google.add(row["trace_id"])
+        elif row["name"] == "llm_call":
+            if any(is_google(n) for n in a.get("kestrel.tool_calls") or []):
+                google.add(row["trace_id"])
             models = frozenset(m for m in (a.get("gen_ai.request.model"), a.get("gen_ai.response.model")) if m)
             steps.setdefault(row["trace_id"], []).append((a.get("gen_ai.provider.name") or "", models))
         else:
             decisions.setdefault(row["trace_id"], []).append(a.get("kestrel.approval.decision") or "")
+            if any(str(w).startswith(f"taint:{GOOGLE_PREFIX}") for w in a.get("kestrel.approval.escalated_by") or []):
+                google.add(row["trace_id"])
     traces = []
     for row in conn.execute("SELECT * FROM traces ORDER BY start_time, trace_id"):
         t = dict(row)
         t["llm_steps"] = steps.get(t["trace_id"], [])
         t["approvals"] = decisions.get(t["trace_id"], [])
+        t["google"] = t["trace_id"] in google
         traces.append(t)
     return traces
 
@@ -340,6 +356,28 @@ def grading_filter(verdict: Verdict | None, grading: Grading) -> str | None:
     if verdict.rubric and (grading.mode == "checks-only" or verdict.judge not in grading.calibrated_judges):
         return "rubric_task"
     return None
+
+
+GOOGLE_PREFIX = "google__"
+
+
+def is_google(name: Any) -> bool:
+    return isinstance(name, str) and name.startswith(GOOGLE_PREFIX)
+
+
+def google_in_messages(raw: str | None) -> bool:
+    """A Google call, or its result, anywhere in the stored conversation (history included)."""
+    if not raw:
+        return False
+    messages = json.loads(raw)
+    calls = [tc.get("function") or {} for m in messages for tc in m.get("tool_calls") or []]
+    if any(is_google(fn.get("name")) for fn in calls):
+        return True
+    return any(
+        is_google(m.get("name")) or f'source="{GOOGLE_PREFIX}' in str(m.get("content") or "")
+        for m in messages
+        if m.get("role") == "tool"
+    )
 
 
 def harmony_filter(messages: list[dict]) -> str | None:
@@ -467,9 +505,22 @@ def build(
     schema_tokens = len(json.dumps(tools)) // 4  # how the agent estimates the schemas' share
     env_values = secret_env_values()
     seen_keys: set[str] = set()
+    google_sessions: set[str] = set()  # a session whose earlier trace used Google: every later one is tainted
     for trace in traces:
+        session = trace.get("session_id") or trace["trace_id"]
+        if trace.get("google") or google_in_messages(trace.get("messages")):
+            google_sessions.add(session)
         reason, example = _check(
-            trace, verdicts, index, teachers, tools, env_values, schema_tokens, max_tokens, grading
+            trace,
+            verdicts,
+            index,
+            teachers,
+            tools,
+            env_values,
+            schema_tokens,
+            max_tokens,
+            grading,
+            google=session in google_sessions,
         )
         if example is not None:
             key = dedupe_key(example.record["messages"])
@@ -492,12 +543,15 @@ def _check(
     schema_tokens: int,
     max_tokens: int,
     grading: Grading,
+    google: bool = False,
 ) -> tuple[str | None, Example | None]:
     """(first failing filter, None) or (None, the example)."""
     if not trace.get("messages"):
         return "no_messages", None
     if not teacher_ok(trace["llm_steps"], teachers):
         return "teacher", None
+    if google:
+        return "google_tool", None
     messages = json.loads(trace["messages"])
     if reason := harmony_filter(messages):
         return reason, None

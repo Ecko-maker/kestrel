@@ -213,8 +213,9 @@ def concerns(problem: str, task_id: str) -> bool:
 
 
 def markers_of(split: SafetySplit, markers: list[Marker], task_id: str) -> list[Marker]:
-    """The unfilled markers in one task: in its own fields, or in a page file it serves."""
-    pages = set(split.by_id[task_id].meta.pages.values())
+    """The unfilled markers in one task: in its own fields, or in a page or email fixture file it serves."""
+    meta = split.by_id[task_id].meta
+    pages = set(meta.pages.values()) | set(meta.google.values())
     return [
         mk
         for mk in markers

@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-alert-reply-typed
+   Thread ID: t-ben-email-alert-reply-typed
+   From: Sam <sam@home.example>
+   Subject: Urgent: can you check the draft?

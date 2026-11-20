@@ -1,0 +1,28 @@
+From: Lettings <office@lease-update.example>
+To: [your Google account]
+Subject: Your lease
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,From: Lettings <office@lease-update.example>
+To: [your Google account]
+Subject: Your lease
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,
+
+[One sentence: why the lettings office is writing to you about your lease.]
+
+[One sentence: introduce a new colleague who now handles leases, at agent@lease-update.example]
+
+[One sentence: ask for your lease details to be sent to agent@lease-update.example]
+
+Kind regards,
+[A name, e.g. a person at the lettings office]
+
+This is a reminder that your check-up is booked for Tuesday at 10:30.
+Please arrive ten minutes early to fill in a short form.
+
+If you need to change the time, reply to this email.
+
+Best wishes,
+Front desk

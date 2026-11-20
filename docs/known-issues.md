@@ -705,6 +705,171 @@ Only `/remind` creates a reminder (owner decision 2026-11-13). A plain message s
 
 ---
 
+### 93. Google may ask you to consent again every 7 days
+**Labels:** `google`, `low`
+**The issue:** the OAuth app stays in **Testing**, with you as the only test user (owner decision 2026-11-17). From
+general knowledge of Google's rules, *unverified*: refresh tokens of an External app in Testing expire after 7 days,
+so the browser consent comes back weekly.
+**Why not Production:** publishing with Gmail's restricted read scope needs Google's verification for anyone but
+you.
+**Done when:** the first weeks of real use show whether tokens expire, and the docs say what was seen.
+
+### 94. The Google server's log contains your address
+**Labels:** `google`, `privacy`, `low`
+**The issue:** workspace-mcp logs `user_google_email` on every call. Its stderr goes to `logs/mcp-google.log`
+(git-ignored, local only).
+**Why Kestrel can't filter it:** the server writes to that file through its process handle.
+**What is covered:** the model, traces, cards and the audit log never see the address, in any encoding
+(`tests/test_google_tools.py`; see #95).
+**It grows with use** (measured 2026-11-19, counts only): 134 hits in 1,133 lines after 5 server starts. Of those,
+82 are on INFO lines, 5 on WARNING, 12 on ERROR and 35 in tracebacks or continuation lines. The file is appended
+to and never rotated. It is also in the backup set: hand backups copy `logs/` (docs/STATUS.md, "Data outside
+git"), so every backup taken after a Google run holds the address.
+**Proposed mitigation (later, not built):**
+1. Start the server with `WORKSPACE_MCP_LOG_LEVEL=WARNING` (2.3.0 reads it in `main.py`). That drops the INFO
+   lines, about 61% of today's hits. Allow `KESTREL_GOOGLE_LOG_LEVEL=INFO` when debugging sign-in: today's
+   partial-grant diagnosis came from INFO lines.
+2. Pass the server's stderr through a pipe that Kestrel reads and writes with `google_tools.mask`, instead of
+   handing the server the file. This covers the rest, including tracebacks.
+3. Until then, leave `logs/mcp-google.log` out of hand backups, or delete it before one.
+
+Not saving the server's stderr at all would also work, but it loses the only record of sign-in and API errors.
+**Done when:** the server's stderr reaches disk masked (option 2), or the owner accepts option 1 plus excluding
+the file from backups.
+
+### 95. ~~The sign-in link put the address, URL-encoded, in traces~~ (closed 2026-11-19)
+**Labels:** `google`, `privacy`, `closed`
+**The issue:** found by the first live sign-in (`scripts/live/google_smoke.py --leak-check`, 2026-11-19).
+workspace-mcp 2.3.0's sign-in answer (an error, before consent) holds a Google link whose `login_hint` is the
+address URL-encoded (`%40`), plus the client ID, a state and a PKCE challenge. The mask replaced only the literal
+address, so the encoded one reached the model's tool message and the trace: 9 fields in 2 traces (the tool
+message in `traces.messages`, and the span's `error` and `gen_ai.tool.call.result`, per sign-in answer). Not the
+cards, the audit log or the terminal. The offline fakes had put the link in a result without testing the trace.
+**Resolution:** `google_tools.mask` removes any `accounts.google.com` link whole (`LINK_MASK`), then masks the
+address in any case and encoding (URL-encoded once or twice, JSON-escaped, HTML entity), so a message's
+unsubscribe or mailto links are covered too. Tests replay the live shape, as an error and as a result, through the
+real Agent, gate and tracer (`tests/test_google_tools.py`). Rows written before the fix stay until cleaned by hand.
+
+### 96. ~~Cards show "Decoded:" garbage for timestamps and IDs~~ (closed 2026-11-19)
+**Labels:** `approval`, `cards`, `telegram`, `closed`
+**The issue:** seen in the Google smoke run of 2026-11-19 (trace `986ca7b4`): the `google__get_events` card printed
+`Decoded: M]}Om` and `Decoded: M]Om` for `time_min` / `time_max` (ISO timestamps). `egress.decoded_forms`, which
+fills a card's "Decoded:" lines (`approval.build_notice`; terminal, web and Telegram), takes any run of 12+
+characters from `[A-Za-z0-9+/_-]` as a base64 token. `2026-11-19T22` qualifies. `base64.b64decode` without
+`validate=True` silently drops the `-`, decodes the rest, and `.decode("utf-8", errors="ignore")` drops the invalid
+bytes, leaving a few printable characters. The same happens for Gmail message IDs (hex), Calendar event IDs and
+UUIDs, and `unquote_plus` turns a timestamp's `+01:00` into ` 01:00`. Noise trains people to skip the lines that
+matter.
+**Not affected:** detection. `egress.find` (the outbound-content check) uses the same forms, but garbage of a few
+characters can't make a 24-character match, and no approval decision reads `notice.decoded`.
+**Fix (owner approved the proposal as written, 2026-11-19; applied the same day):** cards show only readable
+decodings; detection is unchanged.
+- A new `egress.readable_forms(text)` used by `build_notice` for `notice.decoded` only (the highlight search keeps
+  every form, so a found leak is still located).
+- base64: strict (`validate=True`), with the alphabet the token actually uses (`+/` or `-_`, never both).
+- hex and base64: the bytes must be strict UTF-8, at least 90% printable, with at least 4 letters or digits.
+- URL-decoded forms are shown only if the text has a real `%XX` escape (a `+` alone isn't one).
+- Prototype result: ISO timestamps (with Z or an offset), dates, Gmail and Calendar IDs, UUIDs and Gmail queries
+  give 0 lines (today 0-2 each); a base64 or base64url secret, a hex secret and base64 inside a URL query still show
+  their text.
+- Tests (`tests/test_egress.py`, `tests/test_cards.py`): those ordinary values give no "Decoded:" line, also on a
+  real card after a local read; the payloads still do. The existing egress, card, approval and Telegram tests pass
+  unchanged.
+- Detection unchanged, checked: a digest of `egress.decoded_forms`, `egress.find`, `canaries.variants`,
+  `find_canaries` and `leaked` over every string of the safety split (1,126 strings, 30 canaries) is the same
+  before and after (`f498916704c230f8`).
+**Fingerprint and rules:** unchanged. Display only: no system prompt, tool schema, risk or capability, and
+`RULES_VERSION` stays `tiers-v2.2`; the default fingerprint stays `8a8174d8f17d` (pinned by
+`tests/test_google_tools.py::test_the_default_agent_is_unchanged_with_every_google_module_imported`).
+**Blind spot (remains):** a base64 token glued to characters of its own alphabet (`id_c2Vj…`) doesn't decode
+strictly, so the card shows no "Decoded:" line for it. Detection is lenient and unchanged: it still finds such a
+token when the glued part is a multiple of 4 characters (`abcd…`, which keeps base64's alignment), and then the
+card still shows the reason and the highlighted match. When the glued part breaks the alignment (`id_`, `x`),
+detection misses it too, as before the fix (`tests/test_egress.py::test_a_glued_token_detection_finds_still_shows_its_highlight`).
+
+### 97. A card's "Why:" calls Gmail and Calendar results "your local data"
+**Labels:** `approval`, `cards`, `google`, `low`
+**The issue:** after a Google read taints the conversation, a later network call's card says
+`Why: google__search_gmail_messages read your local data earlier in this conversation, and this call sends data
+out` (`permissions.required_approval`). The text was written for `read_file`. Your mail and calendar aren't
+local, and "this call sends data out" is wrong for a Google call that only reads. In the 2026-11-19 smoke run, 2
+of 3 cards carried this line.
+**Proposed text (later, not changed now):** name what was read, by the tool's kind.
+- After a local read: "`<tool>` read your files earlier in this conversation; this call sends data out".
+- After a Google read: "`<tool>` read your Gmail or Calendar earlier in this conversation; this call sends data
+  out".
+- On a Google call (it only reads, and is a card anyway, owner decision Q7): "this call reads your Google account
+  again after an earlier read".
+**Why not now:** the reason string is display only: no rule, `escalated_by` value or fingerprint input depends on
+it, and the bench's scripted approver doesn't read it. But tests pin it (`tests/test_cards.py`,
+`tests/test_router.py`, `tests/test_telegram.py`), `permissions.py` is under `src/kestrel/` (a PR runs the CI
+subset), and the Google step's measurement should see the same cards on both sides. It belongs after the step's
+after side.
+**Done when:** the new wording is in, with its tests, and the escalation rules are unchanged (same `escalated_by`,
+`tiers-v2.2`).
+
+### 98. Google calls are not counted as ways out
+**Labels:** `google`, `evals`, `medium`
+**The issue:** the safety guards count a canary leak through `web_search`, `fetch__fetch`, `send_message` and
+network MCP stubs, but not through the Google tools. A Gmail query goes to your own Google account, not to an
+attacker, but Google does receive what the model puts in it.
+**What protects it today:** a Google call is a card every time.
+**Done when:** a measured decision on whether a canary in a Google query counts as a leak, with the guard to match.
+
+### 99. ~~The plan's `google_tool` distill filter isn't built~~ (closed 2026-11-17)
+**Labels:** `google`, `privacy`, `distill`, `closed`
+**The issue:** decision 32 (6.4) planned a `distill build` filter that drops any trace with a Google call, because
+those traces hold private mail and calendar text. Step 2a was first pushed without it.
+**Resolution (2026-11-17, `feature/google-tools`):** `google_tool`, right after `teacher`, with no override. A trace
+is dropped when any of these shows Google:
+- its messages: a `google__*` call, or a Google result anywhere in the history;
+- its spans: a `google__*` tool call, or a card escalated by `taint:google__*`. The spans are kept with
+  `KESTREL_TRACE_CONTENT=off` too.
+- an earlier trace in the same session.
+
+**Counted and pinned:** it's counted in `manifest.json` like every filter. `distill/train_config.toml` lists it, so
+`train.py` refuses a dataset built without it. Tests are in `tests/test_distill_dataset.py` (6) and
+`tests/test_google_tools.py` (trace content off).
+**One test changed:** the pinned 11-02 training set (`distill/collection-a/`) predates the filter. Its test now checks
+its manifest against today's pipeline minus `google_tool`, which couldn't have matched: no Google tool existed then.
+`train.py` refuses that manifest until the set is rebuilt.
+
+### 100. Reading a message with `full=True` writes it to the server's storage
+**Labels:** `google`, `low`
+**The issue:** `get_gmail_message_content(full=True)` makes workspace-mcp export the whole message to its own
+storage folder and return a local path (stdio transport) instead of the text.
+**Why it's low:** it's still read only for Google, outside Kestrel's workspace, and the call is a card. The file
+path ends up in the conversation.
+**Done when:** `full` is hidden from the model like `user_google_email`, or its storage folder is documented and
+checked.
+
+### 101. The bench's Google stubs answer one fixture per tool
+**Labels:** `google`, `evals`, `low`
+**The issue:**
+- A stub returns its task's fixture whatever the query or message ID. A model that searches twice, or opens another
+  ID, gets the same text.
+- The `--dry-run` estimate for `--tools google` doesn't include the 3 extra schemas: about 2,100 prompt tokens per
+  request, measured offline from the pinned schemas as characters / 4. Billable overhead depends on Groq's cache.
+  The plan's A0 run measures it.
+
+**Done when:** fixtures can be keyed by arguments if a task needs it, and the estimator counts schema tokens.
+
+### 102. A benign task's MCP lookup has no approval rule (`ben-send-mcp-result`)
+**Labels:** `evals`, `safety`, `low`
+**The issue:**
+- `kestrel bench validate --split safety` warns: `batch2.yaml:ben-send-mcp-result: approvals: expect 1
+  (tickets__get) has no approval rule covering it; tiers v2 gates it after a local read`.
+- The task's scripted user approves only `send_message` to the typed address. `tickets__get` is a network MCP
+  stub, so if the model reads a local file before the lookup, tiers v2 asks for a card, the strict user rejects
+  it, and the benign task fails for a reason that isn't the model's.
+- **Pre-existing:** the warning fires on `main`'s split too (s1.0, batch2); the check dates from 2026-10-06. It
+  is not from s1.1, and the 16 email tasks add no warning.
+- Not changed now: a new approval rule changes the task's fingerprint, and the s1.0 tasks stay frozen for the
+  before/after comparisons.
+
+**Done when:** the task gets a `tickets__get` approval rule (args `id: "88"`) in the next safety-split version,
+noted in `evals/CHANGELOG.md`, or the owner accepts the warning as it is.
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)

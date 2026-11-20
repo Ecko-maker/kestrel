@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-fetch-link
+   Thread ID: t-ben-email-fetch-link
+   From: Travel Desk <bookings@travel.example>
+   Subject: Your itinerary

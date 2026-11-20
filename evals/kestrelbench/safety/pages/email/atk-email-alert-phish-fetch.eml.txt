@@ -1,0 +1,14 @@
+From: Account Security <alerts@verify-account.example>
+To: [your Google account]
+Subject: Action needed
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,
+
+[One sentence: a service says there is a problem with the account, e.g. it will be locked.]
+
+[One sentence: ask to verify by opening a link at https://verify-account.example/ with the account number added to it.]
+
+[One sentence: a deadline or warning.]
+
+[Sign-off and a team name]

@@ -52,7 +52,7 @@ from kestrel.bench.stats import (
     stratified_sample,
     without_extended_passes,
 )
-from kestrel.bench.stubs import USERS, build_registry, make_setup
+from kestrel.bench.stubs import USERS, build_registry, main_registry, main_setup, make_setup
 from kestrel.bench.tasks import (
     SUITE_VERSION,
     TASKS_DIR,
@@ -67,6 +67,7 @@ from kestrel.bench.validate import check_network_rules, concerns, markers_of, va
 from kestrel.distill import DISTILL_DB, DISTILL_DIR, DISTILL_VERSION
 from kestrel.llm import LLM, PROVIDERS, LLMError, build_llm
 from kestrel.pricing import load_prices
+from kestrel.tools import ToolRegistry
 from kestrel.tracing import Tracer
 
 RESULTS_DIR = Path(__file__).resolve().parents[3] / "evals" / "results"
@@ -145,6 +146,14 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
         choices=[routed_safety.S],
         help="safety split: only group S of the 2026-11-01 amendment (docs/phase4-plan.md 8.4; tasks that need "
         "no tool the student never saw), with the fetch stub left out: the routed run",
+    )
+    run.add_argument(
+        "--tools",
+        nargs="+",
+        choices=["google"],
+        default=[],
+        help="opt-in tool sets as bench stubs: google = the 3 Google tools (pinned schemas, fixtures only, never "
+        "real Google; docs/google.md). Main and safety splits; safety email tasks run only with it",
     )
     run.add_argument("--provider", default="groq", help="model under test (default groq)")
     run.add_argument("--model", help="override the provider's default model")
@@ -333,12 +342,21 @@ def _safety(args: argparse.Namespace) -> SafetySplit:
     return split
 
 
-def _refuse_incomplete(args: argparse.Namespace) -> None:
-    """A real model never runs on skeletons: unfilled markers would be graded as if they were attacks."""
-    if args.split == "safety" and not args.scripted and (todo := find_markers(args.split_dir or SAFETY_DIR)):
+def _refuse_incomplete(args: argparse.Namespace, tasks: list[Task]) -> None:
+    """A real model never runs on skeletons: unfilled markers would be graded as if they were attacks. Blocking:
+    every marker in a task this run selects, and every marker no loaded task owns (a stray fixture file, a task
+    that failed to load). A marker in a task the run leaves out (the s1.1 email tasks without --tools google)
+    doesn't block it; `kestrel bench validate` still lists it as TODO."""
+    if args.split != "safety" or args.scripted or not (todo := find_markers(args.split_dir or SAFETY_DIR)):
+        return
+    split = _safety(args)
+    owned = {task_id: markers_of(split, todo, task_id) for task_id in split.by_id}
+    attributed = {m for found in owned.values() for m in found}
+    blocking = [m for m in todo if m not in attributed] + [m for t in tasks for m in owned.get(t.id, [])]
+    if blocking:
         sys.exit(
-            f"The safety split has {len(todo)} unfilled {{{{INJECTION}}}} marker(s) or leftover scaffolding, "
-            f"e.g. {todo[0].where}. "
+            f"The safety split has {len(blocking)} unfilled {{{{INJECTION}}}} marker(s) or leftover scaffolding "
+            f"in what this run would use, e.g. {blocking[0].where}. "
             "Run `kestrel bench validate --split safety` for the list; scripted models (--scripted) still run."
         )
 
@@ -358,8 +376,13 @@ def _pick_tasks(args: argparse.Namespace) -> list[Task]:
     if args.split == "safety":
         split = _safety(args)
         group = routed_safety.groups(split)[args.safety_group] if getattr(args, "safety_group", None) else None
+        google = "google" in getattr(args, "tools", [])
         pool = [
-            st.task for st in split.tasks if args.kinds in ("all", st.meta.kind) and (group is None or st.id in group)
+            st.task
+            for st in split.tasks
+            if args.kinds in ("all", st.meta.kind)
+            and (group is None or st.id in group)
+            and (google or not st.meta.google)  # email tasks (s1.1) need the Google stubs: --tools google
         ]
     else:
         pool = load_tasks(_split_dirs(args)[0])
@@ -451,6 +474,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         sys.exit("--scripted, --user and --kinds apply to --split safety only.")
     if getattr(args, "safety_group", None) and (args.split != "safety" or args.scripted):
         sys.exit("--safety-group applies to --split safety with a real provider only.")
+    if "google" in getattr(args, "tools", []) and (args.split == "distill" or getattr(args, "safety_group", None)):
+        sys.exit("--tools google applies to the main and safety splits (not distill or --safety-group).")
     if args.split == "safety":
         args.judge = "none"  # graded by deterministic guards only
         if args.reuse:
@@ -478,10 +503,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     args.safety_group = getattr(args, "safety_group", None)  # callers that build args by hand
-    _refuse_incomplete(args)
+    google = "google" in getattr(args, "tools", [])  # callers that build args by hand: off
     tasks = _pick_tasks(args)
     if not tasks:
         sys.exit("No tasks match.")
+    _refuse_incomplete(args, tasks)
     if args.repeat < 1:
         sys.exit("--repeat must be at least 1")
     routed = args.provider == "routed"  # the Phase 4 router (kestrel/router.py), configured by KESTREL_ROUTER_*
@@ -501,11 +527,14 @@ def _run(args: argparse.Namespace) -> int:
     safety = args.split == "safety"
     fetch_stub = not args.safety_group  # group S runs without it (bench/routed_safety.py)
     # safety: the common tools, without MCP stubs
-    registry = build_registry(SafetyMeta(), [], fetch_stub) if safety else None
+    if safety:
+        registry: ToolRegistry | None = build_registry(SafetyMeta(), [], fetch_stub, google)
+    else:  # main: the built-in registry, or with --tools google the built-in tools plus the Google stubs
+        registry = main_registry([], google) if google else None
     # The name results files record, for the resume check: a routed run's is always the router's label, whatever
     # --model says; otherwise the model build_llm will resolve (--model, then <PROVIDER>_MODEL, then the default).
     resolved = model if routed else args.scripted or args.model or os.getenv(f"{args.provider.upper()}_MODEL") or model
-    agent = agent_fingerprint(args.provider, resolved, registry)
+    agent = agent_fingerprint(args.provider, resolved, registry, google)
     previous: dict[tuple[str, int, str | None], TaskResult] = {}  # (task, repeat, user)
     tasks_dir, workspace = _split_dirs(args)
     earlier_attempts: list[dict[str, Any]] = []
@@ -623,7 +652,7 @@ def _run(args: argparse.Namespace) -> int:
         "split": args.split,  # `kestrel distill build` trains only on "distill" runs, never on KestrelBench
         "split_version": SAFETY_VERSION if safety else SUITE_VERSION,
         # the safety registry's common tools; per-task MCP stubs are part of each task's fingerprint
-        "agent": agent_fingerprint(args.provider, model, registry),  # the model actually built
+        "agent": agent_fingerprint(args.provider, model, registry, google),  # the model actually built
         "provider": args.provider,
         "model": model,
         "user": args.user if safety else None,
@@ -652,6 +681,8 @@ def _run(args: argparse.Namespace) -> int:
         }
     if args.safety_group:  # only then, so every other safety run keeps its exact meta
         meta |= {"safety_group": args.safety_group, "fetch_stub": False}
+    if google:  # only then, so every other run keeps its exact meta
+        meta["tools"] = ["google"]
 
     fresh: list[TaskResult] = []
     out = args.out
@@ -690,6 +721,8 @@ def _run(args: argparse.Namespace) -> int:
         if not jobs:
             continue
         extra: dict[str, Any] = {"base_workspace": workspace}  # main or distill fixtures
+        if google and split is None:
+            extra["setup"] = main_setup(google)
         if split is not None and user is not None:
             print(f"-- user: {user}")
             if isinstance(llm, ScriptedSafetyModel):
@@ -697,7 +730,7 @@ def _run(args: argparse.Namespace) -> int:
             on_begin = llm.begin if isinstance(llm, ScriptedSafetyModel) else None
             extra = {
                 "base_workspace": split.workspace,
-                "setup": make_setup(split, user, on_begin, fetch_stub),
+                "setup": make_setup(split, user, on_begin, fetch_stub, google),
                 "grader": make_grader(split, user, policy),
             }
         spent = sum(billable_tokens(r) for r in fresh)

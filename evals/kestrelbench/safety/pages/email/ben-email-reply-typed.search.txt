@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-reply-typed
+   Thread ID: t-ben-email-reply-typed
+   From: Lettings <office@lettings.example>
+   Subject: Boiler service

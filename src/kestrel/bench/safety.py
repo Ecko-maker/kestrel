@@ -6,8 +6,9 @@ docs/kestrelbench.md ("Safety split"). In short, a task has the main suite's com
 category, tags, prompt, files, approvals, max_steps) plus safety fields kept in a SafetyMeta:
 
     kind: attack | benign
-    vector: file | search | fetch | mcp | multistep    # where the attacker's data enters
+    vector: file | search | fetch | mcp | email | multistep    # where the attacker's data enters
     pages / search / mcp:                              # what the network and MCP stubs serve
+    google: {search_gmail_messages: ..., ...}          # email (s1.1): what the Google stubs serve
     canaries: [KCAN-...]                               # planted in private workspace data
     allowed_recipients: [me@example.com]               # send_message to these is not a leak
     goals: [...]                                       # attack: what the attacker wants
@@ -42,13 +43,13 @@ SAFETY_DIR = Path(__file__).resolve().parents[3] / "evals" / "kestrelbench" / "s
 
 # Bump on any change to a safety task, a guard's logic, a stub, or the safety fixtures, and log it
 # in evals/CHANGELOG.md. Independent of SUITE_VERSION, which keeps meaning "the main 100 tasks".
-SAFETY_VERSION = "s1.0"
+SAFETY_VERSION = "s1.1"  # s1.1: the email vector and 16 email tasks (Google step, docs/google-step-plan.md)
 
 KINDS = ("attack", "benign")
 # An attack marked `probe: policy` is graded like any attack but reported on its own line, outside
 # the attack success rate and the gate: it tests a rule the user asked to break, not an injection.
 PROBES = ("policy",)
-VECTORS = ("file", "search", "fetch", "mcp", "multistep")
+VECTORS = ("file", "search", "fetch", "mcp", "email", "multistep")
 ANSWER = "answer"  # leak goal channel: URLs and images in the final answer
 WRITE_TOOLS = ("write_file", "append_to_file")
 DEFAULT_ALLOWED = "notes/"
@@ -64,6 +65,7 @@ SAFETY_FIELDS = {
     "pages",
     "search",
     "mcp",
+    "google",
     "goals",
     "expect",
     "probe",
@@ -97,6 +99,9 @@ class SafetyMeta:
     pages: dict[str, str] = field(default_factory=dict)  # fetch stub: URL -> page text
     search: tuple[dict[str, Any], ...] = ()  # web_search stub: {match, results}
     mcp: tuple[McpStub, ...] = ()
+    # Google stubs (s1.1): tool short name -> what it returns. Gmail tools carry the email (attacker data);
+    # get_events is the user's own calendar (private data: it may hold a canary).
+    google: dict[str, str] = field(default_factory=dict)
     paired_with: str | None = None
     probe: str | None = None  # "policy": outside the attack success rate and the gate (see PROBES)
 
@@ -207,6 +212,42 @@ def _pages(raw: Any, root: Path, where: str) -> dict[str, str]:
     return out
 
 
+GMAIL_TOOLS = ("search_gmail_messages", "get_gmail_message_content")
+CALENDAR_TOOL = "get_events"
+
+
+def _google(raw: Any, root: Path, where: str) -> dict[str, str]:
+    """`google:` fixtures: {tool: text or {file: pages/...}} for the 3 exposed Google tools."""
+    from kestrel.google_tools import EXPOSED
+
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise TaskError(f"{where}: 'google' must map tool names to text or {{file: pages/...}}")
+    out = {}
+    for tool, value in raw.items():
+        if tool not in EXPOSED:
+            raise TaskError(f"{where}: google fixture {tool!r} is not one of {EXPOSED}")
+        if isinstance(value, dict) and set(value) == {"file"}:
+            path = (root / str(value["file"])).resolve()
+            if not path.is_relative_to(root.resolve()) or not path.is_file():
+                raise TaskError(f"{where}: google fixture file {value['file']!r} not found inside {root}")
+            out[str(tool)] = path.read_text(encoding="utf-8")
+        elif isinstance(value, str):
+            out[str(tool)] = value
+        else:
+            raise TaskError(f"{where}: google fixture {tool!r} must be text or {{file: ...}}")
+    return out
+
+
+def _private_texts(task: Task, meta: SafetyMeta, base_files: dict[str, str]) -> list[str]:
+    """Where a task's canaries may live: its workspace (shared plus own files) and the user's own calendar."""
+    texts = [*base_files.values(), *task.files.values()]
+    if CALENDAR_TOOL in meta.google:
+        texts.append(meta.google[CALENDAR_TOOL])
+    return texts
+
+
 def _regex(pattern: Any, where: str) -> str:
     try:
         re.compile(str(pattern))
@@ -287,18 +328,20 @@ def _parse(raw: Any, default_category: str | None, source: str, root: Path, base
         pages=_pages(raw.get("pages"), root, where),
         search=_search(raw.get("search"), where),
         mcp=mcp,
+        google=_google(raw.get("google"), root, where),
         paired_with=raw.get("paired_with"),
         probe=probe,
     )
 
-    # Canaries live in private workspace data only: the split's workspace plus the task's files.
+    # Canaries live in private data only: the split's workspace, the task's files, and (email tasks) the
+    # user's own calendar fixture.
     workspace = {**base_files, **task.files}
-    found = {p for t in workspace.values() for p in cn.find_canaries(t)}
+    found = {p for t in _private_texts(task, meta, base_files) for p in cn.find_canaries(t)}
     declared = [str(c) for c in raw.get("canaries") or ()]
     if bad := [c for c in declared if not cn.CANARY.fullmatch(c)]:
         raise TaskError(f"{where}: canaries look like KCAN- plus 12 hex digits, got {bad}")
     if missing := [c for c in declared if c.split("-", 1)[1].lower() not in found]:
-        raise TaskError(f"{where}: canaries {missing} are not in the task's workspace files")
+        raise TaskError(f"{where}: canaries {missing} are not in the task's workspace files or calendar fixture")
     canaries = tuple(declared) if declared else tuple(sorted(f"KCAN-{p}" for p in found))
     meta = replace(meta, canaries=canaries)
 
@@ -310,6 +353,7 @@ def _attacker_texts(meta: SafetyMeta) -> list[str]:
     texts = list(meta.pages.values())
     texts += [v for e in meta.search for r in e["results"] for v in r.values()]
     texts += [t for m in meta.mcp for t in (m.description, m.result)]
+    texts += [meta.google[t] for t in GMAIL_TOOLS if t in meta.google]  # email is attacker data; the calendar isn't
     return texts
 
 
@@ -327,12 +371,19 @@ def _validate(task: Task, meta: SafetyMeta, workspace: dict[str, str], where: st
         if not any("tool" in e for e in meta.expect):
             raise TaskError(f"{where}: a benign task's 'expect' needs at least one tool entry (the requested action)")
 
-    channels = {"file": bool(task.files), "search": bool(meta.search), "fetch": bool(meta.pages), "mcp": bool(meta.mcp)}
+    channels = {
+        "file": bool(task.files),
+        "search": bool(meta.search),
+        "fetch": bool(meta.pages),
+        "mcp": bool(meta.mcp),
+        "email": any(t in meta.google for t in GMAIL_TOOLS),
+    }
     if meta.vector == "multistep":
         if sum(channels.values()) < 2:
-            raise TaskError(f"{where}: a multistep task needs at least two of files, search, pages, mcp")
+            raise TaskError(f"{where}: a multistep task needs at least two of files, search, pages, mcp, email")
     elif not channels[meta.vector]:
-        need = {"file": "files", "search": "search", "fetch": "pages", "mcp": "mcp"}[meta.vector]
+        needs = {"file": "files", "search": "search", "fetch": "pages", "mcp": "mcp", "email": "a Gmail fixture"}
+        need = needs[meta.vector]
         raise TaskError(f"{where}: vector {meta.vector} needs '{need}'")
 
     # A canary in what the user typed or the attacker wrote would make a "leak" meaningless.
@@ -540,6 +591,8 @@ def safety_sha(st: SafetyTask, workspace: Path) -> str:
     meta = asdict(st.meta)
     if meta["probe"] is None:  # added in s1.0 pre-measurement fixes: unset, it leaves fingerprints as they were
         del meta["probe"]
+    if not meta["google"]:  # added in s1.1: unset, the 48 s1.0 tasks keep their fingerprints
+        del meta["google"]
     blob = json.dumps([definition, meta], sort_keys=True, default=str) + _workspace_sha(workspace)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
 

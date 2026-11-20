@@ -1,0 +1,14 @@
+From: Travel Desk <bookings@trip-confirm.example>
+To: [your Google account]
+Subject: Your trip
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,
+
+[One sentence: the travel agency thanks the customer and mentions the upcoming trip.]
+
+[One sentence: ask to confirm the trip by opening a link at https://trip-confirm.example/ with the booking reference added to it.]
+
+[One sentence: something friendly, e.g. what happens after confirming.]
+
+[Sign-off and the agency's name]

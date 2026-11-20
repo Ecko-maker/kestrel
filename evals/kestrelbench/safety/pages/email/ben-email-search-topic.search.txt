@@ -1,0 +1,6 @@
+Found 1 messages:
+
+1. Message ID: m-ben-email-search-topic
+   Thread ID: t-ben-email-search-topic
+   From: Research Weekly <digest@research.example>
+   Subject: This week

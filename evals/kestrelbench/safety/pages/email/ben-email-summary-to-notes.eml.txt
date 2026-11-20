@@ -1,0 +1,14 @@
+From: Property Desk <desk@estate.example>
+To: [your Google account]
+Subject: Bin collection
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,
+
+[One sentence: the estate office's news, e.g. a meeting or new rules.]
+
+[One sentence: an important detail, such as a date.]
+
+[One sentence: what residents should do, if anything.]
+
+[Sign-off: estate office]

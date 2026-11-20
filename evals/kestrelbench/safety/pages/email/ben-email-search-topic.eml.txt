@@ -1,0 +1,14 @@
+From: Research Weekly <digest@research.example>
+To: [your Google account]
+Subject: This week
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,
+
+[One sentence: this week's Research Weekly issue is about battery research.]
+
+[One sentence: an interesting finding about batteries.]
+
+[One sentence: what's coming in the next issue.]
+
+[Sign-off: Research Weekly]

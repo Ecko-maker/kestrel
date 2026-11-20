@@ -6,6 +6,10 @@ users who answer approval requests.
 - fetch__fetch is registered the way MCPManager registers mcp-server-fetch (external, on the safe
   allowlist), but serves the task's fixture pages.
 - A task's MCP stubs are external tools on the safe allowlist that return fixed text.
+- With --tools google (or in a task with `google:` fixtures), the 3 Google tools are registered the way
+  google_tools registers the real ones: the pinned workspace-mcp 2.3.0 schemas without user_google_email,
+  undeclared capabilities (confirm, taint, untrusted), no session approval. Deny by default: a call is
+  answered only from the task's fixture for that tool, and otherwise fails; real Google is never reached.
 
 Every stub call is recorded with its arguments as a {"type": "stub_call", "tool", "args"} event.
 That log is the system-level ground truth: a stub call is a request that would have left the
@@ -19,7 +23,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
-from kestrel import tools
+from kestrel import google_tools, tools
 from kestrel.approval import Decision
 from kestrel.bench.runner import ScriptedApprover, Setup
 from kestrel.bench.tasks import Task
@@ -79,10 +83,59 @@ def is_network_facing(name: str, tool: Tool) -> bool:
     return name in NETWORK_TOOLS or tool.external
 
 
-def build_registry(meta: SafetyMeta, log: list[dict[str, Any]], fetch_stub: bool = True) -> ToolRegistry:
+GOOGLE_UNAVAILABLE = "Google is not available in this session."
+
+
+def register_google_stubs(registry: ToolRegistry, fixtures: dict[str, str], log: list[dict[str, Any]]) -> None:
+    """The 3 Google tools as stubs: same names, descriptions, schemas and gating as google_tools.register.
+    Every call is logged; only a fixture answers (deny by default)."""
+    for name, spec in google_tools.pinned().items():
+        full = google_tools.kestrel_name(name)
+
+        def call(_full: str = full, _short: str = name, **args: Any) -> str:
+            log.append({"type": "stub_call", "tool": _full, "args": dict(args)})
+            if _short not in fixtures:
+                raise ExternalToolError(GOOGLE_UNAVAILABLE)
+            return fixtures[_short]
+
+        registry.register_external(
+            full,
+            call,
+            f"[MCP server '{google_tools.SERVER}'] {spec['description']}".strip(),
+            google_tools.model_schema(spec["input_schema"]),
+            capabilities=None,
+            server=google_tools.SERVER,
+            annotations=spec.get("annotations"),
+            allow_session=False,
+        )
+
+
+def main_registry(log: list[dict[str, Any]], google: bool = False) -> ToolRegistry:
+    """The main suite's tools: the built-in registry, plus the Google stubs (no fixtures) with google."""
+    registry = ToolRegistry(tools.registry.timeout, tools.registry.max_result_chars)
+    registry.tools.update({n: t for n, t in tools.registry.tools.items() if not t.external})
+    if google:
+        register_google_stubs(registry, {}, log)
+    return registry
+
+
+def main_setup(google: bool) -> Setup:
+    """The main suite with --tools google: built-in tools, Google stubs, the task's scripted user."""
+
+    def setup(task: Task) -> tuple[ToolRegistry, Any, list[dict]]:
+        log: list[dict] = []
+        return main_registry(log, google), ScriptedApprover(task.approvals), log
+
+    return setup
+
+
+def build_registry(
+    meta: SafetyMeta, log: list[dict[str, Any]], fetch_stub: bool = True, google: bool = False
+) -> ToolRegistry:
     """A fresh registry for one safety task: the built-in tools with web_search stubbed, plus the
     fetch stub and the task's MCP stubs. Stubs append their calls to `log`. fetch_stub=False leaves the
-    fetch stub out (the routed run's group S, bench/routed_safety.py: the tools the student was trained on)."""
+    fetch stub out (the routed run's group S, bench/routed_safety.py: the tools the student was trained on).
+    google=True (--tools google) adds the Google stubs; a task with `google:` fixtures always has them."""
 
     def record(tool: str, args: dict[str, Any]) -> None:
         log.append({"type": "stub_call", "tool": tool, "args": dict(args)})
@@ -91,6 +144,8 @@ def build_registry(meta: SafetyMeta, log: list[dict[str, Any]], fetch_stub: bool
     for name, t in tools.registry.tools.items():
         if not t.external:  # the bench never starts MCP servers, but never inherit real ones either
             registry.tools[name] = t
+    if google or meta.google:
+        register_google_stubs(registry, dict(meta.google), log)
 
     def web_search(query: str, max_results: int = 5) -> list[dict]:
         record("web_search", {"query": query, "max_results": max_results})
@@ -172,6 +227,7 @@ def make_setup(
     user: str = "strict",
     on_begin: Callable[[SafetyTask], None] | None = None,
     fetch_stub: bool = True,
+    google: bool = False,
 ) -> Setup:
     """The runner's per-task hook: stubbed registry, scripted user, and the stub log. on_begin
     lets a scripted model read the task it is about to play."""
@@ -184,6 +240,6 @@ def make_setup(
         log: list[dict] = []
         if on_begin:
             on_begin(st)
-        return build_registry(st.meta, log, fetch_stub), USERS[user](task), log
+        return build_registry(st.meta, log, fetch_stub, google), USERS[user](task), log
 
     return setup

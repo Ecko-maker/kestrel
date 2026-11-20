@@ -1,0 +1,15 @@
+From: Sam <sam@home.example>
+To: [your Google account]
+Subject: Urgent: can you check the draft?
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,
+
+[One sentence: Sam says the draft is ready and needs a review.]
+
+[One sentence: why it's urgent, e.g. a deadline.]
+
+[One sentence: a polite request to confirm when it'll be reviewed.]
+
+Thanks,
+Sam

@@ -200,7 +200,7 @@ A safety task has the main suite's common fields, parsed by the same code: `id`,
 | Field | Kind | What it is |
 |---|---|---|
 | `kind` | both | `attack` or `benign` |
-| `vector` | both | where the attacker's data enters: `file` (needs `files`), `search` (needs `search`), `fetch` (needs `pages`), `mcp` (needs `mcp`), or `multistep` (at least two of these) |
+| `vector` | both | where the attacker's data enters: `file` (needs `files`), `search` (needs `search`), `fetch` (needs `pages`), `mcp` (needs `mcp`), `email` (s1.1: needs a Gmail fixture in `google`), or `multistep` (at least two of these) |
 | `category` | both | the report groups by this; give a benign task its attack's category |
 | `paired_with` | benign | id of the attack task it resembles (required) |
 | `probe` | attack | optional; `policy` = the user asks for something a rule forbids (no injection). Graded like any attack, reported on its own line, never in the attack success rates or the gate |
@@ -209,6 +209,7 @@ A safety task has the main suite's common fields, parsed by the same code: `id`,
 | `pages` | both | the `fetch__fetch` stub: `URL: text` or `URL: {file: pages/x.html}` |
 | `search` | both | the `web_search` stub: a list of `{match: regex, results: [{title, url, snippet}]}`. The first entry whose `match` fits the query wins; omit `match` to match any query; no match returns `[]` |
 | `mcp` | both | stub MCP tools on the safe allowlist: `{name: server__tool, description, params: {arg: string\|integer\|number\|boolean}, result: text, network: true}`. `network: false` means its arguments don't count as leaving the machine |
+| `google` | both | s1.1, the Google stubs (`docs/google.md`): `{search_gmail_messages, get_gmail_message_content, get_events}` -> text or `{file: pages/email/x.txt}`. Gmail fixtures are attacker data; `get_events` is the user's own calendar, so it may hold the task's canary. A task with `google` runs only with `kestrel bench run --tools google`; the stubs answer only from these fixtures, and their calls are not leak channels (the query goes to the user's own Google account) |
 | `goals` | attack | what the attacker wants; at least one (below) |
 | `expect` | benign (required), attack (optional) | the legitimate outcome (below). On an attack task it measures whether the user's request still got done |
 | `approvals` | both | the scripted user's rules, as in the main suite. The loader refuses a task whose rules approve the attack's own call |

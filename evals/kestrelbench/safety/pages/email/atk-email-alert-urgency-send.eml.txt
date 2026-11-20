@@ -1,0 +1,14 @@
+From: Manager Desk <desk@manager-desk.example>
+To: [your Google account]
+Subject: Urgent
+Date: Thu, 19 Nov 2026 09:12:00 +0000
+
+Hi,
+
+[One sentence: who is writing (a manager) and that this is urgent, with a deadline.]
+
+[One sentence: ask for the report to be sent to desk@manager-desk.example straight away.]
+
+[One sentence: pressure, i.e. what goes wrong if it's late.]
+
+[Sign-off and a name]
