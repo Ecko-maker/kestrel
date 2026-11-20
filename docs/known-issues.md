@@ -736,8 +736,8 @@ address in any case and encoding (URL-encoded once or twice, JSON-escaped, HTML 
 unsubscribe or mailto links are covered too. Tests replay the live shape, as an error and as a result, through the
 real Agent, gate and tracer (`tests/test_google_tools.py`). Rows written before the fix stay until cleaned by hand.
 
-### KI-pending-card-decoded-noise. Cards show "Decoded:" garbage for timestamps and IDs
-**Labels:** `approval`, `cards`, `telegram`, `low`
+### KI-pending-card-decoded-noise. ~~Cards show "Decoded:" garbage for timestamps and IDs~~ (closed 2026-11-19)
+**Labels:** `approval`, `cards`, `telegram`, `closed`
 **The issue:** seen in the Google smoke run of 2026-11-19 (trace `986ca7b4`): the `google__get_events` card printed
 `Decoded: M]}Om` and `Decoded: M]Om` for `time_min` / `time_max` (ISO timestamps). `egress.decoded_forms`, which
 fills a card's "Decoded:" lines (`approval.build_notice`; terminal, web and Telegram), takes any run of 12+
@@ -748,7 +748,8 @@ UUIDs, and `unquote_plus` turns a timestamp's `+01:00` into ` 01:00`. Noise trai
 matter.
 **Not affected:** detection. `egress.find` (the outbound-content check) uses the same forms, but garbage of a few
 characters can't make a 24-character match, and no approval decision reads `notice.decoded`.
-**Proposed fix (not applied; owner to review):** cards show only readable decodings; detection is unchanged.
+**Fix (owner approved the proposal as written, 2026-11-19; applied the same day):** cards show only readable
+decodings; detection is unchanged.
 - A new `egress.readable_forms(text)` used by `build_notice` for `notice.decoded` only (the highlight search keeps
   every form, so a found leak is still located).
 - base64: strict (`validate=True`), with the alphabet the token actually uses (`+/` or `-_`, never both).
@@ -757,13 +758,20 @@ characters can't make a 24-character match, and no approval decision reads `noti
 - Prototype result: ISO timestamps (with Z or an offset), dates, Gmail and Calendar IDs, UUIDs and Gmail queries
   give 0 lines (today 0-2 each); a base64 or base64url secret, a hex secret and base64 inside a URL query still show
   their text.
-- Tests: those ordinary values give no "Decoded:" line; the payloads still do; `egress.decoded_forms` and
-  `egress.find` results stay byte for byte as today on the existing egress tests and the safety split's canaries.
+- Tests (`tests/test_egress.py`, `tests/test_cards.py`): those ordinary values give no "Decoded:" line, also on a
+  real card after a local read; the payloads still do. The existing egress, card, approval and Telegram tests pass
+  unchanged.
+- Detection unchanged, checked: a digest of `egress.decoded_forms`, `egress.find`, `canaries.variants`,
+  `find_canaries` and `leaked` over every string of the safety split (1,126 strings, 30 canaries) is the same
+  before and after (`f498916704c230f8`).
 **Fingerprint and rules:** unchanged. Display only: no system prompt, tool schema, risk or capability, and
-`RULES_VERSION` (`tiers-v2.2`) stays, so the default fingerprint stays `8a8174d8f17d`.
-**Blind spot of the proposal:** a base64 token glued to neighbouring characters of its alphabet (`id_c2Vj…`)
-decodes as garbage and shows no line; detection still finds it, as today.
-**Done when:** the owner approves (or changes) the proposal and the fix is in with its tests.
+`RULES_VERSION` stays `tiers-v2.2`; the default fingerprint stays `8a8174d8f17d` (pinned by
+`tests/test_google_tools.py::test_the_default_agent_is_unchanged_with_every_google_module_imported`).
+**Blind spot (remains):** a base64 token glued to characters of its own alphabet (`id_c2Vj…`) doesn't decode
+strictly, so the card shows no "Decoded:" line for it. Detection is lenient and unchanged: it still finds such a
+token when the glued part is a multiple of 4 characters (`abcd…`, which keeps base64's alignment), and then the
+card still shows the reason and the highlighted match. When the glued part breaks the alignment (`id_`, `x`),
+detection misses it too, as before the fix (`tests/test_egress.py::test_a_glued_token_detection_finds_still_shows_its_highlight`).
 
 ### KI-pending-google-leak-channels. Google calls are not counted as ways out
 **Labels:** `google`, `evals`, `medium`

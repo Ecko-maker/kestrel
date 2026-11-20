@@ -15,8 +15,11 @@ Where it looks, as bench/canaries.py does for canaries (same ideas, no bench imp
   call, and a run of MIN_CHARS sent characters is a hit if the current call sent part of it.
 
 Blind spots: paraphrase and summaries, other encodings (ROT13, reversed), secrets shorter than the
-threshold (a 4-digit PIN), and splits into pieces under PIECE_CHARS. The user still sees a card for
-every network call after a local read (defense a); this check adds the reason and the evidence.
+threshold (a 4-digit PIN), splits into pieces under PIECE_CHARS, and a base64 token glued to characters of
+its alphabet that break its 4-character alignment (id_c2Vj...). A card's "Decoded:" lines come from the
+stricter readable_forms (display only), so they also skip a glued token that detection does find.
+The user still sees a card for every network call after a local read (defense a); this check adds the
+reason and the evidence.
 """
 
 import base64
@@ -99,6 +102,66 @@ def decoded_forms(text: str) -> list[str]:
     decoded = [d for f in [text, *forms] for d in _decoded_tokens(f)]
     out: list[str] = []
     for f in [*forms, *decoded, *(unquote_plus(d) for d in decoded)]:
+        if f and f != text and f not in out:
+            out.append(f)
+    return out
+
+
+# --- what a card shows (display only) ------------------------------------------------------------
+# decoded_forms is lenient on purpose: detection would rather decode too much. Shown on a card, that leniency
+# turns ordinary values into noise (an ISO timestamp "decoded" to "M]}Om"; KI-pending-card-decoded-noise, closed),
+# so the card's "Decoded:" lines come from a strict reading. Detection and the highlight search don't use it.
+_PERCENT_ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
+MIN_PRINTABLE = 0.9
+MIN_ALNUM = 4
+
+
+def _readable(raw: bytes) -> str | None:
+    """The bytes as text if they are strict UTF-8, at least 90% printable and hold 4+ letters or digits."""
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    if not text:
+        return None
+    printable = sum(c.isprintable() or c in "\n\t" for c in text)
+    alnum = sum(c.isalnum() for c in text)
+    return text if printable / len(text) >= MIN_PRINTABLE and alnum >= MIN_ALNUM else None
+
+
+def _readable_tokens(text: str) -> list[str]:
+    """base64 tokens decoded strictly, in the one alphabet they use (+/ or -_, never both), and hex tokens; each
+    kept only if it reads as text."""
+    out = []
+    for token in _B64_TOKEN.findall(text):
+        body = token.rstrip("=")
+        standard, urlsafe = any(c in body for c in "+/"), any(c in body for c in "-_")
+        if standard and urlsafe:
+            continue
+        try:
+            raw = base64.b64decode(body + "=" * (-len(body) % 4), altchars=b"-_" if urlsafe else None, validate=True)
+        except binascii.Error, ValueError:
+            continue
+        if (decoded := _readable(raw)) is not None:
+            out.append(decoded)
+    for token in _HEX_TOKEN.findall(text):
+        if (decoded := _readable(bytes.fromhex(token))) is not None:
+            out.append(decoded)
+    return out
+
+
+def readable_forms(text: str) -> list[str]:
+    """The decoded forms worth showing on a card: URL-decoded only if the text has a real %XX escape (a "+" alone
+    isn't one: it would turn a timestamp's +01:00 into " 01:00"), and base64 / hex tokens only when they decode
+    strictly to readable text. Blind spot: a token glued to neighbouring characters of its alphabet (id_c2Vj...)
+    reads as garbage and shows no line; detection (decoded_forms) still decodes it."""
+    url: list[str] = []
+    if _PERCENT_ESCAPE.search(text):
+        once = unquote_plus(text)
+        url = [once, *([unquote_plus(once)] if _PERCENT_ESCAPE.search(once) else [])]
+    out: list[str] = []
+    tokens = [d for form in [text, *url] for d in _readable_tokens(form)]
+    for f in [*url, *tokens]:
         if f and f != text and f not in out:
             out.append(f)
     return out

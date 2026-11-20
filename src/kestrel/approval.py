@@ -105,7 +105,7 @@ def build_notice(tool: Tool, args: dict, need: Requirement, session: Session | N
     notice = Notice(reasons=list(need.reasons))
     if "network_egress" in tool.capabilities:
         sent = egress.call_text(args)
-        notice.decoded = [d[:MAX_DECODED_CHARS] for d in egress.decoded_forms(sent)]
+        notice.decoded = [d[:MAX_DECODED_CHARS] for d in egress.readable_forms(sent)]  # display only: strict
         for m in need.matches:
             if found := _locate(m.text, [sent, *egress.decoded_forms(sent)]):
                 notice.highlights.append(Highlight(*found, source=m.source, chars=m.chars))

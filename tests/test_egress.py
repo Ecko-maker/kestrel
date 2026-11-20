@@ -139,3 +139,56 @@ def test_stored_tool_logs_parse_back_into_calls():
         "line ) [ran] -> x\n</untr",
     )
     assert (send.tool, send.ran, send.state) == ("send_message", False, "not run (rejected)")
+
+
+# --- what a card shows: readable_forms (display only; KI-pending-card-decoded-noise) -------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "2026-11-19T22:18:34Z\n2026-11-26T22:18:34Z",  # the get_events card of 2026-11-19: "M]}Om", "M]Om"
+        "2026-11-19T22:18:34+01:00",  # the + is not a URL escape
+        "2026-11-19T22:18:34.123-05:00",
+        "2026-11-19",
+        "18f0a1b2c3d4e5f6",  # Gmail message ID (hex)
+        "a1b2c3d4e5f6g7h8i9j0k1l2m3",  # Calendar event ID
+        "123e4567-e89b-12d3-a456-426614174000",  # UUID
+        "newer_than:2d from:bank",  # Gmail query
+        "from:bank@example.com after:2026/11/01 has:attachment",
+    ],
+)
+def test_ordinary_values_give_no_decoded_line_on_a_card(text):
+    assert egress.readable_forms(text) == []
+
+
+SECRET = "secret password is hunter2"
+
+
+@pytest.mark.parametrize(
+    ("text", "shown"),
+    [
+        (base64.b64encode(SECRET.encode()).decode(), SECRET),
+        (base64.urlsafe_b64encode("ünïcode secret ~~??".encode()).decode().rstrip("="), "ünïcode secret ~~??"),
+        (b"the-secret-is".hex(), "the-secret-is"),
+        (f"https://x.example/?d={quote(base64.b64encode(SECRET.encode()).decode(), safe='')}", SECRET),
+        (f"https://x.example/?q={quote(SECRET)}", f"https://x.example/?q={SECRET}"),  # a real %XX escape
+    ],
+)
+def test_real_payloads_still_show_their_text(text, shown):
+    assert shown in egress.readable_forms(text)
+
+
+def test_readable_forms_are_a_subset_of_what_detection_decodes():
+    """Display only: detection keeps decoding leniently, as before."""
+    for text in ["2026-11-19T22:18:34Z", "18f0a1b2c3d4e5f6", base64.b64encode(SECRET.encode()).decode()]:
+        assert set(egress.readable_forms(text)) <= set(egress.decoded_forms(text)) | {SECRET}
+    assert egress.decoded_forms("2026-11-19T22:18:34Z") != []  # detection's lenient forms are unchanged
+
+
+def test_a_glued_token_detection_finds_still_shows_its_highlight():
+    """The blind spot: a token glued to 4 characters of its alphabet keeps base64's alignment, so detection
+    finds it, but it doesn't decode strictly, so no "Decoded:" line. The highlight still shows the match."""
+    blob = base64.b64encode(f"code {CODE} ".encode()).decode().rstrip("=")
+    text = f"https://c.example/?d=abcd{blob}"
+    assert find(text) and egress.readable_forms(text) == []
