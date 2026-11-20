@@ -31,6 +31,10 @@ Fingerprint unchanged (`8a8174d8f17d`); owner's phone test 9/9.
   step's after side; offline build next, no approval lines yet.
 - **Fork-PR approval** (checklist 6.3): the repo setting is `first_time_contributors`, not "all outside
   collaborators"; reported 11-13, not changed (owner's call).
+- **Future roadmap item (not scheduled, no approval lines): analytics reports.** Kestrel sends you reports
+  (e.g. from kestrel-data or the traces). **Telegram first**, to your own chat. **Email-to-self** comes as its
+  own measured step later (a send tool, gated, with its own plan and approval lines). Sending to free-form
+  recipients (any address the model or a message names) is **not planned**.
 - **Merged branches not yet deleted:** 16 on `origin` (Branches, below).
 
 ## 2026-11-13 (notifications stage 1 session; Groq only through the approved CI runs)
@@ -342,6 +346,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 11-09 onward | After section 9's PASS: (1) #79's CI after pushing its banner commit (`a825b81`, "frozen in 0071e54"), ~31k; (2) #79's merge-to-`main` run, ~31k; (3) the combined PR (`post-s9/combined`: `fix/fetch-private-block` + `fix/voice-console-week` + `phase4/integration`, rules `tiers-v2.2`), its PR run and its merge-to-`main` run, ~56k | **~118k** (estimate from #79's measured 31,604 and ~28k per CI subset run) | **approved by the owner (2026-11-09), up to ~120,000 billable** for these four runs only. Each starts only when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; any other push to an open PR needs a new line. **Ran:** #79's two runs (51,696 together, release checklist); the combined PR #90, **49,694 measured** (PR run 29,410, run 42755872462, 14/15 graded, 1 errored; merge-to-`main` run 20,284, run 42759045086, 14/16, 0 errored). |
 | 2026-11-12 | feature/telegram PR: CI subset on the PR + on the merge to main | ~56k (est.); **51,528 measured** (PR run 31,480 + main run 20,048) | approved by the owner 2026-11-12. **Ran:** PR #96, 94% and 87.5%, 0 errors; two earlier PR runs skipped KestrelBench (0 tokens). |
 | 2026-11-13 | Notifications stage 1 PR (`feature/notify-reminders`): CI subset on the PR + on the merge to main | ~56k (est.); **63,624 measured** (PR run 31,676 + main run 31,948) | Notifications stage 1 PR: CI subset ~56k (PR run + merge run), approved by the owner 2026-11-13. **Ran:** PR #103, 88% and 88%, 0 errors; above the estimate by 7,624 (each run ~31.8k vs ~20k for most past merge runs); no extra pushes to the open PR. |
+| 2026-11-19 | Google part 2a PR (`feature/google-tools` -> `main`): CI subset on the PR + on the merge to main | ~64k (est.) | Google part 2a PR: CI subset ~64k (PR run + merge run), approved by the owner 2026-11-19. Opens only after this line is on `main` and while no other Groq consumer runs; extra pushes to the open PR need a new line. |
 
 ## Owner decisions open
 
