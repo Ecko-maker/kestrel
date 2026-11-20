@@ -4,6 +4,7 @@ from the model, and the bench's stubs. No network, no Google, no model calls."""
 
 import argparse
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -409,7 +410,8 @@ def test_the_stubs_show_the_model_the_real_tools_schemas():
 # --- the s1.1 email tasks -------------------------------------------------------------------------------
 
 
-def test_the_email_tasks_are_scaffolds_listed_as_todo():
+def test_the_email_tasks_are_paired_and_written():
+    """s1.1's 16 emails were written by the owner on 2026-11-20: no marker or scaffolding is left in any of them."""
     split = load_safety(SAFETY_DIR)
     email = [st for st in split.tasks if st.meta.google]
     assert len(email) == 16 and sum(st.meta.kind == "attack" for st in email) == 8
@@ -417,9 +419,19 @@ def test_the_email_tasks_are_scaffolds_listed_as_todo():
         st.id for st in email if st.meta.kind == "attack"
     }
     todo = {m.where for m in find_markers(SAFETY_DIR)}
-    assert {f"pages/email/{st.id}.eml.txt" for st in email} <= todo
-    for st in email:  # every task's email is a marker until the owner writes it
-        assert "{{INJECTION:" in st.meta.google["get_gmail_message_content"]
+    assert not {f"pages/email/{st.id}.eml.txt" for st in email} & todo
+    for st in email:
+        assert "{{" not in st.meta.google["get_gmail_message_content"]
+
+
+def unwritten_copy(tmp_path: Path) -> Path:
+    """A copy of the safety split with every email body put back to a bare marker (the headers kept)."""
+    root = tmp_path / "safety"
+    shutil.copytree(SAFETY_DIR, root)
+    for eml in (root / "pages" / "email").glob("*.eml.txt"):
+        head = eml.read_text(encoding="utf-8").split("\n\n", 1)[0]
+        eml.write_text(head + "\n\n{{INJECTION}}\n", encoding="utf-8")
+    return root
 
 
 def test_email_tasks_run_only_with_tools_google():
@@ -448,11 +460,17 @@ def test_email_tasks_run_only_with_tools_google():
     assert len(picked(kinds="benign")) == 18 and len(picked("google", kinds="benign")) == 26
 
 
-def test_a_real_model_refuses_any_run_that_would_use_an_unwritten_email():
-    """With --tools google the run selects the email tasks, so it refuses until the owner writes them; without
-    it (the before side, or Phase 4's routed group S) their markers don't block, and validate lists them."""
-    ns = argparse.Namespace(split="safety", scripted=None, split_dir=None)
-    split = load_safety(SAFETY_DIR)
+def test_a_real_model_refuses_any_run_that_would_use_an_unwritten_email(tmp_path):
+    """With --tools google the run selects the email tasks, so it refuses while any email is unwritten; without
+    it (the before side, or Phase 4's routed group S) their markers don't block, and validate lists them.
+    Checked on a copy with the markers put back; the real split, now written, blocks nothing."""
+    real = load_safety(SAFETY_DIR)
+    cli._refuse_incomplete(
+        argparse.Namespace(split="safety", scripted=None, split_dir=None), [st.task for st in real.tasks]
+    )
+    root = unwritten_copy(tmp_path)
+    ns = argparse.Namespace(split="safety", scripted=None, split_dir=root)
+    split = load_safety(root)
     with pytest.raises(SystemExit, match="16 unfilled"):
         cli._refuse_incomplete(ns, [st.task for st in split.tasks])
     with pytest.raises(SystemExit, match="1 unfilled"):

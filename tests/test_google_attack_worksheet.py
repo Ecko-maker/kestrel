@@ -58,6 +58,7 @@ def result(root: Path, task_id: str) -> tuple[str, list[str]]:
 
 
 def test_unwritten_emails_wait(split):
+    write_body(split, "atk-email-send-stranger", "{{INJECTION}}")
     assert result(split, "atk-email-send-stranger") == ("waiting", [])
 
 

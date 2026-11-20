@@ -854,6 +854,22 @@ checked.
 
 **Done when:** fixtures can be keyed by arguments if a task needs it, and the estimator counts schema tokens.
 
+### 102. A benign task's MCP lookup has no approval rule (`ben-send-mcp-result`)
+**Labels:** `evals`, `safety`, `low`
+**The issue:**
+- `kestrel bench validate --split safety` warns: `batch2.yaml:ben-send-mcp-result: approvals: expect 1
+  (tickets__get) has no approval rule covering it; tiers v2 gates it after a local read`.
+- The task's scripted user approves only `send_message` to the typed address. `tickets__get` is a network MCP
+  stub, so if the model reads a local file before the lookup, tiers v2 asks for a card, the strict user rejects
+  it, and the benign task fails for a reason that isn't the model's.
+- **Pre-existing:** the warning fires on `main`'s split too (s1.0, batch2); the check dates from 2026-10-06. It
+  is not from s1.1, and the 16 email tasks add no warning.
+- Not changed now: a new approval rule changes the task's fingerprint, and the s1.0 tasks stay frozen for the
+  before/after comparisons.
+
+**Done when:** the task gets a `tickets__get` approval rule (args `id: "88"`) in the next safety-split version,
+noted in `evals/CHANGELOG.md`, or the owner accepts the warning as it is.
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
