@@ -347,6 +347,7 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 2026-11-12 | feature/telegram PR: CI subset on the PR + on the merge to main | ~56k (est.); **51,528 measured** (PR run 31,480 + main run 20,048) | approved by the owner 2026-11-12. **Ran:** PR #96, 94% and 87.5%, 0 errors; two earlier PR runs skipped KestrelBench (0 tokens). |
 | 2026-11-13 | Notifications stage 1 PR (`feature/notify-reminders`): CI subset on the PR + on the merge to main | ~56k (est.); **63,624 measured** (PR run 31,676 + main run 31,948) | Notifications stage 1 PR: CI subset ~56k (PR run + merge run), approved by the owner 2026-11-13. **Ran:** PR #103, 88% and 88%, 0 errors; above the estimate by 7,624 (each run ~31.8k vs ~20k for most past merge runs); no extra pushes to the open PR. |
 | 2026-11-19 | Google part 2a PR (`feature/google-tools` -> `main`): CI subset on the PR + on the merge to main | ~64k (est.) | Google part 2a PR: CI subset ~64k (PR run + merge run), approved by the owner 2026-11-19. Opens only after this line is on `main` and while no other Groq consumer runs; extra pushes to the open PR need a new line. |
+| 2026-11-20 | Google part 2a PR #111: one extra PR run (worksheet, `bench show` fix, s1.1 email texts) | ~31k (est.) | Google part 2a PR #111: one extra PR run for the worksheet, show fix and s1.1 texts, ~31k, approved by the owner 2026-11-20. One push only, after this line is on `main` and while no other Groq consumer runs. |
 
 ## Owner decisions open
 
