@@ -141,7 +141,7 @@ def test_stored_tool_logs_parse_back_into_calls():
     assert (send.tool, send.ran, send.state) == ("send_message", False, "not run (rejected)")
 
 
-# --- what a card shows: readable_forms (display only; KI-pending-card-decoded-noise) -------------------------
+# --- what a card shows: readable_forms (display only; known issue #96) -------------------------
 
 
 @pytest.mark.parametrize(

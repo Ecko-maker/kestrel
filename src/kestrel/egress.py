@@ -109,7 +109,7 @@ def decoded_forms(text: str) -> list[str]:
 
 # --- what a card shows (display only) ------------------------------------------------------------
 # decoded_forms is lenient on purpose: detection would rather decode too much. Shown on a card, that leniency
-# turns ordinary values into noise (an ISO timestamp "decoded" to "M]}Om"; KI-pending-card-decoded-noise, closed),
+# turns ordinary values into noise (an ISO timestamp "decoded" to "M]}Om"; known issue #96, closed),
 # so the card's "Decoded:" lines come from a strict reading. Detection and the highlight search don't use it.
 _PERCENT_ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
 MIN_PRINTABLE = 0.9

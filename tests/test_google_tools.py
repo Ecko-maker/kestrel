@@ -462,7 +462,7 @@ def test_a_real_model_refuses_any_run_that_would_use_an_unwritten_email():
 
 def test_google_stubs_are_not_leak_channels_and_their_reads_are_declared():
     """A Gmail query goes to the user's own account, not to an attacker: the leak guards count web_search,
-    fetch, send_message and network MCP stubs only (known issue KI-pending-google-leak-channels)."""
+    fetch, send_message and network MCP stubs only (known issue #98)."""
     st = load_safety(SAFETY_DIR).get("atk-email-exfil-fetch")
     assert not any(n.startswith("google__") for n in st.meta.network_tools())
     registry = build_registry(st.meta, [])

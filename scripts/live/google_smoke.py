@@ -27,7 +27,7 @@ then type "done". The script repeats the call, with a new card.
 --leak-check searches every file under logs/ (traces.db, approvals.jsonl, the MCP logs) for USER_GOOGLE_EMAIL
 (as written, lowercase, URL-encoded once or twice, JSON-escaped, HTML entity) and the client secret, as raw
 bytes. It prints yes/no and counts per file.
-logs/mcp-google.log holding your address is a known issue (KI-pending-google-server-log), reported apart.
+logs/mcp-google.log holding your address is known issue #94, reported apart.
 Exit codes: 0 clean, 1 found (outside that known issue), 2 settings missing, 3 run stopped.
 """
 
@@ -64,7 +64,7 @@ SERVER_OPENED = "automatically opened in your browser"  # workspace-mcp 2.3.0's 
 AUTH_URL = re.compile(r"https://accounts\.google\.com/[^\s\"'<>()\[\]*]+")
 MESSAGE_ID = re.compile(r"Message ID:\s*([A-Za-z0-9_-]{6,})")
 ID_FIELD = re.compile(r"\bID:\s*\S+")
-KNOWN_ADDRESS_LOG = "mcp-google.log"  # KI-pending-google-server-log: workspace-mcp logs the address itself
+KNOWN_ADDRESS_LOG = "mcp-google.log"  # known issue #94: workspace-mcp logs the address itself
 
 
 # --- the sign-in link ---------------------------------------------------------------------------------
@@ -308,7 +308,7 @@ def leak_check(logs: Path, address: str, secret: str, print_fn=print) -> int:
         line = ", ".join(f"{k} {'YES' if v else 'no'} ({v})" for k, v in hits.items())
         if path.name == KNOWN_ADDRESS_LOG and hits["address"] and not hits["secret"]:
             known += 1
-            line += "  [known: KI-pending-google-server-log]"
+            line += "  [known: issue #94]"
         elif any(hits.values()):
             found += 1
         print_fn(f"{name}: {line}")

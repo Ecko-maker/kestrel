@@ -3,7 +3,7 @@
 Kestrel can search your Gmail, read a message and read your calendar, through the
 [`workspace-mcp`](https://github.com/taylorwilsdon/google_workspace_mcp) MCP server, pinned to **2.3.0** (MIT).
 
-- **Plan:** [google-step-plan.md](google-step-plan.md), decision `D-pending-google-step`. Its decision rule is frozen
+- **Plan:** [google-step-plan.md](google-step-plan.md), decision 34. Its decision rule is frozen
   there.
 - **Not measured yet:** until the plan's runs are done and its outcome is PASS or not shown, these tools are
   **built but not shipped** (step 2a).
@@ -88,13 +88,52 @@ saved in the credentials folder.
 - **Tick both boxes.** Tick both the Gmail and Calendar boxes on the consent screen. An unticked box gives a
   partial grant, and the next run asks again.
 - **Re-consent happens at the laptop.** Testing mode needs a fresh consent about every 7 days (known issue
-  `KI-pending-google-testing-consent`). The sign-in link opens in the laptop's browser only: it is stripped from
+  #93). The sign-in link opens in the laptop's browser only: it is stripped from
   everything the agent and Telegram see.
 - **One tab per sign-in.** Use the tab the server opened. A second tab of the same link fails with "invalid or
   expired state".
 - **"Authentication Processing Error" after Allow:** close the old sign-in tabs and start a fresh run.
+- **"Gmail API is not enabled for your project" (or Google Calendar API):** step 1.2 was skipped or done in another
+  project. Enable both APIs in the project that holds the OAuth client (APIs & Services, then Library), wait 1-2
+  minutes, then run again. No scope changes.
 
 Missing lines stop Kestrel before anything starts, with a message naming them. It never prints their values.
+
+## Live smoke test
+
+`scripts/live/google_smoke.py` checks the opt-in end to end with a scripted model: the real Agent, approval gate,
+terminal cards and workspace-mcp 2.3.0. It uses no LLM and no Groq or Gemini quota, and it prints counts and
+lengths only.
+
+```
+uv run --no-sync python scripts/live/google_smoke.py                # approve each card in the terminal
+uv run --no-sync python scripts/live/google_smoke.py --leak-check   # then search logs/ for the address and secret
+```
+
+- **Needs:** the `.env` lines above plus `KESTREL_GOOGLE_COMMAND`. Without that line the script stops rather than
+  let uvx download the server (`--allow-download` overrides it).
+- **Calls:** `search_gmail_messages` (`newer_than:2d`, at most 3), `get_gmail_message_content` on the first result,
+  `get_events` for the next 7 days. Each is a card.
+- **Exit codes:** 0 passed, 1 leak found (outside the server's own log), 2 settings missing or download refused,
+  3 run stopped.
+
+**Result, 2026-11-19 (trace `0fde4e4b`): passed.**
+
+| Check | Result |
+|---|---|
+| Sign-in | none needed: the saved token was reused |
+| `search_gmail_messages` | data: 1,281 chars, 3 message IDs |
+| `get_gmail_message_content` | data: 2,027 chars |
+| `get_events` | data: 321 chars |
+| Cards | 3 for 3 calls (2 of them also escalated by the search's taint); session approval offered 0 times |
+| "Decoded:" lines on the cards | none |
+| Leak check | `traces.db` 0, `approvals.jsonl` 0, every other file 0 except `mcp-google.log` (the known issue) |
+
+The earlier runs that day found and fixed two things before this pass:
+- the sign-in link's URL-encoded address in traces (#95, closed);
+- card noise from timestamps (#96, closed).
+
+They also showed two setup steps: tick both boxes, and enable both APIs.
 
 ## Privacy
 
@@ -109,7 +148,7 @@ Missing lines stop Kestrel before anything starts, with a message naming them. I
     that called a Google tool or was tainted by one, and every later trace in that session, even with
     `KESTREL_TRACE_CONTENT=off` (it reads the spans).
   - **The server's own log** (`logs/mcp-google.log`, git-ignored) contains your address, because workspace-mcp
-    logs it. Kestrel can't filter it (known issue `KI-pending-google-server-log`).
+    logs it. Kestrel can't filter it (known issue #94).
   - **Tokens** live in the credentials folder, outside the project, and are never in git.
 
 ## For the bench (no Google, no keys)
@@ -120,6 +159,6 @@ Missing lines stop Kestrel before anything starts, with a message naming them. I
 - **Email tasks:** the safety split's 16 email tasks (s1.1) run only with `--tools google`, and only once their
   emails are written (`kestrel bench validate --split safety` lists them as TODO).
 - **Not leak channels:** Google calls don't count as ways out. A Gmail query goes to your own account, not to an
-  attacker (known issue `KI-pending-google-leak-channels`).
+  attacker (known issue #98).
 - **Re-pinning:** a new pin means listing the tools from the new server, replacing the JSON, and re-checking every
   item in the plan's section 1.1.

@@ -705,7 +705,7 @@ Only `/remind` creates a reminder (owner decision 2026-11-13). A plain message s
 
 ---
 
-### KI-pending-google-testing-consent. Google may ask you to consent again every 7 days
+### 93. Google may ask you to consent again every 7 days
 **Labels:** `google`, `low`
 **The issue:** the OAuth app stays in **Testing**, with you as the only test user (owner decision 2026-11-17). From
 general knowledge of Google's rules, *unverified*: refresh tokens of an External app in Testing expire after 7 days,
@@ -714,16 +714,30 @@ so the browser consent comes back weekly.
 you.
 **Done when:** the first weeks of real use show whether tokens expire, and the docs say what was seen.
 
-### KI-pending-google-server-log. The Google server's log contains your address
+### 94. The Google server's log contains your address
 **Labels:** `google`, `privacy`, `low`
 **The issue:** workspace-mcp logs `user_google_email` on every call. Its stderr goes to `logs/mcp-google.log`
 (git-ignored, local only).
 **Why Kestrel can't filter it:** the server writes to that file through its process handle.
 **What is covered:** the model, traces, cards and the audit log never see the address, in any encoding
-(`tests/test_google_tools.py`; see `KI-pending-google-encoded-address`).
-**Done when:** the server can be told not to log it, or Kestrel filters the stream before writing it.
+(`tests/test_google_tools.py`; see #95).
+**It grows with use** (measured 2026-11-19, counts only): 134 hits in 1,133 lines after 5 server starts. Of those,
+82 are on INFO lines, 5 on WARNING, 12 on ERROR and 35 in tracebacks or continuation lines. The file is appended
+to and never rotated. It is also in the backup set: hand backups copy `logs/` (docs/STATUS.md, "Data outside
+git"), so every backup taken after a Google run holds the address.
+**Proposed mitigation (later, not built):**
+1. Start the server with `WORKSPACE_MCP_LOG_LEVEL=WARNING` (2.3.0 reads it in `main.py`). That drops the INFO
+   lines, about 61% of today's hits. Allow `KESTREL_GOOGLE_LOG_LEVEL=INFO` when debugging sign-in: today's
+   partial-grant diagnosis came from INFO lines.
+2. Pass the server's stderr through a pipe that Kestrel reads and writes with `google_tools.mask`, instead of
+   handing the server the file. This covers the rest, including tracebacks.
+3. Until then, leave `logs/mcp-google.log` out of hand backups, or delete it before one.
 
-### KI-pending-google-encoded-address. ~~The sign-in link put the address, URL-encoded, in traces~~ (closed 2026-11-19)
+Not saving the server's stderr at all would also work, but it loses the only record of sign-in and API errors.
+**Done when:** the server's stderr reaches disk masked (option 2), or the owner accepts option 1 plus excluding
+the file from backups.
+
+### 95. ~~The sign-in link put the address, URL-encoded, in traces~~ (closed 2026-11-19)
 **Labels:** `google`, `privacy`, `closed`
 **The issue:** found by the first live sign-in (`scripts/live/google_smoke.py --leak-check`, 2026-11-19).
 workspace-mcp 2.3.0's sign-in answer (an error, before consent) holds a Google link whose `login_hint` is the
@@ -736,7 +750,7 @@ address in any case and encoding (URL-encoded once or twice, JSON-escaped, HTML 
 unsubscribe or mailto links are covered too. Tests replay the live shape, as an error and as a result, through the
 real Agent, gate and tracer (`tests/test_google_tools.py`). Rows written before the fix stay until cleaned by hand.
 
-### KI-pending-card-decoded-noise. ~~Cards show "Decoded:" garbage for timestamps and IDs~~ (closed 2026-11-19)
+### 96. ~~Cards show "Decoded:" garbage for timestamps and IDs~~ (closed 2026-11-19)
 **Labels:** `approval`, `cards`, `telegram`, `closed`
 **The issue:** seen in the Google smoke run of 2026-11-19 (trace `986ca7b4`): the `google__get_events` card printed
 `Decoded: M]}Om` and `Decoded: M]Om` for `time_min` / `time_max` (ISO timestamps). `egress.decoded_forms`, which
@@ -773,7 +787,28 @@ token when the glued part is a multiple of 4 characters (`abcd…`, which keeps 
 card still shows the reason and the highlighted match. When the glued part breaks the alignment (`id_`, `x`),
 detection misses it too, as before the fix (`tests/test_egress.py::test_a_glued_token_detection_finds_still_shows_its_highlight`).
 
-### KI-pending-google-leak-channels. Google calls are not counted as ways out
+### 97. A card's "Why:" calls Gmail and Calendar results "your local data"
+**Labels:** `approval`, `cards`, `google`, `low`
+**The issue:** after a Google read taints the conversation, a later network call's card says
+`Why: google__search_gmail_messages read your local data earlier in this conversation, and this call sends data
+out` (`permissions.required_approval`). The text was written for `read_file`. Your mail and calendar aren't
+local, and "this call sends data out" is wrong for a Google call that only reads. In the 2026-11-19 smoke run, 2
+of 3 cards carried this line.
+**Proposed text (later, not changed now):** name what was read, by the tool's kind.
+- After a local read: "`<tool>` read your files earlier in this conversation; this call sends data out".
+- After a Google read: "`<tool>` read your Gmail or Calendar earlier in this conversation; this call sends data
+  out".
+- On a Google call (it only reads, and is a card anyway, owner decision Q7): "this call reads your Google account
+  again after an earlier read".
+**Why not now:** the reason string is display only: no rule, `escalated_by` value or fingerprint input depends on
+it, and the bench's scripted approver doesn't read it. But tests pin it (`tests/test_cards.py`,
+`tests/test_router.py`, `tests/test_telegram.py`), `permissions.py` is under `src/kestrel/` (a PR runs the CI
+subset), and the Google step's measurement should see the same cards on both sides. It belongs after the step's
+after side.
+**Done when:** the new wording is in, with its tests, and the escalation rules are unchanged (same `escalated_by`,
+`tiers-v2.2`).
+
+### 98. Google calls are not counted as ways out
 **Labels:** `google`, `evals`, `medium`
 **The issue:** the safety guards count a canary leak through `web_search`, `fetch__fetch`, `send_message` and
 network MCP stubs, but not through the Google tools. A Gmail query goes to your own Google account, not to an
@@ -781,7 +816,7 @@ attacker, but Google does receive what the model puts in it.
 **What protects it today:** a Google call is a card every time.
 **Done when:** a measured decision on whether a canary in a Google query counts as a leak, with the guard to match.
 
-### KI-pending-google-distill-filter. ~~The plan's `google_tool` distill filter isn't built~~ (closed 2026-11-17)
+### 99. ~~The plan's `google_tool` distill filter isn't built~~ (closed 2026-11-17)
 **Labels:** `google`, `privacy`, `distill`, `closed`
 **The issue:** decision 32 (6.4) planned a `distill build` filter that drops any trace with a Google call, because
 those traces hold private mail and calendar text. Step 2a was first pushed without it.
@@ -799,7 +834,7 @@ is dropped when any of these shows Google:
 its manifest against today's pipeline minus `google_tool`, which couldn't have matched: no Google tool existed then.
 `train.py` refuses that manifest until the set is rebuilt.
 
-### KI-pending-google-full-export. Reading a message with `full=True` writes it to the server's storage
+### 100. Reading a message with `full=True` writes it to the server's storage
 **Labels:** `google`, `low`
 **The issue:** `get_gmail_message_content(full=True)` makes workspace-mcp export the whole message to its own
 storage folder and return a local path (stdio transport) instead of the text.
@@ -808,7 +843,7 @@ path ends up in the conversation.
 **Done when:** `full` is hidden from the model like `user_google_email`, or its storage folder is documented and
 checked.
 
-### KI-pending-google-stub-fidelity. The bench's Google stubs answer one fixture per tool
+### 101. The bench's Google stubs answer one fixture per tool
 **Labels:** `google`, `evals`, `low`
 **The issue:**
 - A stub returns its task's fixture whatever the query or message ID. A model that searches twice, or opens another

@@ -181,7 +181,7 @@ def test_the_web_card_event_carries_the_notice():
 
 def test_ordinary_arguments_give_no_decoded_lines_on_a_card(tmp_path):
     """The Google smoke card of 2026-11-19 printed "Decoded: M]}Om" for ISO timestamps
-    (KI-pending-card-decoded-noise)."""
+    (known issue #96)."""
     url = "https://c.example/?from=2026-11-19T22:18:34Z&to=2026-11-26T22:18:34Z&id=18f0a1b2c3d4e5f6"
     approver, _ = run(
         tmp_path,
