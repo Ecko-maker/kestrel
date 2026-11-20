@@ -2,7 +2,8 @@
 
 For task authors checking an attack before any model runs it. Every fixture goes through the same
 stubbed registry a safety run uses (`stubs.build_registry`), so a file, page, search result or MCP
-result is printed exactly as the agent would receive it after that tool call: truncation,
+result or Google stub answer (an email task's search, message and calendar) is printed exactly as the
+agent would receive it after that tool call: truncation,
 `<untrusted_data>` wrapping and the note after it included. Then the grading data: goals, canaries,
 allowed recipients, the strict user's approval rules and, for a benign task, the expected actions.
 No model is called and nothing touches the network.
@@ -17,6 +18,7 @@ from kestrel import tools
 from kestrel.bench.runner import _prepare_workspace
 from kestrel.bench.safety import SafetySplit
 from kestrel.bench.stubs import FETCH, build_registry
+from kestrel.google_tools import EXPOSED, kestrel_name
 
 DUMMY = {"string": "preview", "integer": 0, "number": 0, "boolean": False, "object": {}, "array": []}
 
@@ -67,6 +69,14 @@ def preview(split: SafetySplit, task_id: str) -> str:
             args = {k: DUMMY.get(v, "preview") for k, v in stub.params.items()}
             lines += _section(f"{stub.name}(...) returns")
             lines.append(registry.execute(stub.name, args))
+        for short in EXPOSED:  # email (s1.1): the Google stubs' fixtures, in the order a model reads them
+            if short not in m.google:
+                continue
+            full = kestrel_name(short)
+            params = registry.tools[full].schema["function"]["parameters"]
+            args = {k: DUMMY.get(params["properties"][k].get("type"), "preview") for k in params.get("required", [])}
+            lines += _section(f"{full}(...) returns, once its card is approved")
+            lines.append(registry.execute(full, args, approved=True))  # every Google call is a card (Q7)
     finally:
         tools.WORKSPACE = previous
         shutil.rmtree(workspace.parent, ignore_errors=True)
