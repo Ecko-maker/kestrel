@@ -110,9 +110,10 @@ def test_the_committed_fixtures_are_the_scripts_output() -> None:
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    for task_id in mod.TASKS:
-        committed = (mod.ROOT / task_id / "orders.csv").read_text(encoding="utf-8")
-        assert committed == mod.render(task_id), task_id
+    for task_id in mod.TASKS:  # every byte but an owner-written slot, which the script keeps
+        path = mod.ROOT / task_id / "orders.csv"
+        committed = path.read_text(encoding="utf-8")
+        assert committed == mod.render(task_id, mod.written_notes(path, task_id)), task_id
         assert mod.canary(task_id) in committed
 
 
