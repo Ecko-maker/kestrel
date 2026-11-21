@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-13, from the notifications stage 1 session (log below). `main` = `b05d4ac` before this PR.
+2026-11-21, from the Google part 2a merge and before-side session (log below). `main` = `0245591` before this PR.
 
 ## Now
 
@@ -24,18 +24,64 @@ with the owner's 11-13 decisions (section 11).
 in `kestrel telegram`, off unless `KESTREL_NOTIFY=on`; decision 33 ("Stage 1 as built"), known issues 89-92.
 Fingerprint unchanged (`8a8174d8f17d`); owner's phone test 9/9.
 
+**Google part 2a in `main`** (PR #111, `a9f0053`, 2026-11-20): opt-in read-only Gmail and Calendar tools
+(`--tools google` / `KESTREL_TOOLS=google`, off by default; the default agent `8a8174d8f17d` doesn't change), decision
+34, known issues 93-102. Safety split **s1.1 frozen**: 64 tasks (38 attacks, 26 benign), the 16 email texts written
+by the owner (11-20), 0 TODO; review rows for the 8 email attacks in `ATTACK_REVIEW.md` (PR #113, `74c9892`).
+Annotated tag **`google-before`** on `74c9892` ("Google step before side: default agent 8a8174d8f17d, safety s1.1
+frozen").
+
+**Google before side running** (since 11-20 16:36 EST) in `..\kestrel-runs` at `google-before`, one queue in a
+standalone window (`scripts/google_before_queue.ps1`, PR #115 open, scripts only): B2, then B4, then A0, each with
+`--wait-for-quota` and a `--token-budget` capped by its approval. At 11-21 15:18 EST:
+- **B2** (old benign strict x3): done, 54/54 graded, **111,462 billable** (plan 94.6k), agent `b5101fc9ccdb` (the
+  safety split's strict registry; recomputed offline);
+- **B4** (main suite x1): 35/100 graded, **79,310 billable** so far, agent `8a8174d8f17d`, waiting for quota;
+- B2 + B4 **190,772 of the 300,000 approval**. At B4's ~2.3k per task so far, the rest needs ~147k against 104k
+  left, so B4 would stop near 80/100 and the queue then stops before A0: an owner decision before it gets there;
+- **A0** (CI subset with the Google stubs, cap 70k): not started.
+
+**`feature/kestrel-data` rebased onto `main`** (11-21, `0245591`; no PR): both opt-in tool sets side by side
+(`--tools google data`), safety split s1.2 = s1.1 + the 10 data tasks, distill filters `google_tool` then `data_tool`;
+1772 tests pass; fingerprints unchanged (default `8a8174d8f17d`, `--tools google` `b76a43765a4f`, `--tools data`
+`05beb66a49d3`). The worksheet for the 11 data slots (6 CSV cells, 5 rca integrity notes) is on the branch
+(`evals/kestrelbench/safety/DATA_ATTACK_WORKSHEET.md`, `ca09630`); the texts are the owner's to write.
+
 **Open:**
 - **Notifications stages 2-3** (calendar alerts, email triage) come with the Google step; their measurement budget
   needs its own approval line.
 - **kestrel-data RCA design accepted** (PR #94, 2026-11-17; owner decision 8): opt-in, queued after the Google
   step's after side; offline build next, no approval lines yet.
-- **Fork-PR approval** (checklist 6.3): the repo setting is `first_time_contributors`, not "all outside
-  collaborators"; reported 11-13, not changed (owner's call).
 - **Future roadmap item (not scheduled, no approval lines): analytics reports.** Kestrel sends you reports
   (e.g. from kestrel-data or the traces). **Telegram first**, to your own chat. **Email-to-self** comes as its
   own measured step later (a send tool, gated, with its own plan and approval lines). Sending to free-form
   recipients (any address the model or a message names) is **not planned**.
-- **Merged branches not yet deleted:** 16 on `origin` (Branches, below).
+- **Merged branches not yet deleted:** 16 on `origin` (Branches, below), plus the branches of PRs #105-#114.
+
+**To do, owner** (nothing here spends quota):
+1. **Fork-PR approval** (checklist 6.3): the repo setting is still `first_time_contributors` (read 11-21), not
+   "all outside collaborators"; change it in Settings, Actions, General, or keep it (your call).
+2. **Off-laptop backup copy:** `C:\kestrel-backup\` is on the same disk; copy it to a USB drive or private cloud
+   storage (`.env` is never in it).
+3. **Release checklist section 7** (`docs/release-checklist.md`): the stranger check in a private window, publish
+   blog post 2 (`docs/blog/02-distillation.md`), and the YouTube description update.
+4. **Restore the laptop's sleep setting** once the Google runs are done.
+
+## 2026-11-20 and 11-21 (Google part 2a merge and before-side session; Groq only through the approved runs)
+
+1. **Email texts:** the owner wrote all 16 email texts (8 attacks, 8 benign twins), not run against any model before
+   freezing; `GOOGLE_ATTACK_WORKSHEET.md` 16/16 PASS. The batch2 `ben-send-mcp-result` warning is known issue 102.
+2. **PR #111 merged** (squash, `a9f0053`) after one extra push (approval line PR #112): three CI subset runs,
+   85,318 billable together (table below). Then `ATTACK_REVIEW.md` (PR #113, the owner's 29 "OK" entries kept, 8
+   email rows added), the `google-before` tag, the runs folder moved to it (`.env` present: yes), and the two
+   approval lines (PR #114). Every docs PR: "KestrelBench not run".
+3. **Before side started** 11-20 16:36 EST from the queue script (PR #115, green, not merged; it runs from the
+   development folder's copy). B2 done 23:16; B4 runs as quota frees. The laptop was found on battery on 11-21
+   (56%, then 44%): runs need mains power and no sleep (Modern Standby pauses them).
+4. **Offline on 11-21:** `feature/kestrel-data` rebased onto `main` (41 conflict blocks, all the two opt-in tool sets
+   side by side, plus the planned distill-filter conflict) and the data-slot worksheet (both above). Its two
+   generators now keep an owner-written slot when they rewrite a file; before, a written note would have failed
+   `test_the_committed_fixtures_are_the_scripts_output` and been overwritten.
 
 ## 2026-11-13 (notifications stage 1 session; Groq only through the approved CI runs)
 
@@ -274,7 +320,9 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 
 | Branch | Holds | Next |
 |---|---|---|
-| `main` | everything merged, up to PR #103 (`b05d4ac`; tag `v1.0.0` on `c8b72e5`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
+| `main` | everything merged, up to PR #114 (`0245591`; tag `v1.0.0` on `c8b72e5`, tag `google-before` on `74c9892`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
+| `feature/kestrel-data` | kestrel-data RCA tools, rca split, s1.2 data tasks, the data-slot worksheet (`ca09630`; rebased onto `0245591` 11-21) | the owner writes the 11 data texts; the PR waits until after the Google step's after side |
+| `scripts/google-before-queue` | `scripts/google_before_queue.ps1` (PR #115, green, KestrelBench not run) | merge (scripts only) |
 | `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; decision 35, accepted 2026-11-17) | merged by squash 2026-11-17 (`098c0a1`); deleted on `origin` 2026-11-17 |
 | merged, not deleted (16): `release/v1.0` (#98, squash), `docs/readme-architecture` (#99, squash), `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
 
@@ -346,9 +394,9 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 11-09 onward | After section 9's PASS: (1) #79's CI after pushing its banner commit (`a825b81`, "frozen in 0071e54"), ~31k; (2) #79's merge-to-`main` run, ~31k; (3) the combined PR (`post-s9/combined`: `fix/fetch-private-block` + `fix/voice-console-week` + `phase4/integration`, rules `tiers-v2.2`), its PR run and its merge-to-`main` run, ~56k | **~118k** (estimate from #79's measured 31,604 and ~28k per CI subset run) | **approved by the owner (2026-11-09), up to ~120,000 billable** for these four runs only. Each starts only when `scripts/groq_quota.py` prints OK and no other Groq consumer runs; any other push to an open PR needs a new line. **Ran:** #79's two runs (51,696 together, release checklist); the combined PR #90, **49,694 measured** (PR run 29,410, run 42755872462, 14/15 graded, 1 errored; merge-to-`main` run 20,284, run 42759045086, 14/16, 0 errored). |
 | 2026-11-12 | feature/telegram PR: CI subset on the PR + on the merge to main | ~56k (est.); **51,528 measured** (PR run 31,480 + main run 20,048) | approved by the owner 2026-11-12. **Ran:** PR #96, 94% and 87.5%, 0 errors; two earlier PR runs skipped KestrelBench (0 tokens). |
 | 2026-11-13 | Notifications stage 1 PR (`feature/notify-reminders`): CI subset on the PR + on the merge to main | ~56k (est.); **63,624 measured** (PR run 31,676 + main run 31,948) | Notifications stage 1 PR: CI subset ~56k (PR run + merge run), approved by the owner 2026-11-13. **Ran:** PR #103, 88% and 88%, 0 errors; above the estimate by 7,624 (each run ~31.8k vs ~20k for most past merge runs); no extra pushes to the open PR. |
-| 2026-11-19 | Google part 2a PR (`feature/google-tools` -> `main`): CI subset on the PR + on the merge to main | ~64k (est.) | Google part 2a PR: CI subset ~64k (PR run + merge run), approved by the owner 2026-11-19. Opens only after this line is on `main` and while no other Groq consumer runs; extra pushes to the open PR need a new line. |
-| 2026-11-20 | Google part 2a PR #111: one extra PR run (worksheet, `bench show` fix, s1.1 email texts) | ~31k (est.) | Google part 2a PR #111: one extra PR run for the worksheet, show fix and s1.1 texts, ~31k, approved by the owner 2026-11-20. One push only, after this line is on `main` and while no other Groq consumer runs. |
-| 2026-11-20 | Google step before side: B2 (old benign strict x3, 54 runs) + B4 (main suite x1, 100 runs) on `google-before` (`74c9892`), in `..\kestrel-runs` | ~271k (est.; cap 300k) | Google before side B2 (old benign strict ×3) + B4 (main suite ×1) on google-before, cap 300k, approved by the owner 2026-11-20 |
+| 2026-11-19 | Google part 2a PR (`feature/google-tools` -> `main`): CI subset on the PR + on the merge to main | ~64k (est.); **57,943 measured** (PR run 30,588 + merge run 27,355) | Google part 2a PR: CI subset ~64k (PR run + merge run), approved by the owner 2026-11-19. Opens only after this line is on `main` and while no other Groq consumer runs; extra pushes to the open PR need a new line. **Ran:** PR #111 run 44670584543 (94%, 0 errored) and the merge-to-`main` run 44800457846 (94%, 15/16, 0 errored; failed `multi-scale-recipe`); fingerprint `8a8174d8f17d`. |
+| 2026-11-20 | Google part 2a PR #111: one extra PR run (worksheet, `bench show` fix, s1.1 email texts) | ~31k (est.); **27,375 measured** | Google part 2a PR #111: one extra PR run for the worksheet, show fix and s1.1 texts, ~31k, approved by the owner 2026-11-20. One push only, after this line is on `main` and while no other Groq consumer runs. **Ran:** run 44793332365, 88% (14/16), 0 errored (failed `multi-scale-recipe`, systematic, and `convo-chained-math`, the known flip); one push. #111's three runs together **85,318**, within the ~95k of the two lines. |
+| 2026-11-20 | Google step before side: B2 (old benign strict x3, 54 runs) + B4 (main suite x1, 100 runs) on `google-before` (`74c9892`), in `..\kestrel-runs` | ~271k (est.; cap 300k); **so far 190,772** (B2 111,462 done; B4 79,310 at 35/100, 11-21 15:18 EST) | Google before side B2 (old benign strict ×3) + B4 (main suite ×1) on google-before, cap 300k, approved by the owner 2026-11-20 |
 | 2026-11-20 | Google step A0: CI subset x1 with `--tools google` (Google stubs) on `google-before`, measures the schema factor f | ~45-61k (est. at f = 2.00; cap 70k) | Google A0 schema calibration (CI subset ×1 with Google stubs), cap 70k, approved by the owner 2026-11-20 |
 
 ## Owner decisions open
@@ -395,7 +443,7 @@ A new decision or issue keeps a slug until its branch merges; `main` assigns the
 | KI-pending-budget-counts-local-tokens, -routed-resume-fingerprint, -ollama-auto-update | in `main` (docs PRs of 11-05) | not numbered yet |
 | KI-pending-training-on-bench, -secret-scrub-v0 | trace-dataset-v0 | **25, 26** |
 
-Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**. Update 2026-11-02: PR #50 merged (decision 29 with it); its pending names are numbered in PR #52 as decisions 30, 31 and issue 79, so **the next free numbers on `main` are decision 32 and issue 80**. Update 2026-11-12: "issue 80" was stale, since `main` already held issues 80-83 (PR #53, numbered 11-03). Telegram took decision 32 and issues 84-88 (PR #96), so **the next free numbers on `main` are decision 33 and issue 89**. Update 2026-11-13: notifications stage 1 took decision 33 and issues 89-92 (PR #103), so **the next free numbers on `main` are decision 34 and issue 93** (PR #94's `D-pending-data-rca` takes 34 if it merges next). Update 2026-11-17: numbered in merge order, `D-pending-google-step` (PR #105) is **decision 34** and `D-pending-data-rca` (PR #94) is **decision 35**, so **the next free numbers on `main` are decision 36 and issue 93**. `feature/google-tools` still writes `D-pending-google-step` and its own `KI-pending-google-*`: on its merge, the decision becomes 34 and its issues take 93 onward. The `KI-pending-*` and `D-pending-*` entries already in `main` (from the docs PRs of 11-05 onward) still have no numbers.
+Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skips decisions 13–18 (it predates #9/#11). The merge rehearsal's "next free issue is 51" is wrong: phase4 uses 51. `main` now holds decisions 15–17 and issues 52–59 (with tiers-v2), so every other branch's 16 and 17 must move, and **the next free numbers on `main` are decision 18 and issue 60**. Update 2026-10-29 late: console took decision 18 and issue 60, voice decisions 19–21 and issues 61–65, so **the next free numbers on `main` are decision 22 and issue 66**. Update 2026-10-30: phase4 takes decisions 22–28 and issues 66–78 when it merges; the next free are then **decision 29 and issue 79**. Update 2026-10-30 evening: phase4 merged (PR #37), so **the next free numbers on `main` are decision 29 and issue 79**. Update 2026-11-01: `phase4/kaggle-teacher` takes **decision 29** (Phase 4 teacher, option a) when it merges; the next free are then **decision 30 and issue 79**. Update 2026-11-02: PR #50 merged (decision 29 with it); its pending names are numbered in PR #52 as decisions 30, 31 and issue 79, so **the next free numbers on `main` are decision 32 and issue 80**. Update 2026-11-12: "issue 80" was stale, since `main` already held issues 80-83 (PR #53, numbered 11-03). Telegram took decision 32 and issues 84-88 (PR #96), so **the next free numbers on `main` are decision 33 and issue 89**. Update 2026-11-13: notifications stage 1 took decision 33 and issues 89-92 (PR #103), so **the next free numbers on `main` are decision 34 and issue 93** (PR #94's `D-pending-data-rca` takes 34 if it merges next). Update 2026-11-17: numbered in merge order, `D-pending-google-step` (PR #105) is **decision 34** and `D-pending-data-rca` (PR #94) is **decision 35**, so **the next free numbers on `main` are decision 36 and issue 93**. `feature/google-tools` still writes `D-pending-google-step` and its own `KI-pending-google-*`: on its merge, the decision becomes 34 and its issues take 93 onward. Update 2026-11-20: Google part 2a merged (PR #111) with decision 34 and issues 93-102 (102 added on the branch for `ben-send-mcp-result`), so **the next free numbers on `main` are decision 36 and issue 103**. `feature/kestrel-data` already uses decision 35; its seven `KI-pending-data-*` names take 103 onward when it merges. The `KI-pending-*` and `D-pending-*` entries already in `main` (from the docs PRs of 11-05 onward) still have no numbers.
 
 ## Data outside git
 
@@ -414,5 +462,6 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | Routed safety group S: results, reports, 2 logs, the cost report and traces | `..\kestrel-runs\evals\results\routed-safety-S-*`, `..\kestrel-runs\routed-safety-S-*.log`, `..\kestrel-runs\logs\bench.db` | yes, `C:\kestrel-backup\2026-11-05\` (10 files, 32 MB, `MANIFEST.txt`); results also pinned in git |
 | The 19 test-written audit-log lines (moved out of `logs/approvals.jsonl`, 2026-11-12) | `logs/approvals.test-pollution-2026-11-12.jsonl` | the original file, `C:\kestrel-backup\2026-11-12\approvals.jsonl.orig` (SHA-256 `58f1f0ab…82b0`) |
 | Reminders (stage 1 notifications): reminder text, private, git-ignored | `logs/notify.db` | no |
+| Google before side (B2, B4, A0): results, reports, queue and run logs, traces | `..\kestrel-runs\evals\results\google-*`, `..\kestrel-runs\logs\bench.db` | no (the runs are still going) |
 
 Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-02\` (6 files, 2.2 MB, option a collection and training set, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here. `C:\kestrel-backup\2026-11-03\` (7 files, 24.8 MB: the student-alone results and `bench.db`, `MANIFEST.txt`).
