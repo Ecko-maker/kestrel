@@ -13,7 +13,9 @@
 # B4  main suite x1 (100, judge groq)           -> evals\results\google-before-b4-main-x1.json
 # A0  CI subset x1 with --tools google (stubs)  -> evals\results\google-a0-calibration.json
 #
-# Approvals (STATUS, 2026-11-20): B2 + B4 together at most 300,000 billable; A0 at most 70,000. Each attempt's
+# Approvals (STATUS): B2 + B4 together at most 300,000 billable (11-20); A0 at most 70,000 (11-20). That queue
+# stopped at the 300k cap with B2 graded and B4 at 88/100, 297,080 spent; the B4 completion top-up (11-22) allows
+# 60,000 more for B4, counted from that 297,080. A run already fully graded is skipped. Each attempt's
 # --token-budget is the smaller of groq_quota.py's free amount and what is left of its approval minus one task's
 # margin (--token-budget stops starting tasks once reached, so one task can go past it), counted from the
 # results files themselves, so a restarted queue still stops at the approval. --wait-for-quota on every run, and
@@ -28,7 +30,10 @@ param([switch]$DryRun)
 $ErrorActionPreference = "Stop"
 
 $Tag = "google-before"
-$ApprovedBefore = 300000   # B2 + B4
+$ApprovedBefore = 300000   # B2 + B4 (11-20)
+$SpentAtCap = 297080       # B2 + B4 when the queue stopped at that cap (11-21 23:18 EST)
+$TopUpB4 = 60000           # B4 completion top-up (11-22), on top of $SpentAtCap
+$ApprovedB4 = $SpentAtCap + $TopUpB4   # so B4's "approval left" is the top-up left: 60,000 - (spent - 297,080)
 $ApprovedA0 = 70000
 $Margin = 5000             # one task's worth past --token-budget
 $NeedFree = 5000           # don't start an attempt with less than this free
@@ -101,6 +106,11 @@ function Get-Spent([string[]]$files) {
 }
 
 function Invoke-QueueRun([string]$name, [string[]]$runArgs, [string]$out, [int]$approved, [string[]]$pool, [string]$policy) {
+    $done = Get-Counts $out
+    if ($done.total -gt 0 -and $done.graded -eq $done.total) {
+        Log "${name}: already graded ($($done.graded)/$($done.total), $($done.billable) billable); skipped"
+        return "graded"
+    }
     $attempt = 0
     while ($true) {
         $attempt += 1
@@ -155,7 +165,8 @@ if ($DryRun) {
     Remove-Item Env:KESTREL_IMAGE_POLICY -ErrorAction SilentlyContinue
     & uv run --no-sync kestrel bench run @RunB4 @fromMain --dry-run 2>&1 | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
     & uv run --no-sync kestrel bench run @RunA0 @fromMain --dry-run 2>&1 | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
-    Write-Host "Spent so far: B2+B4 $(Get-Spent @($B2, $B4)) of $ApprovedBefore; A0 $(Get-Spent @($A0)) of $ApprovedA0; free now: $(Get-FreeQuota)"
+    $s = Get-Spent @($B2, $B4)
+    Write-Host "Spent so far: B2+B4 $s ($ApprovedBefore approval, then the B4 top-up: $([Math]::Max(0, $s - $SpentAtCap)) of $TopUpB4 used, budget left $($ApprovedB4 - $s - $Margin) after the margin); A0 $(Get-Spent @($A0)) of $ApprovedA0; free now: $(Get-FreeQuota)"
     Write-Host "Dry run only: no Groq calls, no results."
     exit 0
 }
@@ -171,12 +182,15 @@ try {
     $r = Invoke-QueueRun "B2 benign strict x3" $RunB2 $B2 $ApprovedBefore @($B2, $B4) "allowlist"
     Log "B2: $r"
     if ($r -ne "graded") { Stop-Queue "B2 can't be graded after resuming; B4 and A0 not run" }
-    $r = Invoke-QueueRun "B4 main suite x1" $RunB4 $B4 $ApprovedBefore @($B2, $B4) ""
+    $spentBefore = Get-Spent @($B2, $B4)
+    if ($spentBefore -lt $SpentAtCap) { Stop-Queue "B2+B4 files show $spentBefore billable, less than the $SpentAtCap the top-up counts from: a results file changed" }
+    Log "B4 completion top-up: $TopUpB4 from $SpentAtCap; used $($spentBefore - $SpentAtCap), left $($ApprovedB4 - $spentBefore) (margin $Margin)"
+    $r = Invoke-QueueRun "B4 main suite x1" $RunB4 $B4 $ApprovedB4 @($B2, $B4) ""
     Log "B4: $r"
     if ($r -ne "graded") { Stop-Queue "B4 can't be graded after resuming; A0 not run" }
     $r = Invoke-QueueRun "A0 CI subset with Google stubs" $RunA0 $A0 $ApprovedA0 @($A0) ""
     Log "A0: $r"
-    Log "QUEUE DONE. Results: $B2, $B4, $A0. B2+B4 $(Get-Spent @($B2, $B4)) of $ApprovedBefore; A0 $(Get-Spent @($A0)) of $ApprovedA0 billable."
+    Log "QUEUE DONE. Results: $B2, $B4, $A0. B2+B4 $(Get-Spent @($B2, $B4)) of $ApprovedB4 ($SpentAtCap at the 300k cap + the $TopUpB4 B4 top-up); A0 $(Get-Spent @($A0)) of $ApprovedA0 billable."
 }
 finally {
     if (Test-Path $QueueLock) { Remove-Item $QueueLock -Force }
