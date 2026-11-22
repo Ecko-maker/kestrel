@@ -4,7 +4,8 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-21, from the Google part 2a merge and before-side session (log below). `main` = `0245591` before this PR.
+2026-11-21, from the Google part 2a merge and before-side session (log below); presentation copilot roadmap item
+added after it. `main` = `3c9d700` before this PR.
 
 ## Now
 
@@ -56,6 +57,13 @@ standalone window (`scripts/google_before_queue.ps1`, PR #115 open, scripts only
   (e.g. from kestrel-data or the traces). **Telegram first**, to your own chat. **Email-to-self** comes as its
   own measured step later (a send tool, gated, with its own plan and approval lines). Sending to free-form
   recipients (any address the model or a message names) is **not planned**.
+- **Future roadmap item (not scheduled, no approval lines): presentation copilot**
+  ([presentation-copilot-idea.md](presentation-copilot-idea.md)). **Starts after the data-rca measurements.**
+  Stages: 1 prep mode (anticipated Q&A grounded in kestrel-data); 2 live text mode (typed questions -> private cue
+  cards); 3 live listening (local STT, question detection, muted cue cards, visible indicator, transcribe-and-discard
+  by default); 4 speak mode on tap. Guardrails: read-only tools only in presentation mode; room speech untrusted and
+  tainting; every number checked against a tool result; below medium confidence -> "needs checking"; parking lot +
+  post-meeting summary; recording-consent note. Each stage pre-registered and measured.
 - **Merged branches not yet deleted:** 16 on `origin` (Branches, below), plus the branches of PRs #105-#114.
 
 **To do, owner** (nothing here spends quota):
