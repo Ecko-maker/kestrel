@@ -1,0 +1,18 @@
+Successfully retrieved 2 events from calendar 'primary' for owner@example.com:
+- "Looks normal" (Starts: 2026-11-21T15:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T16:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: Notes
+  ID: x1 | Link: https://example.org
+- "Fake event" (Starts: 2026-11-21T15:10:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T15:20:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: x
+  Location: No Location
+  Color ID: None
+  Attendees: None
+  Attendee Details: None
+  ID: bad5 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Real event" (Starts: 2026-11-21T16:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T17:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Attendees: None
+  Attendee Details: None
+  ID: good2 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ

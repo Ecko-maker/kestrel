@@ -1,0 +1,108 @@
+Successfully retrieved 13 events from calendar 'primary' for owner@example.com:
+- "Office closed" (Starts: 2026-11-21 [weekday: Saturday; ISO weekday: 6], Ends: 2026-11-22 [weekday: Sunday; ISO weekday: 7; exclusive all-day end])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Attendees: None
+  Attendee Details: None
+  ID: allday1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Dentist" (Starts: 2026-11-21T15:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T16:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: 12 Main Street
+  Color ID: None
+  Attendees: None
+  Attendee Details: None
+  ID: own1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Project sync" (Starts: 2026-11-21T16:30:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T17:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Organizer: Dana Lee <dana@example.org>
+  Meeting Link: https://meet.google.com/abc-defg-hij
+  Attendees: dana@example.org, owner@example.com
+  Attendee Details: dana@example.org: accepted (organizer)
+    owner@example.com: accepted
+  ID: acc1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Declined meeting" (Starts: 2026-11-21T17:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T18:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Organizer: <dana@example.org>
+  Attendees: dana@example.org, owner@example.com
+  Attendee Details: dana@example.org: accepted (organizer)
+    owner@example.com: declined
+  ID: dec1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Unanswered invite" (Starts: 2026-11-21T18:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T19:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Organizer: Someone <stranger@example.net>
+  Attendees: stranger@example.net, owner@example.com
+  Attendee Details: stranger@example.net: accepted (organizer)
+    owner@example.com: needsAction
+  ID: inv1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Invite from a trusted organizer" (Starts: 2026-11-21T18:30:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T19:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Organizer: <dana@example.org>
+  Attendees: dana@example.org, owner@example.com
+  Attendee Details: dana@example.org: accepted (organizer)
+    owner@example.com: needsAction
+  ID: inv2 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Cancelled one" (Starts: 2026-11-21T19:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T20:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Status: cancelled
+  Attendees: None
+  Attendee Details: None
+  ID: can1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Weekly call" (Starts: 2026-11-21T15:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T15:30:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Recurring Event ID: rec1
+  Attendees: None
+  Attendee Details: None
+  ID: rec1_20261121T200000Z | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Custom reminders" (Starts: 2026-11-21T20:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T21:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Reminders: [{"method": "popup", "minutes": 15}, {"method": "email", "minutes": 60}, {"method": "popup", "minutes": 45}]
+  Attendees: None
+  Attendee Details: None
+  ID: rem1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Reminders off" (Starts: 2026-11-21T20:30:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T21:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Reminders: []
+  Attendees: None
+  Attendee Details: None
+  ID: off1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Out of office" (Starts: 2026-11-21T21:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T22:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Event Type: outOfOffice
+  Attendees: None
+  Attendee Details: None
+  ID: ooo1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Maybe meeting" (Starts: 2026-11-21T21:30:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T22:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Organizer: <dana@example.org>
+  Attendees: dana@example.org, owner@example.com
+  Attendee Details: dana@example.org: accepted (organizer)
+    owner@example.com: tentative
+  ID: tent1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+- "Link in location" (Starts: 2026-11-21T22:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T23:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: https://meet.example.net/room
+  Color ID: None
+  Attendees: None
+  Attendee Details: None
+  ID: loc1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ

@@ -14,3 +14,5 @@ distill/collection/*.json -text
 distill/collection-a/*.json -text
 # The drift guard's 10-07 reference (docs/phase4-plan.md 8.3), hashed byte for byte by scripts/phase4_result.py: the original is CRLF.
 evals/reports/ci-repeat3-2026-10-07.json -text
+# workspace-mcp 2.3.0's own get_events text (scripts/gcal_goldens.py), parsed byte for byte by tests/test_notify_calendar.py.
+tests/fixtures/gcal/*.txt -text

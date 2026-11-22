@@ -719,3 +719,23 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 **Alternatives:** the model states its confidence (unverifiable); a model picks the prepared answer (a wrong match shows a confident answer to another question); the default agent with a prompt (has send, write and network tools).
 
 **Why:** a wrong number said in a meeting costs more than a missing one, so the mode is built to show less and prove what it shows.
+
+---
+
+## D-pending-notify-calendar. Calendar alerts: rules only, the notifier's own read-only token, a strict text parser (owner decisions 2026-11-21)
+
+**Decision:** stage 2 of decision 33 (`docs/notifications-design.md` section 3; plan `docs/notify-stage2-plan.md` on `plan/notify-stage2`), with the owner's settled choices of 2026-11-21 where they differ from the 11-13 design:
+- **Lead** 30 min by default (`KESTREL_NOTIFY_CAL_LEAD`, validated 1-1440 min); an event's own custom popup reminder wins, and custom reminders set to none mean no alert.
+- **Quiet hours off by default** (`KESTREL_NOTIFY_QUIET`; the 11-13 design had 22:00-07:00). Calendar alerts wait until they end; `/remind` reminders still fire.
+- **All-day events:** one summary a day when quiet hours end (or `KESTREL_NOTIFY_CAL_SUMMARY`, 07:00), instead of being skipped.
+- **Dedupe key** `calendar:<event id>:<start UTC>` (the design added the lead): a moved event alerts once more, a recurring instance once each.
+- **The notifier's own workspace-mcp 2.3.0** with `--tools calendar --read-only`, only `get_events` (checked at start, schema pinned), its own token folder, refused if it overlaps the agent's, and a token wider than `calendar.readonly` refused. Sign-in once with `kestrel notify signin`.
+- **Unanswered invitations** skipped unless the organizer is in `notify.toml` `trusted_organizers` (the server has no contacts tool).
+- `KESTREL_NOTIFY_STAGES=calendar` turns it on, off by default; reminders stay on with `KESTREL_NOTIFY=on`, as in stage 1. The agent fingerprint stays `8a8174d8f17d`.
+
+**Alternatives:**
+- The Calendar API directly (`google-api-python-client`, JSON events): no text parsing, but a new dependency and a second auth path. Kept for later (KI-pending-notify-calendar-text).
+- Share the agent's token: one sign-in, but a token that also reads Gmail. Refused by the owner (decision 33, question 5).
+- Poll only on the 5-minute read: alerts up to 5 min late. Instead the list is read every 5 min and checked on the 20 s ticker.
+
+**Why:** an alert that's on time, never repeated and never tappable is the whole feature, and the server's text can be written by any inviter. So the parser is checked against the server's own output (`scripts/gcal_goldens.py`), reads the server's fields from where its fixed order puts them, and refuses a reply it can't count.

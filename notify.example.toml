@@ -1,0 +1,9 @@
+# Copy to notify.toml (git-ignored) to change the notifier's private settings. Example addresses only.
+# docs/telegram.md, "Calendar alerts".
+
+[calendar]
+# Unanswered invitations are skipped (anyone can put one in your calendar), except from these organizers.
+# Matched on the organizer's address, case-insensitive. Empty or no file: every unanswered invitation is skipped.
+trusted_organizers = [
+    # "dana@example.org",
+]

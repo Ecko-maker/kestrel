@@ -86,6 +86,8 @@ class Notifier:
         """Re-send, once, anything a crash left between `sending` and `sent`."""
         now = self.clock.now()
         for delivery in self.store.stale_sending(now, STALE_SENDING):
+            if delivery.kind not in ("reminder", "missed"):  # calendar rows are the calendar watcher's
+                continue
             if not self.store.retake(delivery.key, now):
                 continue
             if delivery.kind == "reminder":

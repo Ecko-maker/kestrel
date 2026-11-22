@@ -149,7 +149,7 @@ def main() -> None:
         choices=["google"],
         help="opt-in tool sets: google = Gmail and Calendar read (docs/google.md; or KESTREL_TOOLS=google)",
     )
-    sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,telegram,bench,distill}")
+    sub = parser.add_subparsers(dest="command", metavar="{traces,trace,stats,export,web,telegram,notify,bench,distill}")
     p = sub.add_parser("traces", help="list recent traces")
     p.add_argument("-n", type=int, default=20, help="how many (default 20)")
     p = sub.add_parser("trace", help="show one trace as a tree")
@@ -159,6 +159,8 @@ def main() -> None:
     p.add_argument("--port", type=int, default=int(os.getenv("KESTREL_PORT", "8765")))
     p.add_argument("--build", action="store_true", help="build the frontend first (needs Node.js)")
     sub.add_parser("telegram", help="chat and approve from Telegram (long polling; needs the telegram extra)")
+    p = sub.add_parser("notify", help="the Telegram notifier's setup (calendar alerts: docs/telegram.md)")
+    p.add_argument("action", choices=["signin"], help="signin = the notifier's own read-only Google sign-in")
     p = sub.add_parser("export", help="export traces as chat-format JSONL")
     p.add_argument("--rated", choices=["good", "bad", "any"], default="good")
     p.add_argument("--out", default="data/traces.jsonl")
@@ -168,6 +170,10 @@ def main() -> None:
     if os.getenv("KESTREL_MCP", "on").strip().lower() in ("off", "0", "false", "no"):
         args.no_mcp = True
     args.google = None
+    if args.command == "notify":  # no model, no agent, no agent Google tools: its own token only
+        from kestrel.notify.signin import signin
+
+        sys.exit(signin())
     if args.command not in ("bench", "distill") and google_tools.requested(args.agent_tools):
         try:  # checked before any model or network is touched
             args.google = google_tools.load_settings(workspace=tools_module.WORKSPACE)

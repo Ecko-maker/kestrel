@@ -174,6 +174,8 @@ Forms the parser accepts (anything else gets the help text, never a guess):
 
 ## 3. Stage 2: calendar appointment reminders (rules only)
 
+**Built (2026-11-21, `feature/notify-calendar`):** see `docs/telegram.md`, "Calendar alerts". The owner's settled choices change four points below: lead 30 min, quiet hours off by default, all-day events get one daily summary, and the dedupe key has no lead (D-pending-notify-calendar).
+
 - **Reads:** the events of your primary calendar in the next 24 hours, every 5 minutes, through the read-only server
   instance (section 6). No writes, no model.
 - **When:** at `start - lead`. Lead = the event's own popup reminder if it has one (*unverified* that the pinned

@@ -135,13 +135,80 @@ your original text. If Telegram still finds a tappable part in a delivered remin
 Reminders are not a tool: the model can't create, read or cancel one, and only your own typed words become a
 reminder's text. Everything is in `logs/notify.db` (git-ignored).
 
+## Calendar alerts (optional, off by default)
+
+A message before each appointment in your primary Google Calendar, e.g.
+`📅 From your calendar: "Dentist" starts at 15:00 (in 30 min)` (stage 2 of `docs/notifications-design.md`; decision
+33, D-pending-notify-calendar). Rules only: no model reads your calendar and nothing goes to the agent.
+
+**Set it up (once):**
+1. Google set up as in `docs/google.md` (the three `.env` lines; the same OAuth client is fine).
+2. Add to `.env`:
+   ```
+   KESTREL_NOTIFY=on
+   KESTREL_NOTIFY_STAGES=reminders,calendar
+   ```
+3. **The notifier's own sign-in, at the laptop:** `uv run kestrel notify signin`. This is a second sign-in, apart
+   from the agent's: the notifier has its own token folder (`%LOCALAPPDATA%\kestrel\google-notifier`) and its own
+   server, started with `--tools calendar --read-only`, so its token can only view your calendars. A browser opens
+   with Google's consent screen. It must ask only to view your calendars (and your basic profile); if it asks for
+   more, stop. Allow, then press Enter in the terminal. The command prints the token's scopes and counts for the
+   next 24 hours (events read, how many would alert, skipped per rule), never a title.
+4. Start `kestrel telegram` as usual. Its first lines say `Calendar alerts on: ...`.
+
+Kestrel refuses to start if Google isn't set up, if `KESTREL_NOTIFY_GOOGLE_CREDENTIALS_DIR` is the agent's token
+folder (or inside it, or holds it), or if a token in the notifier's folder has any scope beyond `calendar.readonly`
+and the sign-in scopes. It never prints a value from `.env`.
+
+**Settings** (all optional):
+
+| Line | Default | What it does |
+|---|---|---|
+| `KESTREL_NOTIFY_CAL_LEAD` | `30` | minutes before the start (1-1440, or `45m`, `2h`); an event's own custom popup reminder wins |
+| `KESTREL_NOTIFY_QUIET` | `off` | e.g. `22:00-07:00`: calendar alerts wait until it ends; `/remind` reminders still fire |
+| `KESTREL_NOTIFY_CAL_SUMMARY` | `07:00` | when the all-day summary comes if quiet hours are off |
+| `KESTREL_NOTIFY_MAX_PER_HOUR` | `6` | calendar messages in any hour; more due at once go in one "more coming up" message |
+| `KESTREL_NOTIFY_GOOGLE_CREDENTIALS_DIR` | `%LOCALAPPDATA%\kestrel\google-notifier` | the notifier's token folder, outside this project |
+| `KESTREL_NOTIFY_CONFIG` | `notify.toml` | private settings (git-ignored; shape in `notify.example.toml`) |
+
+**What alerts, and when:**
+- Timed events you own, accepted or marked maybe, at start minus the lead. An event whose custom reminders are set to
+  none gets no alert.
+- **Skipped:** declined and cancelled events, out-of-office and working-location entries, and invitations you
+  haven't answered (anyone can put one in your calendar), unless the organizer is in `notify.toml`'s
+  `trusted_organizers`.
+- **All-day events:** one summary a day, `📅 From your calendar, all day today:` with their titles, when quiet hours
+  end (or at `KESTREL_NOTIFY_CAL_SUMMARY`), or later that day if the laptop was asleep then.
+- **Recurring events:** each instance alerts once. **Moved events:** one more alert at the new time, marked
+  `moved from 14:00`. A restart never repeats an alert.
+- **After sleep:** events that already started get nothing; ones still ahead alert on wake (`in 4 min`).
+- **Quiet hours:** an alert due inside them comes when they end, if its event hasn't started; an event that starts
+  inside them gets no alert (set a `/remind` for an early flight).
+
+**Nothing in an alert can act.** Titles and locations are written by whoever made the event, so they're shown only
+inside quotes after the fixed `📅 From your calendar` label, cut to 120 / 80 characters and defanged like reminders
+(no tappable links, `/commands`, `@names`, phone numbers or control characters). A location holding a link shows as
+`Where: [video link in your calendar]`. Descriptions, guests and organizers are never sent. Alerts have no buttons,
+and their text never reaches the agent.
+
+**When it stops:**
+- Sign-in expired (about every 7 days while the Google app is in Testing): one message, `Calendar alerts are off:
+  ...`, telling you to run `uv run kestrel notify signin` and restart. Reminders keep working.
+- Calendar unreadable 3 checks in a row, about 10 minutes (server down, or a reply the strict parser refuses): one
+  `Calendar alerts are paused` message, then `Calendar alerts are back` when it can read again.
+
+**Limits:** the laptop must be awake; the calendar is read every 5 minutes (a change in the last 5 minutes may be
+missed once); events on the calendar's default reminders use `KESTREL_NOTIFY_CAL_LEAD`; primary calendar only; an
+invitation's text can pause alerts (known issues KI-pending-notify-calendar-text, -signin, -limits).
+
 ## Privacy
 
 **Telegram bot chats are not end-to-end encrypted.** Everything below passes through and is stored by Telegram:
 - your prompts and Kestrel's answers;
 - the one-line tool status;
 - every approval card: the preview (a message body, a file diff) and local text found in an outgoing call;
-- your reminders' text and times, if reminders are on.
+- your reminders' text and times, if reminders are on;
+- your events' titles, times and locations, if calendar alerts are on.
 
 Tool results, tool arguments (except on cards), traces, the audit log and `.env` never go to Telegram.
 `KESTREL_TRACE_CONTENT=off` only stops Kestrel keeping text locally; Telegram and the model provider still have it.
@@ -160,3 +227,12 @@ in two zones, a restart, catch-up after a 3-hour and a 14-hour gap, no double se
 send and mark, 3 failed sends, forged and stale button presses, "remind me ..." text reaching the model unchanged,
 nothing tappable in any message showing a reminder's text, notify off changing nothing, and the fingerprint pinned
 again after importing the reminder modules.
+
+Calendar alerts: `uv run pytest tests/test_notify_calendar.py`, with a fake clock and a fake Calendar server
+(`tests/fake_gcal.py`). Its reply format is checked byte for byte against workspace-mcp 2.3.0's own output
+(`tests/fixtures/gcal/`, written offline from the installed server by `scripts/gcal_goldens.py`). They cover the lead
+time and custom reminders, quiet hours (held, then dropped once started, reminders still firing), the all-day
+summary, declined, cancelled and unanswered events, recurring instances, moved events, no repeat after a restart or
+a crash, a sleep gap, the hourly limit, a hostile title and location staying inert, forged lines in a description,
+the fixed calls and paging, the separate token folder and its scopes, the sign-in command printing counts only,
+alerts never reaching an Agent, and the fingerprint pinned (`8a8174d8f17d`).

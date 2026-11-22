@@ -219,6 +219,22 @@ class Store:
         ).fetchall()
         return [Delivery(r[0], r[1], r[2], r[3], parse_iso(r[4])) for r in rows]
 
+    def sent_count(self, prefix: str, since: datetime) -> int:
+        """Messages sent since then for keys starting with the prefix (a batch of several keys is one message)."""
+        row = self.db.execute(
+            "SELECT COUNT(DISTINCT COALESCE(CAST(message_id AS TEXT), key)) FROM deliveries "
+            "WHERE status = 'sent' AND substr(key, 1, ?) = ? AND updated_utc >= ?",
+            (len(prefix), prefix, iso(since)),
+        ).fetchone()
+        return int(row[0])
+
+    def sent_keys(self, prefix: str) -> list[str]:
+        rows = self.db.execute(
+            "SELECT key FROM deliveries WHERE status = 'sent' AND substr(key, 1, ?) = ? ORDER BY updated_utc",
+            (len(prefix), prefix),
+        ).fetchall()
+        return [r[0] for r in rows]
+
     def retake(self, key: str, now: datetime) -> bool:
         """Claim a stale `sending` row again (after a crash between send and mark)."""
         return (

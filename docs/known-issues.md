@@ -890,6 +890,48 @@ noted in `evals/CHANGELOG.md`, or the owner accepts the warning as it is.
 token_budget` → skipped, and a first task that alone exceeds the budget isn't started). Measured as a normal PR
 after the Google step, with its own approval line.
 
+### KI-pending-notify-calendar-text. Anyone who invites you can pause calendar alerts
+**Labels:** `notify`, `google`, `safety`, `medium`
+**The issue:**
+- The notifier reads workspace-mcp 2.3.0's `get_events` text, which copies an event's title, description and
+  location as they are, line breaks included (`scripts/gcal_goldens.py` shows it on the server's own code).
+- So a description can imitate the reply's own lines. The parser (`notify/calendar.py`) reads the server's fields
+  from the end of each event, so a forged line can only change its own event, which its author controls anyway
+  (`test_forged_lines_in_a_description_change_nothing`).
+- But a description that forges a whole extra event makes the event count disagree, and the whole reply is refused
+  (`test_a_forged_event_block_refuses_the_whole_reply`). After 3 refused replies in a row (about 10 minutes) you get
+  one "Calendar alerts are paused" message; alerts stay off until that event leaves the next 24 hours.
+- A title with a line break only skips that event (counted in the log, never named).
+
+**Why it's medium:** it fails closed and says so, and no forged text can make an alert say something else or reach
+the agent. It is still a way for a stranger to switch off your calendar alerts for a day.
+**Done when:** the notifier reads structured events (a pinned server version with JSON output, or the Calendar API
+directly with the same read-only token), or the owner accepts the limit.
+
+### KI-pending-notify-calendar-signin. Calendar alerts stop when the notifier's sign-in expires
+**Labels:** `notify`, `google`, `low`
+**The issue:** while the Google app is in Testing, Google asks for a fresh consent about every 7 days (#93), for the
+notifier's token as for the agent's. When the notifier's server answers with a sign-in request, the calendar watcher
+stops for the rest of the run and sends one message saying to run `uv run kestrel notify signin` at the laptop.
+Reminders keep working. The bot never shows a sign-in link.
+**Done when:** the app is published (no 7-day expiry), or the owner accepts the weekly sign-in.
+
+### KI-pending-notify-calendar-limits. What calendar alerts don't cover
+**Labels:** `notify`, `google`, `low`
+- **Awake only** (#89): asleep or off, nothing arrives; on wake, events already started get no alert.
+- **Quiet hours:** an event that starts inside them gets no alert (owner decision, 2026-11-13); a `/remind` does.
+- **Up to 5 minutes behind:** the calendar is read every 5 minutes, so an event cancelled or moved in the last 5
+  minutes before its alert can still alert at the old time once (and a moved one alerts again at the new time).
+- **The calendar's default reminders aren't read:** an event on them alerts `KESTREL_NOTIFY_CAL_LEAD` before (the
+  server doesn't report the calendar's defaults, and `list_calendars` stays disabled). Custom popup reminders are
+  used.
+- **Primary calendar only;** unanswered invitations alert only from organizers in `notify.toml` (the pinned server
+  has no contacts tool).
+- **The hourly limit** (6) can hold an alert until its event has started; it is then dropped.
+- Titles, times and locations go to Telegram, which isn't end-to-end encrypted (#84).
+
+**Done when:** each point is fixed or accepted by the owner; listed so they aren't mistaken for bugs.
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)

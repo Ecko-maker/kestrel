@@ -9,6 +9,10 @@ and never passes quoted text), and it is defanged wherever it is shown, so nothi
 
 Button presses are checked like card presses: the allowed user (checked by the bot), a private chat
 that is the user's, a known reminder of that chat, and the message that carries its buttons now.
+
+With KESTREL_NOTIFY_STAGES=calendar, the calendar watcher (kestrel.notify.calendar) runs next to the
+reminder ticker and sends through the same `send`: plain text, no buttons, to the owner's chat only, never
+into an Agent.
 """
 
 import asyncio
@@ -18,8 +22,10 @@ from zoneinfo import ZoneInfo
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from kestrel.notify.calendar import CalendarWatcher, Source
 from kestrel.notify.clock import Clock
 from kestrel.notify.defang import defang, tappable_entities
+from kestrel.notify.google_source import CalendarSource
 from kestrel.notify.notifier import AWAKE, Buttons, Notifier, reminder_text, snooze_until
 from kestrel.notify.parse import HELP, ParseError, local, parse_reminder
 from kestrel.notify.settings import NotifySettings
@@ -46,6 +52,8 @@ class Reminders:
         self.store = Store(settings.db_path)
         self.notifier: Notifier | None = None
         self.task: asyncio.Task | None = None
+        self.calendar: CalendarWatcher | None = None
+        self.calendar_task: asyncio.Task | None = None
         self._outbox: Outbox | None = None
 
     # --- lifecycle ------------------------------------------------------------------------
@@ -54,10 +62,31 @@ class Reminders:
         self._outbox = outbox
         self.notifier = Notifier(self.store, self.send, self.clock, late_grace=self.settings.late_grace)
         self.task = asyncio.create_task(self.notifier.run())
+        if self.settings.calendar and self.settings.calendar_source is not None:
+            self.calendar = self.calendar_watcher(CalendarSource(self.settings.calendar_source))
+            self.calendar_task = asyncio.create_task(self.calendar.run())
+
+    def calendar_watcher(self, source: Source) -> CalendarWatcher:
+        s = self.settings
+        return CalendarWatcher(
+            self.store,
+            self.send,
+            self.clock,
+            source,
+            zone=s.zone,
+            lead=s.cal_lead,
+            quiet=s.quiet,
+            summary_at=s.cal_summary,
+            max_per_hour=s.max_per_hour,
+            trusted=s.trusted_organizers,
+        )
 
     def stop(self) -> None:
-        if self.task is not None:
-            self.task.cancel()
+        for task in (self.task, self.calendar_task):
+            if task is not None:
+                task.cancel()
+        if self.calendar is not None:
+            self.calendar.source.close()
         self.store.close()
 
     @property

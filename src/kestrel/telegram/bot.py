@@ -435,5 +435,11 @@ def run(
             print_line("KESTREL_TRACE_CONTENT=off: nothing is kept locally, but Telegram still has the text.")
         if notify.enabled:
             print_line(f"Reminders on: {notify.db_path}, time zone {notify.zone}. Only while this laptop is awake.")
+        if notify.calendar:
+            quiet = "off" if notify.quiet is None else "-".join(t.strftime("%H:%M") for t in notify.quiet)
+            print_line(
+                f"Calendar alerts on: primary calendar, {int(notify.cal_lead.total_seconds() // 60)} min ahead, "
+                f"quiet hours {quiet}, at most {notify.max_per_hour} an hour (the notifier's own read-only token)."
+            )
         print_line("Polling Telegram (no open port). Messages sent while Kestrel was off are skipped. Ctrl+C to stop.")
         app.run_polling(allowed_updates=ALLOWED_UPDATES, drop_pending_updates=True)

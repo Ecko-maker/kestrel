@@ -39,3 +39,6 @@ evals/results/
 # Google OAuth client files and tokens (docs/google.md): never in git
 client_secret*.json
 .credentials/
+
+# The notifier's private settings (docs/telegram.md, "Calendar alerts"): trusted organizers are personal
+notify.toml

@@ -194,7 +194,7 @@ def test_the_laptop_zone_is_an_iana_name(monkeypatch):
     ("env", "says"),
     [
         ({"KESTREL_NOTIFY": "yes"}, "on or off"),
-        ({"KESTREL_NOTIFY_STAGES": "reminders,calendar"}, "isn't built yet"),
+        ({"KESTREL_NOTIFY_STAGES": "reminders,calendar"}, "needs Google set up"),  # built in stage 2
         ({"KESTREL_NOTIFY_STAGES": "email"}, "isn't built yet"),
         ({"KESTREL_NOTIFY_STAGES": "pager"}, "unknown stage"),
         ({"KESTREL_NOTIFY_STAGES": " , "}, "empty"),

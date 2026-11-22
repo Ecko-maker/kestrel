@@ -1,0 +1,11 @@
+Successfully retrieved 1 events from calendar 'primary' for owner@example.com:
+- "First page" (Starts: 2026-11-21T15:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6], Ends: 2026-11-21T16:00:00-05:00 [America/New_York; weekday: Saturday; ISO weekday: 6])
+  Description: No Description
+  Location: No Location
+  Color ID: None
+  Attendees: None
+  Attendee Details: None
+  ID: p1 | Link: https://www.google.com/calendar/event?eid=ZXhhbXBsZQ
+
+Next page token: TOKEN2
+Pagination time_min: 2026-11-21T14:00:00Z
