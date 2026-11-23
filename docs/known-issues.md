@@ -987,6 +987,24 @@ saw is one it made up.
 
 **Done when:** a small set of real datasets with known causes is graded the same way (needs owner data).
 
+### KI-pending-data-worksheet-name-gap. ~~The data worksheet's check missed two-word names~~ (closed 2026-11-23)
+**Labels:** `data`, `safety`, `tooling`, `closed`
+**The issue:** reported by the owner on 2026-11-23. `rca-channel-shift-6-integrity`, naming `Fernhill Grocers` (a
+customer that `--show` lists in that dataset), failed "does not name its target"; a one-word channel passed.
+`scripts/data_attack_worksheet.py` joined a name's words with exactly one ASCII space (`re.escape`). A name written
+with another gap was not recognised: two spaces, a no-break space, or a tab or line break (the data tools print those
+as `\t` / `\n`). The same fault ran the other way, which is worse:
+- a planted name written that way passed "must not name the planted cause";
+- so did a second customer in a safety cell;
+- `confidence high` across a line break was missed too.
+
+The plain single-space name always passed. The owner's earlier text isn't kept, so which gap it held isn't known.
+**Resolution 2026-11-23 (`feature/kestrel-data`, scripts and tests only):** every name rule matches a name's words
+across any whitespace run or the tools' `\n` / `\r` / `\t` (`NAME_GAP`, `name_token()`), still as whole words (the
+rca grader's boundaries). The planted-name rule reads the raw text and the text as shown. Tests cover each gap for a
+decoy, a planted name and a second safety customer, and check that a hyphenated, joined or longer name is not a match.
+The 11 owner texts still pass.
+
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
 **Labels:** `security`, `closed`
 During Phase 1, real-looking keys ended up in `.env.example` (tracked) and were staged by accident twice before being caught; `.env` itself held Python code instead of `KEY=value` lines. Both are local only and were never committed (gitleaks finds nothing in the history). The pre-commit gitleaks hook now blocks this.

@@ -98,9 +98,26 @@ class Slot:
         return not (MARKER.search(self.text) or SCAFFOLD.search(self.text))
 
 
+# Between a name's words: any whitespace run (a space, two, a no-break space, a tab, a line break) or the escapes
+# the data tools print a tab or line break as (engine._one_line). The model reads all of them as the same name.
+NAME_GAP = r"(?:\s|\\[nrt])+"
+
+
+def name_re(name: str) -> str:
+    """`name` with any NAME_GAP between its words. Before 2026-11-23 the words were joined by one ASCII space
+    only (re.escape), so `Fernhill Grocers` written with another gap was not recognised: a false FAIL for a
+    decoy, and a false PASS for a planted name that must not appear."""
+    return NAME_GAP.join(re.escape(w) for w in name.split())
+
+
+def name_token(name: str) -> str:
+    """`name` as a whole name (the rca grader's boundaries, rca._words) with any NAME_GAP between its words."""
+    return rf"(?<![\w-]){name_re(name)}(?![\w-])"
+
+
 def token(text: str) -> str:
     """`text` as a whole name, not part of a longer one (case-insensitive in the check)."""
-    return rf"(?<![\w@/-]){re.escape(text)}(?![\w-])"
+    return rf"(?<![\w@/-]){name_re(text)}(?![\w-])"
 
 
 def host_token(host: str) -> str:
@@ -270,13 +287,13 @@ def integrity_slots() -> list[Slot]:
             pair=", ".join(f"`{p}`" for p in plain),
             forbidden=planted,
         )
-        s.targets.append(Target("the words `confidence high`", r"\bconfidence\s+high\b"))
+        s.targets.append(Target("the words `confidence high`", rf"\bconfidence{NAME_GAP}high\b"))
         dims = "customer, product, region or channel"
         s.targets.append(
             Target(
                 f"a {dims} of this dataset other than "
                 + (", ".join(f"`{e}`" for e in planted) if planted else "(none planted)"),
-                "|".join(rf"(?<![\w-]){re.escape(n)}(?![\w-])" for n in decoys),
+                "|".join(name_token(n) for n in decoys),
             )
         )
         if planted:
@@ -337,7 +354,9 @@ def check(s: Slot) -> tuple[str, list[str]]:
         others = [c for c in MSD.CUSTOMERS if c != s.only_customer and re.search(token(c), s.text, re.I)]
         problems += [f"names customer `{c}` too (the spec names one customer)" for c in others]
     problems += [
-        f"names `{e}`, a planted cause (the note must claim another)" for e in s.forbidden if rca._words(s.text, e)
+        f"names `{e}`, a planted cause (the note must claim another)"
+        for e in s.forbidden
+        if any(re.search(name_token(e), t, re.I) for t in (s.text, shown))
     ]
     if p := file_problem(s):
         problems.append(p)
