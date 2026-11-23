@@ -13,14 +13,21 @@
 # B4  main suite x1 (100, judge groq)           -> evals\results\google-before-b4-main-x1.json
 # A0  CI subset x1 with --tools google (stubs)  -> evals\results\google-a0-calibration.json
 #
-# Approvals (STATUS): B2 + B4 together at most 300,000 billable (11-20); A0 at most 70,000 (11-20). That queue
-# stopped at the 300k cap with B2 graded and B4 at 88/100, 297,080 spent; the B4 completion top-up (11-22) allows
-# 60,000 more for B4, counted from that 297,080. A run already fully graded is skipped. Each attempt's
-# --token-budget is the smaller of groq_quota.py's free amount and what is left of its approval minus one task's
-# margin (--token-budget stops starting tasks once reached, so one task can go past it), counted from the
-# results files themselves, so a restarted queue still stops at the approval. --wait-for-quota on every run, and
-# --resume once the file exists. A run with ungraded runs left is resumed while each attempt makes progress.
-# The queue log holds times, billable tokens and graded counts: never an outcome.
+# Approvals (STATUS): B2 + B4 together at most 300,000 billable (11-20); A0 at most 70,000 (11-20). The queue
+# stopped at the 300k cap with B4 at 88/100 (297,080 spent). The B4 completion top-up (11-22, 60,000) stopped at
+# 94/100 with 364,614 spent, 7,534 over its cap: its 5,000 margin was smaller than one task. The B4 final line
+# (11-22) allows 50,000 more for B4, counted from that 364,614. A run already fully graded is skipped.
+#
+# Why the margin is one whole task: --token-budget is checked only before each task starts
+# (src/kestrel/bench/runner.py, run_tasks), so an attempt always runs at least one whole task and can end
+# one task past its budget. The margin is therefore at least the most expensive single task measured on this
+# agent: web-weather-tokyo in B4, 18,429 billable, so 20,000. Each attempt's --token-budget is the smaller of
+# groq_quota.py's free amount and (approval - spent - margin), counted from the results files themselves, so a
+# restarted queue still stops at the approval. No attempt starts with a budget under one margin (it waits for
+# quota, or stops if the approval is what's short), and none starts while groq_quota.py reads 0 or less free.
+# --wait-for-quota on every run, and --resume once the file exists. A run with ungraded runs left is resumed
+# while each attempt makes progress. The queue log holds times, billable tokens and graded counts: never an
+# outcome.
 #
 # Settings, as plan section 5 says: the safety run uses KESTREL_MCP=off and today's image policy (allowlist,
 # as the s9 safety runs did); B4 and A0 leave the image policy unset, like every main run and CI. A0 is the CI
@@ -31,12 +38,12 @@ $ErrorActionPreference = "Stop"
 
 $Tag = "google-before"
 $ApprovedBefore = 300000   # B2 + B4 (11-20)
-$SpentAtCap = 297080       # B2 + B4 when the queue stopped at that cap (11-21 23:18 EST)
-$TopUpB4 = 60000           # B4 completion top-up (11-22), on top of $SpentAtCap
-$ApprovedB4 = $SpentAtCap + $TopUpB4   # so B4's "approval left" is the top-up left: 60,000 - (spent - 297,080)
+$SpentAtCap = 364614       # B2 + B4 when the top-up queue stopped (11-22 14:58 EST): 297,080 + 67,534
+$TopUpB4 = 50000           # B4 final 6 tasks (11-22), on top of $SpentAtCap
+$ApprovedB4 = $SpentAtCap + $TopUpB4   # so B4's "approval left" is this line's left: 50,000 - (spent - 364,614)
 $ApprovedA0 = 70000
-$Margin = 5000             # one task's worth past --token-budget
-$NeedFree = 5000           # don't start an attempt with less than this free
+$Margin = 20000            # >= the most expensive single task measured (web-weather-tokyo, B4: 18,429)
+$NeedFree = $Margin        # never start an attempt with a budget under one task
 $Results = "evals\results"
 $B2 = "$Results\google-before-b2-benign-x3.json"
 $B4 = "$Results\google-before-b4-main-x1.json"
@@ -105,6 +112,23 @@ function Get-Spent([string[]]$files) {
     return $sum
 }
 
+function Get-AttemptDecision([int]$approved, [int]$spent, [int]$free) {
+    # start / wait / stop, from numbers only (tested offline). An attempt can end one task past its budget, so
+    # budget + one task (<= $Margin) stays within the approval.
+    $left = $approved - $spent - $Margin
+    if ($left -lt $NeedFree) {
+        return @{ action = "stop"; budget = 0; left = $left; why = "the approval of $approved billable can't cover another attempt ($spent spent; $left left after the $Margin margin, an attempt needs $NeedFree)" }
+    }
+    if ($free -le 0) {
+        return @{ action = "wait"; budget = 0; left = $left; why = "free quota reads $free (0 or less), approval left $left" }
+    }
+    $budget = [Math]::Min($free, $left)
+    if ($budget -lt $NeedFree) {
+        return @{ action = "wait"; budget = $budget; left = $left; why = "$budget billable available now (free $free, approval left $left), needs $NeedFree" }
+    }
+    return @{ action = "start"; budget = $budget; left = $left; why = "" }
+}
+
 function Invoke-QueueRun([string]$name, [string[]]$runArgs, [string]$out, [int]$approved, [string[]]$pool, [string]$policy) {
     $done = Get-Counts $out
     if ($done.total -gt 0 -and $done.graded -eq $done.total) {
@@ -117,12 +141,13 @@ function Invoke-QueueRun([string]$name, [string[]]$runArgs, [string]$out, [int]$
         Wait-NoOtherGroqJob
         $before = Get-Counts $out
         $spent = Get-Spent $pool
-        $left = $approved - $spent - $Margin
-        if ($left -le 0) { Stop-Queue "${name}: the approval of $approved billable is used up ($spent spent, margin $Margin)" }
-        $free = Get-FreeQuota
-        $budget = [Math]::Min($free, $left)
-        if ($budget -lt $NeedFree) {
-            Log "${name}: $budget billable available now (free $free, approval left $left), needs $NeedFree; waiting 30 min"
+        $free = if ($approved - $spent - $Margin -ge $NeedFree) { Get-FreeQuota } else { 0 }
+        $d = Get-AttemptDecision $approved $spent $free
+        if ($d.action -eq "stop") { Stop-Queue "${name}: $($d.why)" }
+        $left = $d.left
+        $budget = $d.budget
+        if ($d.action -eq "wait") {
+            Log "${name}: $($d.why); waiting 30 min"
             Start-Sleep -Seconds 1800
             continue
         }
@@ -166,7 +191,7 @@ if ($DryRun) {
     & uv run --no-sync kestrel bench run @RunB4 @fromMain --dry-run 2>&1 | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
     & uv run --no-sync kestrel bench run @RunA0 @fromMain --dry-run 2>&1 | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
     $s = Get-Spent @($B2, $B4)
-    Write-Host "Spent so far: B2+B4 $s ($ApprovedBefore approval, then the B4 top-up: $([Math]::Max(0, $s - $SpentAtCap)) of $TopUpB4 used, budget left $($ApprovedB4 - $s - $Margin) after the margin); A0 $(Get-Spent @($A0)) of $ApprovedA0; free now: $(Get-FreeQuota)"
+    Write-Host "Spent so far: B2+B4 $s (B4 final line: $([Math]::Max(0, $s - $SpentAtCap)) of $TopUpB4 used since $SpentAtCap, budget left $($ApprovedB4 - $s - $Margin) after the margin); A0 $(Get-Spent @($A0)) of $ApprovedA0; free now: $(Get-FreeQuota)"
     Write-Host "Dry run only: no Groq calls, no results."
     exit 0
 }
@@ -183,14 +208,14 @@ try {
     Log "B2: $r"
     if ($r -ne "graded") { Stop-Queue "B2 can't be graded after resuming; B4 and A0 not run" }
     $spentBefore = Get-Spent @($B2, $B4)
-    if ($spentBefore -lt $SpentAtCap) { Stop-Queue "B2+B4 files show $spentBefore billable, less than the $SpentAtCap the top-up counts from: a results file changed" }
-    Log "B4 completion top-up: $TopUpB4 from $SpentAtCap; used $($spentBefore - $SpentAtCap), left $($ApprovedB4 - $spentBefore) (margin $Margin)"
+    if ($spentBefore -lt $SpentAtCap) { Stop-Queue "B2+B4 files show $spentBefore billable, less than the $SpentAtCap the B4 final line counts from: a results file changed" }
+    Log "B4 final line: $TopUpB4 from $SpentAtCap; used $($spentBefore - $SpentAtCap), left $($ApprovedB4 - $spentBefore) (margin $Margin)"
     $r = Invoke-QueueRun "B4 main suite x1" $RunB4 $B4 $ApprovedB4 @($B2, $B4) ""
     Log "B4: $r"
     if ($r -ne "graded") { Stop-Queue "B4 can't be graded after resuming; A0 not run" }
     $r = Invoke-QueueRun "A0 CI subset with Google stubs" $RunA0 $A0 $ApprovedA0 @($A0) ""
     Log "A0: $r"
-    Log "QUEUE DONE. Results: $B2, $B4, $A0. B2+B4 $(Get-Spent @($B2, $B4)) of $ApprovedB4 ($SpentAtCap at the 300k cap + the $TopUpB4 B4 top-up); A0 $(Get-Spent @($A0)) of $ApprovedA0 billable."
+    Log "QUEUE DONE. Results: $B2, $B4, $A0. B2+B4 $(Get-Spent @($B2, $B4)) of $ApprovedB4 ($SpentAtCap before the B4 final line + its $TopUpB4); A0 $(Get-Spent @($A0)) of $ApprovedA0 billable."
 }
 finally {
     if (Test-Path $QueueLock) { Remove-Item $QueueLock -Force }
