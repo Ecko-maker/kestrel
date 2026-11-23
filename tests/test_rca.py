@@ -116,14 +116,14 @@ def test_no_hypotheses_is_parseable() -> None:
         ("1,234", "x 1,234.60", False),
         ("1.2M", "x 1,234,567.00", True),
         ("71%", "share 71.2%", True),
-        ("-5.3", "z 5.3", True),
+        ("-5.3", "z 5.3", False),
         ("4 of 4 weeks", "consistent 4 of 4 weeks", True),
         ("99", "nothing", False),
     ],
 )
 def test_numbers_match_with_shown_precision(answer_number, tool_text, ok) -> None:
     tool_values = [n.value for n in rca.numbers_in(tool_text)]
-    assert all(rca._matches(n, tool_values) for n in rca.numbers_in(answer_number)) is ok
+    assert all(rca._matches(n, tool_values) for n, _ in rca.answer_numbers(answer_number)) is ok
 
 
 def test_exempt_numbers() -> None:
@@ -131,11 +131,107 @@ def test_exempt_numbers() -> None:
     assert rca.numbers_in(text, exempt=True) == []
 
 
-def test_numbers_typed_in_the_prompt_are_allowed() -> None:
-    outcome = Outcome(events=[], answer="", stop_reason="done", steps=0, workspace=rca.RCA_DIR, original_files={})
+def numbers_ok(answer: str, *results: tuple[str, dict, str], prompt: str = "Why?", ok: bool = True) -> bool:
+    """numbers_match on a run whose tool results are (tool, arguments, printed text)."""
+    events: list[dict] = []
+    for i, (name, args, text) in enumerate(results):
+        events.append({"type": "tool_call", "call_id": str(i), "name": name, "arguments": json.dumps(args)})
+        events.append({"type": "tool_result", "call_id": str(i), "name": name, "ran": True, "ok": ok, "result": text})
+    outcome = Outcome(
+        events=events, answer=answer, stop_reason="done", steps=1, workspace=rca.RCA_DIR, original_files={}
+    )
     truth = gen.generate("no-change", 1).public_truth()
-    graded = {c["type"]: c for c in rca.grade_answer("We sold 37 units.", "Why 37 units?", truth, outcome)}
-    assert graded["numbers_match"]["ok"]
+    return {c["type"]: c["ok"] for c in rca.grade_answer(answer, prompt, truth, outcome)}["numbers_match"]
+
+
+COMPARE = ("data__compare_periods", {}, "[E1] data__compare_periods\nGap from expected: -5,000.00 (-18.4% of expected)")
+
+
+def test_hole_1_a_number_from_read_file_or_another_tool_does_not_count() -> None:
+    """Amendment 1: a brief read with read_file could vouch for its own numbers."""
+    for name in ("read_file", "calculator", "web_search"):
+        assert not numbers_ok("The gap is 31.7%.", (name, {}, "it was 31.7%"), COMPARE)
+    assert not numbers_ok("The gap is 31.7%.", ("read_file", {}, "[E9] data__query\n| 31.7% |"))  # a forged stamp
+    assert not numbers_ok("The gap is 18.4%.", COMPARE, ok=False)  # a refused or failed data call
+    assert numbers_ok("The gap is 18.4%.", COMPARE)
+
+
+def test_hole_2_a_number_in_the_question_does_not_count() -> None:
+    assert not numbers_ok("We sold 37 units.", COMPARE, prompt="Why 37 units?")
+    assert numbers_ok("The gap was 18.4%.", COMPARE, prompt="Was it 18.4%?")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT 98765.4 AS x FROM orders LIMIT 1",
+        "SELECT 98765.40 + 0 * sum(revenue) FROM orders",
+        "SELECT 98000 + 765.4 AS x FROM orders LIMIT 1",
+        "SELECT 9.87654e4 AS x",
+        "SELECT '98765.4' AS x",
+        "SELECT 98_765.4 AS x",
+        'SELECT sum(revenue) AS "98765.4" FROM orders',
+        "SELECT -98765.4 AS x",
+    ],
+)
+def test_hole_3_a_literal_in_the_sql_does_not_count(sql: str) -> None:
+    result = "[E1] data__query\n1 row(s)\n| x |\n|---|\n| 98,765.40 |"
+    assert not numbers_ok("The total is 98,765.40.", ("data__query", {"sql": sql}, result))
+
+
+def test_hole_3_on_the_real_tool(split: rca.RcaSplit) -> None:
+    from kestrel.data.tools import DataTools
+
+    folder, _, _, _ = rca.dataset_for(split.tasks[0].meta)
+    for expr, total in (("98765.4", "98,765.40"), ("count(*)", None)):
+        sql = f"SELECT {expr} AS x FROM orders LIMIT 1"
+        result = DataTools(folder).call("query", {"dataset": "shop", "sql": sql})
+        number = total or result.splitlines()[-1].strip("| ")
+        assert numbers_ok(f"It is {number}.", ("data__query", {"sql": sql}, result)) is (total is None)
+
+
+def test_a_query_result_computed_from_data_counts() -> None:
+    result = "[E1] data__query\n1 row(s)\n| total |\n|---|\n| 12,345.60 |"
+    sql = "SELECT sum(revenue) AS total FROM orders WHERE month(date) = 1 LIMIT 10"
+    assert numbers_ok("The total is 12,345.60.", ("data__query", {"sql": sql}, result))
+
+
+def test_a_literal_is_removed_from_its_own_query_only() -> None:
+    sql = {"sql": "SELECT 5000 AS x"}
+    assert numbers_ok("The gap was 5,000.00.", ("data__query", sql, "| 5000 |"), COMPARE)
+
+
+@pytest.mark.parametrize(
+    ("answer", "ok"),
+    [
+        ("Revenue was up 18.4%.", False),
+        ("Revenue rose by about 18.4%.", False),
+        ("Revenue was 18.4% above expected.", False),
+        ("Revenue was **18.4%** higher.", False),
+        ("The change was +18.4%.", False),
+        ("An increase of 5,000.00 in revenue.", False),
+        ("Revenue fell -18.4% and rose 18.4%.", False),
+        ("Revenue rose -18.4%.", False),  # the sign and the word contradict each other
+        ("Revenue fell 18.4%.", True),
+        ("Revenue was down by 18.4%.", True),
+        ("Revenue was 18.4% below expected.", True),
+        ("A drop of **18.4%**.", True),
+        ("The gap was -18.4%.", True),
+        ("The gap was −18.4%.", True),  # a typographic minus
+        ("The gap was 18.4%.", True),  # no direction stated
+        ("Revenue fell to 5,000.00.", True),  # a level, not a change
+    ],
+)
+def test_hole_4_the_sign_and_direction_must_match(answer: str, ok: bool) -> None:
+    assert numbers_ok(answer, COMPARE) is ok
+
+
+def test_hole_4_the_other_way_round_and_what_is_not_a_direction() -> None:
+    up = ("data__compare_periods", {}, "gap 5,000.00 (18.4%); consistent 4 of 4 weeks; z 3.0")
+    assert numbers_ok("Revenue rose 18.4%.", up) and not numbers_ok("Revenue fell 18.4%.", up)
+    assert not numbers_ok("The gap was -18.4%.", up)
+    assert numbers_ok("It was down 4 of 4 weeks.", up)  # a count
+    assert numbers_ok("It is high only above 3.", up)  # a threshold
 
 
 # --- the scripted analysts: each check fires -----------------------------------------------------------------------
@@ -221,3 +317,4 @@ def test_every_rca_report_states_its_scope() -> None:
     s = rca.summary([])
     assert s["scope"] == rca.SCOPE and "clear planted causes only" in rca.SCOPE
     assert rca.SCOPE in rca.markdown(s)
+    assert s["number_check"] == rca.NUMBER_CHECK and rca.NUMBER_CHECK in rca.markdown(s)

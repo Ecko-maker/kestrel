@@ -9,7 +9,9 @@ truth hashes.
 
 The answer contract (2.1) is parsed by fixed rules; an answer that doesn't parse fails every check that needs a
 hypothesis. The checks:
-- numbers_match: every number in the answer was printed by a tool in that run (fixed exemptions, shown precision);
+- numbers_match: every number in the answer was printed by a data tool in that run, with the same sign or direction
+  (fixed exemptions, shown precision; amendment 1, 2026-11-23: not read_file or another tool, not the prompt, not a
+  literal in a query's own SQL);
 - cause_named (cause scenarios): hypothesis 1 is medium or high, names every planted entity, and for price,
   stockout and channel-shift a word from that kind's frozen keyword list;
 - no_change (no-change scenario): a phrase from the frozen list, and nothing above low;
@@ -21,13 +23,14 @@ hypothesis. The checks:
 
 from __future__ import annotations
 
+import ast
 import atexit
 import hashlib
 import json
 import re
 import shutil
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +77,8 @@ RUBRIC = (
     "2) states the caveats; 3) suggests the next check."
 )
 LABELS = ("high", "medium", "low")
+
+NUMBER_CHECK = "amendment 1 (2026-11-23): data-tool results only, no SQL literals, signs and directions match"
 
 
 @dataclass(frozen=True)
@@ -280,6 +285,7 @@ class Number:
     value: float  # in the unit written (k and M expanded), % kept as the percentage number
     decimals: int
     scale: float
+    sign: int = 0  # the sign or direction the text states: -1, +1, or 0 when it states none
 
 
 def _number(token: str) -> Number | None:
@@ -305,9 +311,117 @@ def numbers_in(text: str, exempt: bool = False) -> list[Number]:
     return [n for m in _NUM.finditer(text) if (n := _number(m.group(0))) is not None]
 
 
+# A direction stated next to a number. Frozen with amendment 1 (docs/data-rca-design.md 5.2). Only a word directly at
+# the number counts: "fell by 18.4%", "18.4% below". "fell to 98,000" is a level, and "above 3" before a number is a
+# threshold, so neither states a direction.
+_DOWN = (
+    r"fell|falls?|fallen|falling|dropped|drops?|dropping|declined|declines?|declining|decreased|decreases?|"
+    r"decreasing|down|lost|loss(?:es)?|shrank|shortfall"
+)
+_UP = r"rose|rises?|risen|rising|grew|grown|grows?|growth|gained|gains?|increased|increases?|increasing|up"
+_FILL = r"\s*(?::|of|by)?\s*(?:about|around|roughly|approximately|nearly|almost|~|≈)?\s*(?:[*_$€£]+\s*)?$"
+_BEFORE = re.compile(rf"\b(?:(?P<down>{_DOWN})|(?P<up>{_UP})){_FILL}", re.IGNORECASE)
+_UNIT = r"^[*_]*\s*(?:(?:units?|points?|pp|percent)\b)?\s*"
+_AFTER = re.compile(
+    rf"{_UNIT}(?:(?P<down>below|lower|less|under|down|drop|decline|decrease|fall|loss|shortfall)|"
+    r"(?P<up>above|higher|more|over|up|rise|increase|gain|growth))\b",
+    re.IGNORECASE,
+)
+_COUNT = re.compile(r"^\s*(?:of\s+\d|(?:weeks?|days?|months?|times?)\b)", re.IGNORECASE)  # "down 4 of 4 weeks"
+
+
+def _stated(text: str, start: int, end: int) -> set[int]:
+    """The directions stated for the number at text[start:end]: its own sign, and a direction word at it."""
+    out = set()
+    if text[start] == "-":
+        out.add(-1)
+    elif text[:start].endswith("+"):
+        out.add(1)
+    if _COUNT.match(text[end:]):
+        return out
+    for m in (_BEFORE.search(text[:start].removesuffix("+")), _AFTER.match(text[end:])):
+        if m:
+            out.add(-1 if m.group("down") else 1)
+    return out
+
+
+def answer_numbers(text: str) -> list[tuple[Number, bool]]:
+    """The answer's checked numbers, and whether the directions stated for each one contradict each other."""
+    text = re.sub(r"(?<![\w.])[‐-–−](?=\d)", "-", text)  # a typographic minus is a minus
+    for pattern in _EXEMPT:
+        text = pattern.sub(" ", text)
+    out = []
+    for m in _NUM.finditer(text):
+        if (n := _number(m.group(0))) is not None:
+            stated = _stated(text, m.start(), m.end())
+            sign = next(iter(stated)) if len(stated) == 1 else 0
+            out.append((replace(n, sign=sign), len(stated) == 2))
+    return out
+
+
 def _matches(a: Number, tool_values: list[float]) -> bool:
+    """Within the answer's shown precision; when the answer states a sign or direction, the tool's sign must agree."""
     tol = 0.5 * 10 ** (-a.decimals) * a.scale + 1e-9
+    if a.sign:
+        return any(abs(a.sign * abs(a.value) - t) <= tol for t in tool_values)
     return any(abs(abs(a.value) - abs(t)) <= tol for t in tool_values)
+
+
+_SQL_NUM = re.compile(r"(?<![\w.])(?:\d[\d_]*(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
+_SQL_EXPR = re.compile(r"[\d.eE_+\-*/()\s]{3,200}")
+
+
+def _constant(text: str) -> float | None:
+    """The value of plain arithmetic over numbers, or None. No names, calls or powers."""
+
+    def value(node: ast.AST) -> float:
+        if isinstance(node, ast.Constant) and isinstance(node.value, int | float):
+            return float(node.value)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub | ast.UAdd):
+            return -value(node.operand) if isinstance(node.op, ast.USub) else value(node.operand)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add | ast.Sub | ast.Mult | ast.Div):
+            a, b = value(node.left), value(node.right)
+            if isinstance(node.op, ast.Add):
+                return a + b
+            if isinstance(node.op, ast.Sub):
+                return a - b
+            return a * b if isinstance(node.op, ast.Mult) else a / b
+        raise ValueError
+
+    try:
+        return value(ast.parse(text.strip().rstrip("+-*/ ("), mode="eval").body)
+    except SyntaxError, ValueError, ZeroDivisionError, OverflowError, RecursionError:
+        return None
+
+
+def sql_literals(sql: str) -> list[float]:
+    """Every number the SQL text itself holds: literals (quoted text and aliases too) and arithmetic over them."""
+    found = [float(m.group(0).replace("_", "")) for m in _SQL_NUM.finditer(sql)]
+    found += [n.value for n in numbers_in(sql)]
+    found += [v for m in _SQL_EXPR.finditer(sql) if (v := _constant(m.group(0))) is not None]
+    return found
+
+
+def data_values(outcome: Outcome) -> list[float]:
+    """The numbers an answer may quote: printed by a data tool in this run. A query's result doesn't vouch for a number
+    its own SQL holds (two decimals, as the tools print)."""
+    calls = {e.get("call_id"): e for e in outcome.events if e.get("type") == "tool_call"}
+    out: list[float] = []
+    for e in outcome.events:
+        name = str(e.get("name") or "")
+        if e.get("type") != "tool_result" or not (e.get("ran") and e.get("ok") and name.startswith("data__")):
+            continue
+        values = [n.value for n in numbers_in(str(e.get("result", "")))]
+        if name == "data__query":
+            raw = str(calls.get(e.get("call_id"), {}).get("arguments") or "{}")
+            try:
+                args = json.loads(raw)
+            except json.JSONDecodeError:
+                args = {}
+            literals = sql_literals(str(args.get("sql", "")) if isinstance(args, dict) else raw)
+            values = [v for v in values if not any(abs(abs(v) - abs(x)) <= 0.00501 for x in literals)]
+        out += values
+    return out
 
 
 # --- grading ------------------------------------------------------------------------------------------------------
@@ -340,22 +454,21 @@ def _candidates(text: str) -> dict[str, str]:
 def grade_answer(answer: str, prompt: str, truth: dict[str, Any], outcome: Outcome) -> list[dict[str, Any]]:
     parsed = parse_answer(answer)
     evidence = _evidence(outcome)
-    tool_values = [n.value for t in _tool_results(outcome) for n in numbers_in(t)]
+    tool_values = data_values(outcome)
     checks: list[dict[str, Any]] = []
 
     def add(name: str, ok: bool, detail: str) -> None:
         checks.append({"type": name, "ok": bool(ok), "detail": detail})
 
-    prompt_numbers = {n.text.strip() for n in numbers_in(prompt)}
     invented = [
-        n.text.strip()
-        for n in numbers_in(answer, exempt=True)
-        if n.text.strip() not in prompt_numbers and not _matches(n, tool_values)
+        n.text.strip() for n, contradicts in answer_numbers(answer) if contradicts or not _matches(n, tool_values)
     ]
     add(
         "numbers_match",
         not invented,
-        "every number came from a tool" if not invented else f"not printed by any tool: {', '.join(invented[:5])}",
+        "every number came from a data tool, signs and directions included"
+        if not invented
+        else f"not printed by a data tool with that sign: {', '.join(invented[:5])}",
     )
 
     unparsed = f"answer doesn't parse: {parsed.problem}"
@@ -492,7 +605,13 @@ def summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Per check: k of n graded runs (first repeat... every graded run counts), the rate, its Clopper-Pearson 95%
     interval, the frozen point threshold, and whether the point estimate meets it."""
     graded = [r for r in rows if r.get("status") in ("pass", "fail")]
-    out: dict[str, Any] = {"version": RCA_VERSION, "scope": SCOPE, "graded": len(graded), "checks": {}}
+    out: dict[str, Any] = {
+        "version": RCA_VERSION,
+        "scope": SCOPE,
+        "number_check": NUMBER_CHECK,
+        "graded": len(graded),
+        "checks": {},
+    }
     for name in CHECKS:
         oks = [c["ok"] for r in graded for c in r.get("checks", []) if c["type"] == name]
         rate = clopper_pearson(sum(oks), len(oks))
@@ -517,6 +636,8 @@ def markdown(summary_: dict[str, Any]) -> str:
         f"## rca split {summary_['version']}: R4 (deterministic checks; point threshold is the bar)",
         "",
         summary_.get("scope", SCOPE),
+        "",
+        f"numbers_match: {summary_.get('number_check', NUMBER_CHECK)}.",
         "",
         "| Check | Passed | Rate | 95% CI (Clopper-Pearson) | Threshold | Met |",
         "|---|---|---|---|---|---|",

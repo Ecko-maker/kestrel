@@ -970,6 +970,18 @@ back 7 days at a time. Those windows overlap, so σ can be too small and more po
 gated, and the label never uses it.
 **Done when:** the step is the window length, or a calibration shows the flag rate on no-change data.
 
+### KI-pending-rca-truncated-events. The rca grader reads tool results cut at 2,000 characters
+**Labels:** `data`, `measurement`
+**The issue:** the checks read a run's `tool_result` events, which `agent.py` cuts at `MAX_EVENT_RESULT_CHARS` = 2,000
+characters. A data tool may print 4,000, and the model sees all of it. Measured on the 30 r1.0 tasks (2026-11-23):
+- `decompose_change` and `compare_periods` by customer are over the cut in 30/30 (up to 2,356), and `describe_dataset`
+  in 5/30. The other splits by dimension never are.
+- No planted candidate's row is lost. Low-ranked rows and the last line are, so a correct quote from them fails
+  `numbers_match` or `labels_match`, and a number cut in half could match a wrong one.
+
+It applies to the 2026-11-17 check and to amendment 1 alike.
+**Done when:** the grader reads the full results, or the owner accepts the limit. Before B1 either way.
+
 ### KI-pending-data-numbers-in-names. numbers_match reads digits in names as numbers
 **Labels:** `data`, `bench`, `low`
 **The issue:** a product code like `K-1000` holds the number 1000. An answer that names a product no tool printed in
