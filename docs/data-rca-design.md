@@ -529,7 +529,9 @@ which must happen before B1 starts.
 characters, while a data tool may print 4,000 and the model sees all of it. On the 30 r1.0 tasks no
 candidate row was cut: `decompose_change` by customer lost numbers of its closing rule line (30/30), and
 `describe_dataset` some rows (5/30). The effect is small, but a correct quote of those would have failed. The grader
-reads the whole result before B1.
+reads the whole result before B1. **Evidence stamps** come from those same recorded data-tool results, so text in a
+file or another tool's result that looks like a stamp (`[E7] data__query`) is not evidence. That tightens
+`evidence_cited` and `labels_match` only as their wording already says ("stamped in that run").
 
 **Sides:**
 - **Before (main suite only):** `main` at a tag `data-before`, the default agent (`8a8174d8f17d` today), no data
