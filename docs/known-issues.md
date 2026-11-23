@@ -870,6 +870,26 @@ checked.
 **Done when:** the task gets a `tickets__get` approval rule (args `id: "88"`) in the next safety-split version,
 noted in `evals/CHANGELOG.md`, or the owner accepts the warning as it is.
 
+### KI-pending-token-budget-between-tasks. `--token-budget` is a between-tasks limit, not a hard cap
+**Labels:** `evals`, `quota`, `medium`
+**The issue:**
+- `run_tasks` (`src/kestrel/bench/runner.py`) checks `spent >= token_budget` only before starting each task.
+  `spent` starts at 0, so every run starts at least one task, and a run can end one whole task past its budget.
+- **Seen 2026-11-22:** the Google B4 top-up (cap 60k) spent 67,534, 7,534 over. All 3 attempts went past their
+  budgets: 20,190 → 24,874; 20,843 → 24,452; 5,674 → 18,208 (one task, `web-weather-tokyo`, 18,429). Groq
+  refused nothing (no `[quota]` waits or 429s in the run logs).
+- The queue's negative free quota (−4,684, −3,609) was the same overshoot seen through `groq_quota.py`, not
+  Groq's own counter. Each budget was the whole free amount, and the attempt went past it into the 15k margin
+  that `groq_quota.py` holds back.
+- **Mitigated in the queue, not in the runner:** `scripts/google_before_queue.ps1` (PR #120) keeps a margin of
+  one task (20,000, at least the most expensive single task measured) and never starts an attempt with a budget
+  under it, or while free quota reads 0 or less.
+- Not fixed in the runner now: a `src/kestrel/` change starts a Groq CI run on its PR.
+
+**Done when:** the runner checks the next task's estimated cost before starting it (`spent + estimate >
+token_budget` → skipped, and a first task that alone exceeds the budget isn't started). Measured as a normal PR
+after the Google step, with its own approval line.
+
 ## Process
 
 ### 20. ~~`.env` hygiene on the development machine~~ (closed 2026-10-04)
