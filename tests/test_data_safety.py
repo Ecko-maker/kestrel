@@ -19,6 +19,7 @@ from kestrel.bench.tasks import _workspace_sha
 from kestrel.bench.validate import markers_of
 from kestrel.data.calibration import clopper_pearson as cp_large
 
+ROOT = Path(__file__).resolve().parents[1]
 SPLIT = load_safety()
 DATA_TASKS = sorted(st.id for st in SPLIT.tasks if st.meta.datasets)
 
@@ -59,19 +60,55 @@ def test_data_tasks_run_only_with_tools_data() -> None:
     assert with_data - without == set(DATA_TASKS) and len(without) == 48
 
 
-def test_unwritten_injections_refuse_only_runs_that_select_them() -> None:
+def _msd():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("make_safety_datasets", ROOT / "scripts" / "make_safety_datasets.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def unwritten_copy(tmp_path: Path, task_ids: list[str]) -> Path:
+    """A copy of the safety split with these attacks' CSVs as the generator writes them: the {{INJECTION}} markers
+    back in place of the owner's notes (owner-written since 2026-11-23). The notes themselves are never read."""
+    import shutil
+
+    from kestrel.bench.safety import SAFETY_DIR
+
+    root = tmp_path / "safety"
+    shutil.copytree(SAFETY_DIR, root)
+    msd = _msd()
+    for task_id in task_ids:
+        out = root / "datasets" / task_id / "orders.csv"
+        out.write_text(msd.render(task_id, {}), encoding="utf-8", newline="\n")
+    return root
+
+
+def test_the_committed_data_attacks_are_complete() -> None:
     a = args(tools=["data"])
+    cli._refuse_incomplete(a, cli._pick_tasks(a))  # owner-written 2026-11-23: no refusal
+    assert [m for m in find_markers() if m.where.startswith("datasets/")] == []
+
+
+def test_unwritten_injections_refuse_only_runs_that_select_them(tmp_path: Path) -> None:
+    root = unwritten_copy(tmp_path, ["atk-data-send"])
+    a = args(tools=["data"], split_dir=root)
     with pytest.raises(SystemExit, match="unfilled"):
         cli._refuse_incomplete(a, cli._pick_tasks(a))
-    plain = args()
-    cli._refuse_incomplete(plain, cli._pick_tasks(plain))  # the 48 s1.0 tasks: complete, so no refusal
+    plain = args(split_dir=root)
+    cli._refuse_incomplete(plain, cli._pick_tasks(plain))  # the data tasks aren't selected: no refusal
 
 
-def test_validate_lists_each_attack_marker_as_todo() -> None:
-    todo = [m for m in find_markers() if m.where.startswith("datasets/")]
+def test_validate_lists_each_attack_marker_as_todo(tmp_path: Path) -> None:
+    attacks = [t for t in DATA_TASKS if t.startswith("atk-")]
+    root = unwritten_copy(tmp_path, attacks)
+    todo = [m for m in find_markers(root) if m.where.startswith("datasets/")]
     assert len(todo) == 6  # 5 attacks, the multistep one has two notes
-    owners = {task for task in DATA_TASKS for m in markers_of(SPLIT, todo, task)}
-    assert owners == {t for t in DATA_TASKS if t.startswith("atk-")}
+    split = load_safety(root)
+    owners = {task for task in DATA_TASKS for m in markers_of(split, todo, task)}
+    assert owners == set(attacks)
 
 
 def test_s10_task_fingerprints_are_unchanged() -> None:
@@ -156,14 +193,30 @@ def test_rca_cli_runs_a_scripted_analyst_offline(tmp_path: Path, monkeypatch: py
     assert data["rca"]["checks"]["no_change"]["n"] == 1 and data["rca"]["r4"] is True
 
 
-def test_rca_needs_tools_data_and_refuses_unwritten_notes_for_a_real_model() -> None:
+def test_rca_needs_tools_data_and_refuses_unwritten_notes_for_a_real_model(tmp_path: Path) -> None:
+    import shutil
+
+    import yaml
+
+    from kestrel.bench import rca
+
     parser = argparse.ArgumentParser()
     cli.add_parser(parser.add_subparsers(dest="command"))
     ns = parser.parse_args(["bench", "run", "--split", "rca", "--dry-run"])
     with pytest.raises(SystemExit, match="needs --tools data"):
         cli.main(ns)
+    task = "rca-price-change-6-integrity"
+    ns = parser.parse_args(["bench", "run", "--split", "rca", "--tools", "data", "--dry-run", "--tasks", task])
+    assert cli.main(ns) == 0  # owner-written 2026-11-23
+    root = tmp_path / "rca"  # a copy with the marker back in that note (the owner's note is never read)
+    shutil.copytree(rca.RCA_DIR / "tasks", root / "tasks")
+    path = root / "tasks" / "r1.0.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    (raw,) = [t for t in data["tasks"] if t["id"] == task]
+    raw["note"] = "{{INJECTION: spec}}"
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
     ns = parser.parse_args(
-        ["bench", "run", "--split", "rca", "--tools", "data", "--dry-run", "--tasks", "rca-price-change-6-integrity"]
+        ["bench", "run", "--split", "rca", "--split-dir", str(root), "--tools", "data", "--dry-run", "--tasks", task]
     )
     with pytest.raises(SystemExit, match="unfilled"):
         cli.main(ns)

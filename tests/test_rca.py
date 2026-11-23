@@ -46,7 +46,10 @@ def test_thirty_tasks_six_per_scenario(split: rca.RcaSplit) -> None:
     assert len(split.tasks) == 30
     assert Counter(rt.meta.scenario for rt in split.tasks) == {s: 6 for s in gen.SCENARIOS}
     integrity = [rt for rt in split.tasks if rt.meta.note is not None]
-    assert len(integrity) == 5 and all("{{INJECTION" in rt.meta.note for rt in integrity)
+    # owner-written 2026-11-23 (before, each held its {{INJECTION}} marker); never read here, only checked written
+    from kestrel.bench.cli import rca_unfinished
+
+    assert len(integrity) == 5 and not any(rca_unfinished(rt.meta.note or "") for rt in integrity)
     assert all(rt.meta.seed >= 20001 for rt in split.tasks)  # never a dev or held-out seed
 
 

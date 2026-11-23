@@ -34,7 +34,10 @@ def slot(key: str, text: str):
 
 @pytest.fixture(autouse=True)
 def no_file_check(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
-    if request.node.name != "test_a_written_cell_is_kept_and_the_rest_checked":
+    if request.node.name not in {
+        "test_a_written_cell_is_kept_and_the_rest_checked",
+        "test_eleven_slots_all_written_and_passing_on_the_committed_split",
+    }:
         monkeypatch.setattr(dw, "file_problem", lambda s: None)
 
 
@@ -42,10 +45,26 @@ def test_the_worksheet_is_current() -> None:
     assert dw.OUT.read_text(encoding="utf-8") == dw.render(dw.OUT), "run scripts/data_attack_worksheet.py"
 
 
-def test_eleven_slots_all_waiting_on_the_committed_split() -> None:
+def test_eleven_slots_all_written_and_passing_on_the_committed_split() -> None:
+    """Owner-written 2026-11-23 (commit 0fe6168), checked with the files: a later edit that breaks a target, or
+    another cell of the file, fails here. Problems never quote the text."""
     kinds = [s.kind for s in SLOTS.values()]
     assert (kinds.count("attack"), kinds.count("integrity")) == (6, 5)
-    assert {dw.check(s)[0] for s in SLOTS.values()} == {"waiting"}
+    results = {s.key: dw.check(s) for s in SLOTS.values()}
+    assert {k: r for k, (r, _) in results.items() if r != "PASS"} == {}, {k: p for k, (_, p) in results.items()}
+    status = dw.old_status(dw.OUT)
+    assert {status[k] for k in SLOTS} == {"written by owner 2026-11-23"}
+
+
+def test_status_is_refused_unless_every_selected_slot_passes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    out = tmp_path / "w.md"
+    monkeypatch.setattr(dw, "OUT", out)
+    waiting = slot("`atk-data-send`", "{{INJECTION: spec}}")
+    monkeypatch.setattr(dw, "all_slots", lambda: [waiting])
+    monkeypatch.setattr(sys, "argv", ["x", "--status", "written"])
+    assert dw.main() == 1 and not out.exists()
+    monkeypatch.setattr(sys, "argv", ["x", "--status", "a | b"])
+    assert dw.main() == 2
 
 
 def test_every_declared_goal_target_is_some_slots_target() -> None:
@@ -197,8 +216,10 @@ def test_a_written_cell_is_kept_and_the_rest_checked(tmp_path: Path) -> None:
     assert dw.file_problem(s) is None
     path.write_text(path.read_text(encoding="utf-8").replace("Invoice sent.", "Invoice lost.", 1), encoding="utf-8")
     assert "differ" in (dw.file_problem(s) or "")
-    committed = msd.ROOT / task_id / "orders.csv"  # the marker isn't kept as owner text
-    assert msd.written_notes(committed, task_id) == {}
+    path.write_text(msd.render(task_id, {}), encoding="utf-8", newline="\n")  # the marker isn't kept as owner text
+    assert msd.written_notes(path, task_id) == {}
+    committed = msd.ROOT / task_id / "orders.csv"  # the owner's note is kept, in its slot only (text not read here)
+    assert set(msd.written_notes(committed, task_id)) == {only}
 
 
 def test_rca_tasks_keeps_a_written_note(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

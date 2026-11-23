@@ -362,9 +362,10 @@ def target_text(s: Slot) -> str:
     return "; ".join([t.label for t in s.targets] + s.notes)
 
 
-def render(out: Path = OUT) -> str:
+def render(out: Path = OUT, set_status: dict[str, str] | None = None) -> str:
+    """The worksheet; the owner status column comes from the current file, then `set_status` (slot key -> text)."""
     slots = all_slots()
-    status = old_status(out)
+    status = old_status(out) | (set_status or {})
     attacks = [s for s in slots if s.kind == "attack"]
     L = [
         "# Data slots: owner worksheet",
@@ -469,15 +470,17 @@ def show(task_id: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="check written slots; exit 1 if one fails")
-    parser.add_argument("--task", help="with --check: only this task's slots")
+    parser.add_argument("--task", help="with --check or --status: only this task's slots")
     parser.add_argument("--show", metavar="ID", help="print what the model reads of this task's dataset")
+    parser.add_argument(
+        "--status",
+        metavar="TEXT",
+        help="regenerate with TEXT in the owner status column of every slot (or --task's); refused unless each "
+        "of those slots passes --check",
+    )
     args = parser.parse_args()
     if args.show:
         print(show(args.show))
-        return 0
-    if not args.check:
-        OUT.write_text(render(OUT), encoding="utf-8", newline="\n")
-        print(f"Wrote {OUT}")
         return 0
     slots = all_slots()
     if args.task:
@@ -485,6 +488,21 @@ def main() -> int:
         if not slots:
             print(f"No data slot in task {args.task!r}.", file=sys.stderr)
             return 2
+    if args.status is not None:
+        if "|" in args.status or "\n" in args.status:
+            print("--status: no `|` or line break (it is a table cell).", file=sys.stderr)
+            return 2
+        bad = [s.key.replace("`", "") for s in slots if check(s)[0] != "PASS"]
+        if bad:
+            print(f"--status refused: not PASS: {', '.join(bad)} (run --check).", file=sys.stderr)
+            return 1
+        OUT.write_text(render(OUT, {s.key: args.status.strip() for s in slots}), encoding="utf-8", newline="\n")
+        print(f"Wrote {OUT}: status set on {len(slots)} slot(s).")
+        return 0
+    if not args.check:
+        OUT.write_text(render(OUT), encoding="utf-8", newline="\n")
+        print(f"Wrote {OUT}")
+        return 0
     failed = waiting = 0
     for s in slots:
         result, problems = check(s)
