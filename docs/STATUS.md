@@ -32,15 +32,23 @@ by the owner (11-20), 0 TODO; review rows for the 8 email attacks in `ATTACK_REV
 Annotated tag **`google-before`** on `74c9892` ("Google step before side: default agent 8a8174d8f17d, safety s1.1
 frozen").
 
-**Google before side running** (since 11-20 16:36 EST) in `..\kestrel-runs` at `google-before`, one queue in a
-standalone window (`scripts/google_before_queue.ps1`, PR #115 open, scripts only): B2, then B4, then A0, each with
-`--wait-for-quota` and a `--token-budget` capped by its approval. At 11-21 15:18 EST:
-- **B2** (old benign strict x3): done, 54/54 graded, **111,462 billable** (plan 94.6k), agent `b5101fc9ccdb` (the
-  safety split's strict registry; recomputed offline);
-- **B4** (main suite x1): 35/100 graded, **79,310 billable** so far, agent `8a8174d8f17d`, waiting for quota;
-- B2 + B4 **190,772 of the 300,000 approval**. At B4's ~2.3k per task so far, the rest needs ~147k against 104k
-  left, so B4 would stop near 80/100 and the queue then stops before A0: an owner decision before it gets there;
-- **A0** (CI subset with the Google stubs, cap 70k): not started.
+**Google before side done** (11-20 16:36 to 11-22 23:36 EST) in `..\kestrel-runs` at `google-before`
+(`scripts/google_before_queue.ps1`, PRs #115, #120):
+- **B2** (old benign strict x3): 54/54 graded, 0 errors, **111,462 billable** (plan 94.6k, x1.178), agent
+  `b5101fc9ccdb` (the safety split's strict registry);
+- **B4** (main suite x1): 100/100 graded, 0 errors, **271,287 billable** (agent 238,120 + judge 33,167; plan 176.8k,
+  x1.534), agent `8a8174d8f17d`. **Its last attempt ended 2026-11-22 23:36:45 EST** (`finished`
+  2026-11-23T04:36:45Z), so **A1 must start by 2026-11-29 23:36:45 EST** (plan 4.3's 7 days);
+- **A0** (CI subset x1 with `--tools google`, agent `b76a43765a4f`): **stopped at 14/16, 54,690 billable**, 0 errors.
+  The last 2 tasks (`convo-chained-math`, `multi-scale-recipe`) are not run (owner, 11-23). **Measured f = 2.07**
+  (2.19 on agent tokens alone, the figure for the judge-free safety runs). Calibration result in the approvals table
+  below.
+
+**After-side queue ready, not started** (PR #122, `a3a1547`): `scripts/google_after_queue.ps1` runs A1, A2, A3, then
+A4 only if `scripts/google_gate.py` prints PASS for G1 and G2 (plan 4.2), with the 20k margin, from a frozen copy at
+`C:\kestrel-queue\` (made from `a3a1547`, helpers pinned by SHA-256, `MANIFEST.txt`). Same code and tag as the
+before side, with `--tools google` (plan 4, "Sides": no separate after tag). It needs the owner's approval lines for
+A1-A4 first.
 
 **`feature/kestrel-data` rebased onto `main`** (11-21, `0245591`; no PR): both opt-in tool sets side by side
 (`--tools google data`), safety split s1.2 = s1.1 + the 10 data tasks, distill filters `google_tool` then `data_tool`;
@@ -406,8 +414,8 @@ Billable tokens from each results file's summary (measured). Files are in `..\ke
 | 2026-11-20 | Google part 2a PR #111: one extra PR run (worksheet, `bench show` fix, s1.1 email texts) | ~31k (est.); **27,375 measured** | Google part 2a PR #111: one extra PR run for the worksheet, show fix and s1.1 texts, ~31k, approved by the owner 2026-11-20. One push only, after this line is on `main` and while no other Groq consumer runs. **Ran:** run 44793332365, 88% (14/16), 0 errored (failed `multi-scale-recipe`, systematic, and `convo-chained-math`, the known flip); one push. #111's three runs together **85,318**, within the ~95k of the two lines. |
 | 2026-11-20 | Google step before side: B2 (old benign strict x3, 54 runs) + B4 (main suite x1, 100 runs) on `google-before` (`74c9892`), in `..\kestrel-runs` | ~271k (est.; cap 300k); **297,080 measured** when the queue stopped at the cap (11-21 23:18 EST): B2 111,462 (54/54 graded); B4 185,618 at 88/100, 0 errors | Google before side B2 (old benign strict ×3) + B4 (main suite ×1) on google-before, cap 300k, approved by the owner 2026-11-20 |
 | 2026-11-22 | Google step B4 completion: the 12 main-suite tasks B4 left unrun (6 web, 6 conversation), `--resume` on `google-before` | ~47k (est.: 34,971 in `main-after-v1.1.json` × 1.33, B4's measured ratio to it on its 88 graded tasks; cap 60k); **67,534 measured, 7,534 over the cap** (3 attempts on 11-22: 24,874 + 24,452 + 18,208; B4 94/100, the 6 web tasks done; the queue stopped at 14:58 EST) | Google before side B4 completion top-up (remaining main-suite tasks on google-before), cap 60k, approved by the owner 2026-11-22. B2 measured ~111k vs 94.6k estimated; B4 ~2.1k/task. **B4 top-up: 60k approved, 67.5k spent (+7,534 over cap): the runner checks the budget between tasks; queue margin raised to one task (20k).** Attempt 15 started with a 5,674 budget and ran `web-weather-tokyo` (18,429, the most expensive single task measured). The web tasks cost ×2.41 their `main-after-v1.1` billable (67,534 vs 28,049). Fix: PR #120 (`d009ddb`); runner issue KI-pending-token-budget-between-tasks. |
-| 2026-11-22 | Google step B4 final: the 6 conversation tasks B4 still has unrun, `--resume` on `google-before` | ~9-17k (est.: 6,922 in `main-after-v1.1.json` × 1.33-2.41); cap 50k, so one attempt of at most 30k (cap − 20k margin) | Google before side B4 final 6 tasks on google-before, cap 50k with a 20k margin, approved by the owner 2026-11-22. |
-| 2026-11-20 | Google step A0: CI subset x1 with `--tools google` (Google stubs) on `google-before`, measures the schema factor f | ~45-61k (est. at f = 2.00; cap 70k) | Google A0 schema calibration (CI subset ×1 with Google stubs), cap 70k, approved by the owner 2026-11-20 |
+| 2026-11-22 | Google step B4 final: the 6 conversation tasks B4 still has unrun, `--resume` on `google-before` | ~9-17k (est.: 6,922 in `main-after-v1.1.json` × 1.33-2.41); cap 50k, so one attempt of at most 30k (cap − 20k margin) | Google before side B4 final 6 tasks on google-before, cap 50k with a 20k margin, approved by the owner 2026-11-22. **Ran:** one attempt, 11-22 23:35-23:36 EST, budget 30,000; **18,135 measured**, within the cap (the 6 conversation tasks: 2.6x their 6,922 in `main-after-v1.1.json`). B4 100/100 graded, 0 errors, **271,287 billable in all**; B2 + B4 **382,749** (the 300k line, the 60k top-up and this 50k line: 410k approved). |
+| 2026-11-20 | Google step A0: CI subset x1 with `--tools google` (Google stubs) on `google-before`, measures the schema factor f | ~45-61k (est. at f = 2.00; cap 70k) | Google A0 schema calibration (CI subset ×1 with Google stubs), cap 70k, approved by the owner 2026-11-20. **Ran:** one attempt, 11-22 23:37-23:44 EST, budget 50,000; **54,690 measured** (one task past the budget, as the runner allows: KI-pending-token-budget-between-tasks; within the 70k cap). 14/16 graded, 0 errors, agent `b76a43765a4f`. The queue stopped: the 15,310 left can't cover the 20k margin. The last 2 tasks are not run (owner, 11-23). **Result (calibration only, not a gate):** f = **2.07** on billable (54,690 vs 26,483), paired task by task on the 14 graded tasks against #111's PR run 44793332365 and its merge run 44800457846 (default agent `8a8174d8f17d`, the mean of the two). f = **2.19** on agent tokens alone. Per task: min 0.82, median 2.21, max 8.16. Raw agent tokens x2.37; cached share 36% vs 31%. Against all three #111 runs, f = 2.01 (1.90-2.08 by run). Pass: **12/14 vs 14/14** in each default run. **Flagged:** both failures are workspace-lookup tasks with no `escalated_by` entry. `files-meeting-attendees` searched Gmail instead of the workspace file; the scripted user rejected that card. `files-contact-email` made no tool call. That is the "main-suite call to a Google stub" signal plan 4.1 reports. A4 will show whether it recurs. Estimates at this f: A1 ~641k, A2 ~398k, A3 ~52k, A4 ~554k (~1.64M, ~8.9 Groq days); approval lines pending. |
 
 ## Owner decisions open
 
@@ -473,6 +481,7 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | Routed safety group S: results, reports, 2 logs, the cost report and traces | `..\kestrel-runs\evals\results\routed-safety-S-*`, `..\kestrel-runs\routed-safety-S-*.log`, `..\kestrel-runs\logs\bench.db` | yes, `C:\kestrel-backup\2026-11-05\` (10 files, 32 MB, `MANIFEST.txt`); results also pinned in git |
 | The 19 test-written audit-log lines (moved out of `logs/approvals.jsonl`, 2026-11-12) | `logs/approvals.test-pollution-2026-11-12.jsonl` | the original file, `C:\kestrel-backup\2026-11-12\approvals.jsonl.orig` (SHA-256 `58f1f0ab…82b0`) |
 | Reminders (stage 1 notifications): reminder text, private, git-ignored | `logs/notify.db` | no |
-| Google before side (B2, B4, A0): results, reports, queue and run logs, traces | `..\kestrel-runs\evals\results\google-*`, `..\kestrel-runs\logs\bench.db` | no (the runs are still going) |
+| Google before side (B2, B4, A0): results, reports, queue and run logs, traces | `..\kestrel-runs\evals\results\google-*`, `..\kestrel-runs\logs\bench.db` | no (before side and A0 done 11-22; not backed up yet) |
+| Google after-side queue, frozen copy (`google_after_queue.ps1`, `groq_quota.py`, `google_gate.py`, `MANIFEST.txt`) | `C:\kestrel-queue\` (from `a3a1547`; each file's SHA-256 in `MANIFEST.txt`) | in git at `a3a1547` (byte for byte) |
 
 Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-02\` (6 files, 2.2 MB, option a collection and training set, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here. `C:\kestrel-backup\2026-11-03\` (7 files, 24.8 MB: the student-alone results and `bench.db`, `MANIFEST.txt`).
