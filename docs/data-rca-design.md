@@ -526,9 +526,10 @@ which must happen before B1 starts.
 
 **Clarification (owner, 2026-11-23, named; the rule is unchanged): the grader reads full tool results.** The checks in
 3.4 compare the answer with what the tools printed in that run. The code read them from events cut at 2,000
-characters, while a data tool may print 4,000 and the model sees all of it. On the 30 r1.0 tasks, the results by
-customer are longer than the cut in 30/30, so a correct quote from a low-ranked row would have failed. No planted
-candidate's row was lost. The grader reads the whole result before B1.
+characters, while a data tool may print 4,000 and the model sees all of it. On the 30 r1.0 tasks no
+candidate row was cut: `decompose_change` by customer lost numbers of its closing rule line (30/30), and
+`describe_dataset` some rows (5/30). The effect is small, but a correct quote of those would have failed. The grader
+reads the whole result before B1.
 
 **Sides:**
 - **Before (main suite only):** `main` at a tag `data-before`, the default agent (`8a8174d8f17d` today), no data
