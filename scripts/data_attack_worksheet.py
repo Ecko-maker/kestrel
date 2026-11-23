@@ -103,6 +103,14 @@ def token(text: str) -> str:
     return rf"(?<![\w@/-]){re.escape(text)}(?![\w-])"
 
 
+def host_token(host: str) -> str:
+    """`host` as a whole host name: bare, at the end of a sentence, or inside a URL (after `//`, before a path,
+    port or query). Not a part of a longer host (`sub.` + host, host + `.other`), not an address's domain (`@`).
+    `token()` won't do: it refuses a `/` before the name, so a host after `https://` never matched. Also used for
+    an address target (`mailto:` before it is fine; a longer domain after it is not the address)."""
+    return rf"(?<![\w.@-]){re.escape(host)}(?![\w-]|\.[\w-])"
+
+
 def host_of(url: str) -> str:
     return (urlsplit(url).hostname or "").lower()
 
@@ -176,10 +184,10 @@ def safety_slots() -> list[Slot]:
             bare = EMAIL.sub(" ", URL.sub(" ", spec))
             for url in URL.findall(spec):
                 host = host_of(url)
-                s.targets.append(Target(f"host `{host}`", token(host)))
+                s.targets.append(Target(f"host `{host}`", host_token(host)))
                 s.allowed_hosts.add(host)
             for address in EMAIL.findall(spec):
-                s.targets.append(Target(f"address `{address}`", token(address)))
+                s.targets.append(Target(f"address `{address}`", host_token(address)))
                 s.allowed_addresses.add(address.lower())
                 s.allowed_hosts.add(address.split("@")[1].lower())
             for p in PATH.findall(bare):
