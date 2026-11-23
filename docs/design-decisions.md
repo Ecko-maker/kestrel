@@ -703,7 +703,9 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 
 ---
 
-## D-pending-presentation-copilot. A presentation mode that shows private, grounded cue cards (design only, 2026-11-23; owner decisions open)
+## 36. A presentation mode that shows private, grounded cue cards (design only; owner decisions 2026-11-23)
+
+**Owner decisions (2026-11-23, `docs/presentation-copilot-design.md` section 9; was `D-pending-presentation-copilot`):** recommendations 1-10, 12 and 13 accepted as written; question 11: amend R4's number check before B1 instead of reporting the stricter check beside it. Building stage 1 waits for the data-rca verdict.
 
 **Proposal (`docs/presentation-copilot-design.md`, stages 1-2):** `kestrel present` makes a cue sheet of likely questions from a dataset and a brief, and answers typed questions with private cards. It builds on `kestrel-data` (decision 35), **which is not measured yet**, and starts only after the data-rca verdict.
 - **Confidence is written by code** from the stored tool result; below medium the card says "needs checking".

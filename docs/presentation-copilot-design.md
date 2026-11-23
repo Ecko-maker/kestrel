@@ -1,7 +1,9 @@
 # Presentation copilot, stages 1-2: design
 
 **Status:** design only, written 2026-11-23 on `main` `67df0ed`. No code, no model calls, no Groq quota, **no approval
-lines**. Decision: `D-pending-presentation-copilot`. The open questions (section 9) are the owner's; nothing is frozen.
+lines**. Decision: **36** (`docs/design-decisions.md`, was `D-pending-presentation-copilot`). **Owner decisions
+2026-11-23:** recommendations 1-10, 12 and 13 of section 9 accepted as written; question 11 decided by an amendment
+(section 9). Nothing is frozen. Building stage 1 waits for the data-rca verdict (question 1).
 
 **It builds on `kestrel-data` (decision 35), which is built but not measured.** The tools are on
 `feature/kestrel-data`, not on `main`; R1-R5 (`docs/data-rca-design.md` 5.2) haven't run. So:
@@ -42,8 +44,7 @@ prompt. Four inputs it accepts would let a wrong number onto a card:
 | `up 18.4%` when the tool printed `-18.4%` | matches | signs are ignored |
 
 A fifth follows from the first: the numbers inside a text cell (an order's `note`, shown by `describe_dataset`) count as
-tool numbers too. Section 5.3 closes all five. They also apply to R4; whether the frozen rule needs a named amendment
-before B1 is question 11.
+tool numbers too. Section 5.3 closes all five. They also apply to R4; question 11 (decided: a named amendment before B1).
 
 **Red herrings:** `decompose_change` by product labels the red herring low in 30/30 datasets. `detect_anomalies` by
 product lists it in 23/30 (daily) and 20/30 (weekly). So code can't find every red herring from anomalies alone.
@@ -423,7 +424,14 @@ Each needs its own design, plan and measurement.
 
 ---
 
-## 9. Open questions
+## 9. Owner decisions (2026-11-23)
+
+**Recommendations 1-10, 12 and 13 accepted as written.** Question 11's recommendation was not taken: the owner chose
+to amend the data-rca rule, if its freeze wording allows it. It does (`docs/data-rca-design.md` 5.2: "amendable only
+by a commit to `main` that names the change and its reason, before the first run (B1) starts"), so R4's
+`numbers_match` gets the stricter check (data-tool results only, no prompt numbers, no SQL literals, matching sign
+and direction). It is prepared on `feature/kestrel-data-numbers`, and **in force only once it is on `main`**, which
+must happen before B1. The questions are kept below as asked.
 
 1. **Does it start only after a data-rca PASS?** Or also on "not shown" (main suite only)?
    - **Recommendation:** PASS, or "not shown" with your OK: that outcome concerns the main suite, which this mode
