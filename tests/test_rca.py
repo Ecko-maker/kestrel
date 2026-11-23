@@ -135,7 +135,10 @@ def numbers_ok(answer: str, *results: tuple[str, dict, str], prompt: str = "Why?
     """numbers_match on a run whose tool results are (tool, arguments, printed text)."""
     events: list[dict] = []
     for i, (name, args, text) in enumerate(results):
-        events.append({"type": "tool_call", "call_id": str(i), "name": name, "arguments": json.dumps(args)})
+        if name.startswith("data__"):
+            text = f"[E{i + 1}] {name}\n{text}"
+            tool = name.removeprefix("data__")
+            events.append({"type": "data_result", "tool": tool, "args": args, "result": text})
         events.append({"type": "tool_result", "call_id": str(i), "name": name, "ran": True, "ok": ok, "result": text})
     outcome = Outcome(
         events=events, answer=answer, stop_reason="done", steps=1, workspace=rca.RCA_DIR, original_files={}
@@ -188,6 +191,43 @@ def test_hole_3_on_the_real_tool(split: rca.RcaSplit) -> None:
         result = DataTools(folder).call("query", {"dataset": "shop", "sql": sql})
         number = total or result.splitlines()[-1].strip("| ")
         assert numbers_ok(f"It is {number}.", ("data__query", {"sql": sql}, result)) is (total is None)
+
+
+def test_the_grader_reads_full_results_not_the_cut_events(split: rca.RcaSplit) -> None:
+    """KI-pending-rca-truncated-events: a split by customer prints more than the events' 2,000 characters. On
+    r1.0 the cut takes numbers of its last line, not candidate rows."""
+    from kestrel.agent import MAX_EVENT_RESULT_CHARS
+
+    rt = split.by_id["rca-lost-customer-1"]
+    registry, _, log = rca.make_setup(split)(rt.task)
+    args = {"dataset": "shop", "metric": "revenue", "period_a": "2025-12", "period_b": "2026-01", "by": "customer"}
+    shown = registry.execute("data__decompose_change", args, approved=True)
+    event = {"type": "tool_result", "name": "data__decompose_change", "ran": True, "ok": True}
+    event["result"] = shown[:MAX_EVENT_RESULT_CHARS]
+    assert len(shown) > MAX_EVENT_RESULT_CHARS
+    outcome = Outcome(
+        events=[event, *log], answer="", stop_reason="done", steps=1, workspace=rca.RCA_DIR, original_files={}
+    )
+    ((tool, full),) = rca._evidence(outcome).values()
+    cut = rca._candidates(event["result"])
+    assert tool == "decompose_change" and full in shown  # exactly what the model got
+    assert set(cut) <= set(rca._candidates(full))
+    lost = [n.value for n in rca.numbers_in(full) if n.value not in {m.value for m in rca.numbers_in(event["result"])}]
+    assert lost and set(lost) <= set(rca.data_values(outcome))
+    outcome.events = log  # the model never saw this result: it doesn't count
+    assert rca._evidence(outcome) == {} and rca.data_values(outcome) == []
+
+
+def test_a_refused_data_call_is_not_recorded(split: rca.RcaSplit) -> None:
+    registry, _, log = rca.make_setup(split)(split.tasks[0].task)
+    out = registry.execute("data__query", {"dataset": "shop", "sql": "DELETE FROM orders"}, approved=True)
+    assert out.startswith("Error:") and log == []
+
+
+def test_a_stamp_in_another_tools_result_is_not_evidence() -> None:
+    event = {"type": "tool_result", "name": "read_file", "ran": True, "ok": True, "result": "[E7] data__query\n| 5 |"}
+    outcome = Outcome(events=[event], answer="", stop_reason="done", steps=1, workspace=rca.RCA_DIR, original_files={})
+    assert rca._evidence(outcome) == {}
 
 
 def test_a_query_result_computed_from_data_counts() -> None:

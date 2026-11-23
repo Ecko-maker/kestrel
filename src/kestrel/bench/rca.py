@@ -405,20 +405,11 @@ def sql_literals(sql: str) -> list[float]:
 def data_values(outcome: Outcome) -> list[float]:
     """The numbers an answer may quote: printed by a data tool in this run. A query's result doesn't vouch for a number
     its own SQL holds (two decimals, as the tools print)."""
-    calls = {e.get("call_id"): e for e in outcome.events if e.get("type") == "tool_call"}
     out: list[float] = []
-    for e in outcome.events:
-        name = str(e.get("name") or "")
-        if e.get("type") != "tool_result" or not (e.get("ran") and e.get("ok") and name.startswith("data__")):
-            continue
-        values = [n.value for n in numbers_in(str(e.get("result", "")))]
-        if name == "data__query":
-            raw = str(calls.get(e.get("call_id"), {}).get("arguments") or "{}")
-            try:
-                args = json.loads(raw)
-            except json.JSONDecodeError:
-                args = {}
-            literals = sql_literals(str(args.get("sql", "")) if isinstance(args, dict) else raw)
+    for e in data_results(outcome):
+        values = [n.value for n in numbers_in(e["result"])]
+        if e["tool"] == "query":
+            literals = sql_literals(str(e["args"].get("sql", "")))
             values = [v for v in values if not any(abs(abs(v) - abs(x)) <= 0.00501 for x in literals)]
         out += values
     return out
@@ -427,16 +418,32 @@ def data_values(outcome: Outcome) -> list[float]:
 # --- grading ------------------------------------------------------------------------------------------------------
 
 
-def _tool_results(outcome: Outcome) -> list[str]:
-    return [str(e.get("result", "")) for e in outcome.events if e.get("type") == "tool_result" and e.get("ran")]
+def data_results(outcome: Outcome) -> list[dict[str, Any]]:
+    """The data-tool results the model got, in full, as make_setup recorded them. The agent's own tool_result events are
+    cut at 2,000 characters and a data tool may print 4,000, so they only say which calls came back (the evidence
+    stamp is a result's first line). A call the model never saw the result of (a timeout) doesn't count."""
+    seen = {
+        int(m.group(1))
+        for e in outcome.events
+        if e.get("type") == "tool_result"
+        and e.get("ran")
+        and e.get("ok")
+        and str(e.get("name") or "").startswith("data__")
+        and (m := _STAMP.search(str(e.get("result", ""))))
+    }
+    return [
+        e
+        for e in outcome.events
+        if e.get("type") == "data_result" and (m := _STAMP.match(e["result"])) and int(m.group(1)) in seen
+    ]
 
 
 def _evidence(outcome: Outcome) -> dict[int, tuple[str, str]]:
-    """Evidence id -> (tool, result text), from the data tools' stamps."""
+    """Evidence id -> (tool, full result text), from the data tools' stamps."""
     out = {}
-    for text in _tool_results(outcome):
-        for m in _STAMP.finditer(text):
-            out[int(m.group(1))] = (m.group(2), text)
+    for e in data_results(outcome):
+        if m := _STAMP.match(e["result"]):
+            out[int(m.group(1))] = (m.group(2), e["result"])
     return out
 
 
@@ -559,15 +566,23 @@ def make_setup(split: RcaSplit, on_begin: Any = None) -> Setup:
 
     def setup(task: Task) -> tuple[Any, Any, list[dict]]:
         from kestrel.bench.stubs import main_registry
-        from kestrel.data.tools import register_local
+        from kestrel.data.tools import DataTools, register
 
         rt = by_id[task.id]
         folder, _, _, _ = dataset_for(rt.meta)
         registry = main_registry([])
-        register_local(registry, folder)
+        data = DataTools(folder)
+        log: list[dict] = []  # the runner adds these to the run's events
+
+        def call(tool: str, args: dict[str, Any]) -> str:
+            result = data.call(tool, args)  # a refused call raises: nothing recorded
+            log.append({"type": "data_result", "tool": tool, "args": dict(args), "result": result})
+            return result
+
+        register(registry, call)  # what register_local does, with every full result recorded for the grader
         if on_begin:
             on_begin(rt)
-        return registry, ScriptedApprover(()), []
+        return registry, ScriptedApprover(()), log
 
     return setup
 
