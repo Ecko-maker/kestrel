@@ -150,12 +150,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--runs", type=Path, default=Path(__file__).resolve().parents[2] / "kestrel-runs")
     parser.add_argument("--need", type=int, help="exit 1 unless at least this much is free")
+    parser.add_argument(
+        "--dev",
+        type=Path,
+        default=Path(__file__).resolve().parents[1],
+        help="the development folder whose logs/ and evals/results count too (default: this script's repo; "
+        "a frozen copy outside the repo, e.g. the after-side queue's, passes it)",
+    )
     args = parser.parse_args(argv)
     now = datetime.now(UTC)
     since = now - timedelta(hours=24)
     print(f"Window: {since:%Y-%m-%d %H:%M} to {now:%Y-%m-%d %H:%M} UTC")
     used = 0
-    root = Path(__file__).resolve().parents[1]
+    root = args.dev.resolve()
     folders = [root / "logs", args.runs / "logs"]
     starts: dict[str, float] = {}
     for db in sorted({p.resolve() for f in folders if f.is_dir() for p in f.glob("*.db")}):
