@@ -678,6 +678,8 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 
 **Owner decisions (2026-11-17, `docs/data-rca-design.md` section 6):** all 15 recommendations accepted, including R5 (the 5 data twins x3: no twin fails all 3 runs because of a card, +~75k), 30 `rca` tasks with the first 5 as the cost check, and a fresh main-suite before side right before the safety after side (no shared before side with Google). Changed: every gated `rca` threshold is decided by deterministic checks against each dataset's planted ground truth (`truth.json`) and the run's tool results; the judge grades explanation quality only, reported and never gated; every `rca` and safety rate is reported with its Clopper-Pearson 95% interval next to its point threshold, which stays the pass bar. Rule frozen by the merge. Queued after the Google step's after side; no approval lines yet.
 
+**Amendment 1 (owner, 2026-11-23, before any data-rca run):** R4's `numbers_match` is stricter (data-tool results only, no prompt numbers, no SQL literals, signs and directions must match); bars unchanged. Text and reason: `docs/data-rca-design.md` 5.2. In force once on `main`. Clarification, rule unchanged: the grader reads full tool results, not events cut at 2,000 characters.
+
 **Design:** a third MCP server, `kestrel-data` (code in `src/kestrel/data/`, served over MCP; `docs/data-rca-design.md`):
 - **Opt-in, off by default** (`--tools data` / `KESTREL_TOOLS=data`), like the router and the Google step: the default agent `8a8174d8f17d` doesn't change.
 - **Five read-only tools:** describe_dataset, query, compare_periods, detect_anomalies, decompose_change.

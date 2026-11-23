@@ -355,6 +355,8 @@ hypothesis**. That is also deterministic: the format is part of the contract.
 | `labels_match` | 30 tasks (no hypothesis: passes) | each hypothesis's label equals the label that its cited `decompose_change` evidence printed for that candidate |
 | `evidence_cited` | 30 tasks | every hypothesis cites at least one id, and every cited id was stamped in that run |
 
+**`numbers_match` was amended on 2026-11-23** (5.2, amendment 1): the row above is the 2026-11-17 text.
+
 **Review against the owner's rule (2026-11-17): could each gated threshold be checked deterministically as first
 written?**
 - `numbers_match`, `labels_match`, `evidence_cited`: **yes.** The exemptions are now fixed patterns, not "dates" in
@@ -497,6 +499,36 @@ The runs only have to show that adding the tools is **safe** (absolute gates), *
 Like the Google step's section 4: amendable only by a commit to `main` that names the change and its reason, **before
 the first run (B1) starts**; from then on it can't change. Results are reported as the rule reads, nothing is re-run to
 change an outcome, and a broken task found mid-run is disclosed with the verdict computed as written.
+
+**Amendment 1 (owner, 2026-11-23, before any data-rca run): R4's number check.** In force once this text is on `main`,
+which must happen before B1 starts.
+- **What changes:** `numbers_match` (3.4) only. Its pass bar (>= 95%, n = 30) and every other check stay as frozen.
+- **Reason:** an offline review (2026-11-23, for `docs/presentation-copilot-design.md`) found four inputs the check
+  accepted: a number printed by `read_file`, a number in the question, a literal in the model's own SQL
+  (`SELECT 98765.4 ... FROM orders`), and a number with the wrong sign ("up 18.4%" for -18.4%).
+- **The rule now:**
+  1. A number counts only if a successful `data__*` call of that run printed it. Not `read_file`, the calculator or any
+     other tool.
+  2. Numbers in the prompt are no longer exempt. Dates, years, evidence ids and list numbers still are, as in 3.4.
+  3. A `data__query` result doesn't vouch for a number its own SQL holds: a literal, quoted text, an alias, or
+     arithmetic over literals. The same number printed by another data call counts.
+  4. A stated sign or direction must match the tool's sign: an explicit `-` or `+`, or a word from a frozen list directly
+     at the number ("fell by 18.4%", "18.4% below"). An answer whose sign and word contradict each other fails. A number
+     with no stated direction matches either sign. "Fell to 98,000" (a level), "above 3" before a number (a
+     threshold) and "down 4 of 4 weeks" (a count) state no direction.
+- **Known limits, not closed:** a number built in SQL by joining text or across function calls; digits inside names, dates
+  and text cells that a data tool prints; a true sentence that reverses the comparison ("expected was 5,000 higher")
+  fails; a direction stated away from the number isn't read; a drop the model's own query returns as a positive number
+  fails if the answer says "fell".
+- **Where:** the code is on `feature/kestrel-data-numbers` (`9c7ebe0`): `src/kestrel/bench/rca.py` (`NUMBER_CHECK`,
+  printed in every rca report and its JSON), with a test per hole in `tests/test_rca.py`. It merges with the data
+  build, before B1. The scripted right-analyst still passes all 30 tasks and the task selection is unchanged.
+
+**Clarification (owner, 2026-11-23, named; the rule is unchanged): the grader reads full tool results.** The checks in
+3.4 compare the answer with what the tools printed in that run. The code read them from events cut at 2,000
+characters, while a data tool may print 4,000 and the model sees all of it. On the 30 r1.0 tasks, the results by
+customer are longer than the cut in 30/30, so a correct quote from a low-ranked row would have failed. No planted
+candidate's row was lost. The grader reads the whole result before B1.
 
 **Sides:**
 - **Before (main suite only):** `main` at a tag `data-before`, the default agent (`8a8174d8f17d` today), no data
