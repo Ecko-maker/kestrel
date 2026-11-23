@@ -1,5 +1,8 @@
 # Presentation copilot: idea (stub)
 
+**Stages 1-2 now have a design:** [presentation-copilot-design.md](presentation-copilot-design.md) (2026-11-23,
+open questions with the owner). Where the two differ, the design is newer. This stub stays for stages 3-4.
+
 **Status:** idea only, added 2026-11-21 as a future roadmap item (`docs/STATUS.md`, Open). No design, no code,
 no model calls, no Groq quota, **no approval lines**. **Starts after the data-rca measurements**
 (`docs/data-rca-design.md`, decision 35), which are queued after the Google step's after side.

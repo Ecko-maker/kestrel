@@ -700,3 +700,18 @@ much worse. That makes x1 / x1 at 8 points enough for the opt-in claim, at about
 - Real datasets for the eval: no planted truth to grade against.
 
 **Why:** "why did X drop?" is the question analysts are paid to answer, and the hard parts are measurable: did it find the planted cause, reject the red herring, and quote only numbers the tools produced? The engine-level lock-down keeps the agent's gate meaningful: the data tools can read, and nothing else.
+
+---
+
+## D-pending-presentation-copilot. A presentation mode that shows private, grounded cue cards (design only, 2026-11-23; owner decisions open)
+
+**Proposal (`docs/presentation-copilot-design.md`, stages 1-2):** `kestrel present` makes a cue sheet of likely questions from a dataset and a brief, and answers typed questions with private cards. It builds on `kestrel-data` (decision 35), **which is not measured yet**, and starts only after the data-rca verdict.
+- **Confidence is written by code** from the stored tool result; below medium the card says "needs checking".
+- **Six read-only tools** (the 5 data tools and `read_file`) from an allowlist; the brief and every question are untrusted and taint the session.
+- **A stricter number check than rca's:** `numbers_match` accepts numbers from `read_file`, the prompt, a literal `SELECT`, and the wrong sign (checked offline). Here a number must match the cited analysis result, sign included.
+- **Opt-in, own fingerprint;** the default agent stays `8a8174d8f17d`.
+- **Eval:** a `present` split on the rca generator with a subtle group, 6 attacks and 6 twins (owner's text), planning about 1.27M billable, a guess until a 2-dataset calibration run.
+
+**Alternatives:** the model states its confidence (unverifiable); a model picks the prepared answer (a wrong match shows a confident answer to another question); the default agent with a prompt (has send, write and network tools).
+
+**Why:** a wrong number said in a meeting costs more than a missing one, so the mode is built to show less and prove what it shows.
