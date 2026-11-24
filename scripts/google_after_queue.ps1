@@ -67,11 +67,22 @@ $Gate = Join-Path $Frozen "google_gate.py"
 $DevFolder = Join-Path $Here "..\kestrel"   # read only, by groq_quota.py: its traces and results count too
 
 function Invoke-Uv([string[]]$uvArgs) {
-    # Every captured uv call goes through here. Windows PowerShell 5.1 turns a program's stderr into error records, and
-    # under "Stop" the first one ends the script (2026-11-24); here they come back as plain lines. The caller reads
-    # $LASTEXITCODE.
+    # Every captured uv call goes through here (the gate: Invoke-UvSplit). Windows PowerShell 5.1 turns a program's
+    # stderr into error records, and under "Stop" the first one ends the script (2026-11-24); here they come back as
+    # plain lines. The caller reads $LASTEXITCODE.
     $ErrorActionPreference = "Continue"
     & uv @uvArgs 2>&1 | ForEach-Object { "$_" }
+}
+
+function Invoke-UvSplit([string[]]$uvArgs) {
+    # stdout and stderr apart: a program's stderr lines arrive as error records, in no fixed order with its stdout. The
+    # caller reads $LASTEXITCODE.
+    $ErrorActionPreference = "Continue"
+    $all = @(& uv @uvArgs 2>&1)
+    @{
+        out = @($all | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+        err = @($all | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+    }
 }
 
 function Log([string]$line) {
@@ -208,12 +219,13 @@ function Wait-NextDay([string[]]$files) {
 }
 
 function Get-Gate([string]$file) {
-    $out = @(Invoke-Uv @("run", "--no-sync", "python", $Gate, $file))
+    $got = Invoke-UvSplit @("run", "--no-sync", "python", $Gate, $file)
     $code = $LASTEXITCODE
-    $word = "$($out | Select-Object -Last 1)".Trim()
-    $want = @{ "PASS" = 0; "FAIL" = 1; "NOT SHOWN" = 2 }
-    if (-not $want.ContainsKey($word) -or $want[$word] -ne $code) { return "NOT SHOWN" }  # anything unexpected
-    return $word
+    if ($got.err.Count) { [Console]::Error.WriteLine("gate: $($got.err.Count) line(s) on stderr, not read as its word") }
+    # Strict: stdout's last line, exactly one of the three words, with its own exit code. Nothing is trimmed.
+    $word = "$($got.out | Select-Object -Last 1)"
+    if (($word -ceq "PASS" -and $code -eq 0) -or ($word -ceq "FAIL" -and $code -eq 1)) { return $word }
+    return "NOT SHOWN"  # its own word, or anything unexpected
 }
 
 # --- start ------------------------------------------------------------------------------------------------------
