@@ -210,7 +210,7 @@ UV = f"function uv {{ $rest = @($args | Select-Object -Skip 3); & {ps(sys.execut
 
 def test_every_captured_uv_call_goes_through_the_wrapper() -> None:
     lines = [x.strip() for x in QUEUE.splitlines() if "2>&1" in x and not x.strip().startswith("#")]
-    assert lines == ['& uv @uvArgs 2>&1 | ForEach-Object { "$_" }']
+    assert lines == ['& uv @uvArgs 2>&1 | ForEach-Object { "$_" }', "$all = @(& uv @uvArgs 2>&1)"]
 
 
 @pytest.mark.skipif(not SHELLS, reason="no PowerShell")
@@ -239,21 +239,32 @@ def test_a_crashing_quota_helper_stops_the_queue_with_its_reason(shell: str, tmp
 
 @pytest.mark.skipif(not SHELLS, reason="no PowerShell")
 @pytest.mark.parametrize("shell", SHELLS)
-def test_only_the_gates_word_with_its_exit_code_counts(shell: str, tmp_path: Path) -> None:
-    gate = tmp_path / "gate.py"
-    gate.write_text(
-        "import sys\nprint('a warning', file=sys.stderr)\nword, code = sys.argv[1].split('=')\nprint(word)\n"
+def test_only_the_gates_strict_last_stdout_line_counts(shell: str, tmp_path: Path) -> None:
+    """2026-11-24: a message after the word (uv debug lines, a warning) made a PASS read as NOT SHOWN."""
+    fake = tmp_path / "gate.py"
+    fake.write_text(
+        "import sys\nwhere, word, code = sys.argv[1].split('=')\n"
+        "if where == 'before': print('PASS', file=sys.stderr, flush=True)\n"
+        "print(word.replace('~', ' '), flush=True)\n"
+        "if where == 'after': print('a warning\\nFAIL', file=sys.stderr, flush=True)\n"
+        "if where == 'extra': print('more on stdout', flush=True)\n"
         "sys.exit(int(code))\n",
         "utf-8",
     )
     cases = {
-        "PASS=0": "PASS",
-        "FAIL=1": "FAIL",
-        "NOT SHOWN=2": "NOT SHOWN",
-        "PASS=1": "NOT SHOWN",
-        "odd=0": "NOT SHOWN",
+        "none=PASS=0": "PASS",
+        "after=PASS=0": "PASS",
+        "before=FAIL=1": "FAIL",
+        "after=FAIL=1": "FAIL",
+        "after=NOT~SHOWN=2": "NOT SHOWN",
+        "none=PASS=1": "NOT SHOWN",
+        "none=FAIL=0": "NOT SHOWN",
+        "none=pass=0": "NOT SHOWN",
+        "none=PASS~=0": "NOT SHOWN",
+        "extra=PASS=0": "NOT SHOWN",
+        "before=odd=0": "NOT SHOWN",
     }
-    body = f"{UV}function git {{ 'abc' }}\n$Gate = {ps(gate)}\n"
+    body = f"{UV}function git {{ 'abc' }}\n$Gate = {ps(fake)}\n"
     body += "".join(f"Write-Output \"$(Get-Gate '{c}')\"\n" for c in cases)
     assert powershell(shell, body, tmp_path).split("\n")[: len(cases)] == list(cases.values())
 
