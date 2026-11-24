@@ -4,7 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-24, from the after-queue fix session (log below). `main` = `27a9db9` before this PR.
+2026-11-24, from the offline session while the Google after queue runs (log below). `main` = `add7e05` before this PR.
 
 ## Now
 
@@ -43,29 +43,36 @@ frozen").
   (2.19 on agent tokens alone, the figure for the judge-free safety runs). Calibration result in the approvals table
   below.
 
-**After-side queue ready, not started** (last look 2026-11-24 08:22 EST). `scripts/google_after_queue.ps1` (PR #122,
+**After-side queue running** since 2026-11-24 08:43 EST: A1's first attempt ended 09:09 (63/114 graded, 186,164 billable
+of 738,000), then it waits for quota (last look 11:20 EST). One known weakness: it may read NOT SHOWN if a warning lands
+after the gate's word. `scripts/google_after_queue.ps1` (PR #122,
 fixed in PR #129) runs A1, A2, A3, then A4 only if `scripts/google_gate.py` prints PASS for G1 and G2 (plan 4.2), with
 the 20k margin, from a frozen copy at `C:\kestrel-queue\` (**made from `27a9db9`**, helpers pinned by SHA-256,
 `MANIFEST.txt`). Same code and tag as the before side, with `--tools google` (plan 4, "Sides": no separate after tag).
 **A1-A4 approved by the owner 2026-11-23** (caps 738,000 / 458,000 / 60,000 / 637,000, 1.89M in all; approvals table).
-**A1 must start by 2026-11-29 23:36:45 EST** (the stricter drift reading is kept). Its two starts on 11-24 (07:42 and
+A1 started inside plan 4.3's 7 days (2026-11-29 23:36:45 EST). The two starts before it on 11-24 (07:42 and
 07:49) failed at the first helper call, with no Groq calls; after the fix its `-DryRun` passes from `..\kestrel-runs`
 in Windows PowerShell 5.1 and PowerShell 7. Before side backed up to `C:\kestrel-backup6-11-23\`.
 
 **Google verdict script in `main`** (PR #128, `4c9def3`): `scripts/google_verdict.py`, the frozen rule of plan section 4.
 
-**Data step on `feature/kestrel-data-numbers`** (`adf1586`, no PR; replaces `feature/kestrel-data`, archived as the tag
+**Data step on `feature/kestrel-data-numbers`** (`3fa2379`, rebased on `27a9db9`, no PR; replaces `feature/kestrel-data`, archived as the tag
 `archive/feature/kestrel-data`, `28819af`, branch deleted 11-23): both opt-in tool sets side by side (`--tools google
 data`), safety split s1.2, the verdict (`scripts/rca_verdict.py`), the R1/R2 gate (`scripts/data_gate.py`), the run queue
 (`scripts/data_queue.ps1`) and the estimates (`scripts/data_estimate.py`: ~1.95M planning, against the design's
-~1.29M; no approval lines). 2043 tests pass; fingerprints unchanged (default `8a8174d8f17d`, `--tools google`
-`b76a43765a4f`, `--tools data` `05beb66a49d3`). Its queue still needs PR #129's stderr fix and the new `groq_quota.py`
-pin, at its next rebase.
+~1.29M; no approval lines). 2058 tests pass; fingerprints unchanged (default `8a8174d8f17d`, `--tools google`
+`b76a43765a4f`, `--tools data` `05beb66a49d3`). Known issues numbered 103-111; PR #129's queue fixes
+ported. Ready to open as the data build PR (~64k) after the Google after side, with an approval line.
 
-**Notifications stage 2 on `feature/notify-calendar`** (`7b4ccb2`, no PR): calendar alerts, rules only, the notifier's own
+**Batched fixes on `fix/batch-after-google`** (`6faeba2`, no PR): `check_results.py` (opt-in tasks left out), `--token-budget`
+(no task starts past it), the card's "Why:" wording (known issue 97), the Google server's log at WARNING (94, partly).
+1731 tests pass, fingerprints and `tiers-v2.2` unchanged. Its PR touches `src/kestrel/`: it waits for the Google after side
+and an approval line. 97 and the two token-budget issues close when it merges; 94 stays open.
+
+**Notifications stage 2 on `feature/notify-calendar`** (`2efc480`, rebased on `27a9db9`, no PR): calendar alerts, rules only, the notifier's own
 read-only Google sign-in. 11-24: it no longer refuses its own token folder because of the server's `oauth_states.json`.
 Next: the owner's phone test (demo provider, no Groq). Its PR waits for the Google after side (it touches
-`src/kestrel/`) and has conflicts with `main` in `docs/design-decisions.md` and `docs/known-issues.md`.
+`src/kestrel/`).
 
 **Open:**
 - **Notifications stage 2** is built on its branch (above); **stage 3** (email triage) comes with the Google step. Their
@@ -83,13 +90,12 @@ Next: the owner's phone test (demo provider, no Groq). Its PR waits for the Goog
   by default); 4 speak mode on tap. Guardrails: read-only tools only in presentation mode; room speech untrusted and
   tainting; every number checked against a tool result; below medium confidence -> "needs checking"; parking lot +
   post-meeting summary; recording-consent note. Each stage pre-registered and measured.
-- **Merged branches not yet deleted:** 16 on `origin` (Branches, below), plus the branches of PRs #105-#114.
+- **Merged branches not yet deleted:** 13 on `origin` (Branches, below), plus the branches of PRs #105-#114 and #130.
 
-**To do, owner** (item 0 spends quota, approved 11-23; nothing else does):
+**To do, owner** (nothing here spends quota beyond the approved A1-A4):
 
-0. **Start the Google after queue** by 2026-11-29 23:36:45 EST: `& C:\kestrel-queue\google_after_queue.ps1` from a
-   standalone PowerShell window in `..\kestrel-runs`, on mains power. `C:\kestrel-queue-failed-2026-11-24\` (the old copy)
-   and `C:\kestrel-queue-pr129\` (a test copy) can be deleted; never run them.
+0. **Keep the Google after queue's window open**, the laptop on mains power and awake. `C:\kestrel-queue-failed-2026-11-24\`
+   (the old copy) and `C:\kestrel-queue-pr129\` (a test copy) can be deleted; never run them.
 1. **Fork-PR approval** (checklist 6.3): the repo setting is still `first_time_contributors` (read 11-21), not
    "all outside collaborators"; change it in Settings, Actions, General, or keep it (your call).
 2. **Off-laptop backup copy:** `C:\kestrel-backup\` is on the same disk; copy it to a USB drive or private cloud
@@ -97,6 +103,15 @@ Next: the owner's phone test (demo provider, no Groq). Its PR waits for the Goog
 3. **Release checklist section 7** (`docs/release-checklist.md`): the stranger check in a private window, publish
    blog post 2 (`docs/blog/02-distillation.md`), and the YouTube description update.
 4. **Restore the laptop's sleep setting** once the Google runs are done.
+
+## 2026-11-24 (offline session while the queue runs; no Groq, no model calls)
+
+1. **PR #130 merged** (`add7e05`, docs only). **Deleted** with the owner's OK, each fully in `main`:
+   `fix/fetch-private-block`, `fix/voice-console-week`, `phase4/integration`.
+2. **`fix/batch-after-google`** (`6faeba2`) and **`feature/kestrel-data-numbers`** (`3fa2379`) pushed, no PR, branch CI green,
+   Groq not run. **`feature/notify-calendar`** rebased (`2efc480`, force-pushed over `7b4ccb2`); the phone test is still open.
+3. **Found:** the queue reads the gate's word from the last captured line, stderr included, so a warning printed after it
+   would read as NOT SHOWN (it stops the queue; it can't start A4 wrongly). Fixed in the data queue.
 
 ## 2026-11-24 (after-queue fix session; no Groq, no model calls)
 
@@ -364,12 +379,12 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 
 | Branch | Holds | Next |
 |---|---|---|
-| `main` | everything merged, up to PR #129 (`27a9db9`; tag `v1.0.0` on `c8b72e5`, tag `google-before` on `74c9892`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
-| `feature/kestrel-data-numbers` | kestrel-data RCA tools, rca split, s1.2 data tasks, verdict, gate, queue, estimates (`adf1586`) | rebase on `main` (PR #129's fixes in its queue); the PR waits until after the Google step's after side |
-| `feature/notify-calendar` | notifications stage 2, calendar alerts (`7b4ccb2`) | the owner's phone test; the PR waits until after the Google step's after side |
-| `scripts/google-before-queue` | `scripts/google_before_queue.ps1` (PR #115, green, KestrelBench not run) | merge (scripts only) |
+| `main` | everything merged, up to PR #130 (`add7e05`; tag `v1.0.0` on `c8b72e5`, tag `google-before` on `74c9892`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
+| `feature/kestrel-data-numbers` | kestrel-data RCA tools, rca split, s1.2 data tasks, verdict, gate, queue, estimates (`3fa2379`) | open as the data build PR after the Google step's after side, with an approval line |
+| `fix/batch-after-google` | four fixes (`6faeba2`) | the PR waits until after the Google step's after side, with an approval line |
+| `feature/notify-calendar` | notifications stage 2, calendar alerts (`2efc480`) | the owner's phone test; the PR waits until after the Google step's after side |
 | `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; decision 35, accepted 2026-11-17) | merged by squash 2026-11-17 (`098c0a1`); deleted on `origin` 2026-11-17 |
-| merged, not deleted (16): `release/v1.0` (#98, squash), `docs/readme-architecture` (#99, squash), `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
+| merged, not deleted (13): `release/v1.0` (#98, squash), `docs/readme-architecture` (#99, squash), `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
 
 **Archived as tags, branches deleted (2026-11-08, owner's OK).** Each tag sits at the branch's last commit:
 
