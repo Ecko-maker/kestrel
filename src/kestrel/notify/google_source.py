@@ -25,9 +25,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from kestrel.google_tools import ADDRESS, HIDDEN, PIN, SIGN_IN_SCOPES, mask, model_schema, pinned
+from kestrel.google_tools import ADDRESS, HIDDEN, PIN, SIGN_IN_LINK, SIGN_IN_SCOPES, mask, model_schema, pinned
 from kestrel.notify.settings import NotifyConfigError
 from kestrel.notify.store import iso
+from kestrel.tools import ExternalToolError
 
 SERVER = "google-notifier"  # its log: logs/mcp-google-notifier.log (git-ignored; workspace-mcp logs the address)
 TOOL = "get_events"
@@ -40,6 +41,26 @@ PAGE_SIZE = 50
 MAX_PAGES = 10
 STATES_FILE = "oauth_states.json"  # written by workspace-mcp when a sign-in starts; its own store skips it too
 GOOGLE_LINES = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "USER_GOOGLE_EMAIL")
+
+
+SIGN_IN = "**ACTION REQUIRED: Google Authentication Needed"  # how workspace-mcp 2.3.0's sign-in request begins
+SERVER_OPENED = "automatically opened in your browser"  # its words when it opened the link itself
+HINTS = (  # words in the server's error -> what is shown instead of it
+    (
+        ("accessNotConfigured", "SERVICE_DISABLED", "has not been used in project", "is not enabled"),
+        "the Google Calendar API isn't enabled for the project, docs/google.md",
+    ),
+    (
+        ("callback server unavailable", "already in use"),
+        "its localhost sign-in page couldn't start: stop other Kestrel runs with Google tools and try again",
+    ),
+)
+
+
+@dataclass
+class SignInLink:
+    url: str = field(repr=False)  # holds the client ID and the address: never printed or logged
+    server_opened: bool
 
 
 class SourceError(RuntimeError):
@@ -164,6 +185,7 @@ class CalendarSource:
         self.target = target
         self.log_dir = log_dir
         self.manager: Any = None
+        self.sign_in_link: SignInLink | None = None  # from the last sign-in request
 
     def start(self) -> None:
         from mcp import StdioServerParameters
@@ -204,11 +226,26 @@ class CalendarSource:
             raise SourceError("the notifier's Google server isn't started")
         full = {k: v for k, v in args.items() if k != HIDDEN} | {HIDDEN: self.address}
         try:
-            return mask(self.manager.call(SERVER, TOOL, full), self.address)
+            text = self.manager.call(SERVER, TOOL, full)
+        except ExternalToolError as e:  # where the sign-in request arrives; event text never does
+            text = str(e)
+            if SIGN_IN not in text:
+                why = next((hint for words, hint in HINTS if any(w in text for w in words)), "its text is not shown")
+                raise SourceError(f"the server reported an error ({why})") from None
+            self._see_sign_in(text)
         except Exception as e:
-            raise SourceError(mask(f"{type(e).__name__}: {e}", self.address)[:300]) from None
+            raise SourceError(f"the server didn't answer ({type(e).__name__})") from None
+        else:
+            if text.startswith(SIGN_IN):  # not just anywhere: an event's text could imitate it
+                self._see_sign_in(text)
+        return mask(text, self.address)
+
+    def _see_sign_in(self, text: str) -> None:
+        m = SIGN_IN_LINK.search(text)
+        self.sign_in_link = SignInLink(m.group(0).rstrip(".,;"), SERVER_OPENED in text) if m else None
 
     def close(self) -> None:
+        self.sign_in_link = None
         manager, self.manager = self.manager, None  # safe to call twice (the watcher and the bot's shutdown)
         if manager is not None:
             manager.close()

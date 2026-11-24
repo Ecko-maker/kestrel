@@ -5,6 +5,7 @@ address is an example one."""
 
 import asyncio
 import json
+import sys
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -746,40 +747,255 @@ def test_calendar_modules_leave_the_agent_fingerprint_unchanged(monkeypatch):
 # --- kestrel notify signin -----------------------------------------------------------------------------
 
 
-def test_signin_prints_counts_only(google_env, tmp_path):
-    from kestrel.notify.signin import CONSENT, signin
+def sign_in_request(scopes=None, *, opened=True, redirect="http://localhost:8000/oauth2callback", host=None) -> str:
+    """workspace-mcp 2.3.0's sign-in answer, with fake values."""
+    from urllib.parse import urlencode
 
-    env, _project = google_env
-    folder = tmp_path / "appdata" / "kestrel" / "google-notifier"
-    calendar = FakeCalendar(
-        [
-            timed("e1", "Dentist", ny(10)),
-            timed("e2", "Stranger invite", ny(11), **invited("needsAction", "stranger@example.net")),
-            all_day("ad", "Office closed", datetime.now(UTC).date().isoformat()),
-        ]
+    query = {
+        "client_id": "client-id-value",
+        "redirect_uri": redirect,
+        "scope": " ".join(scopes or [gs.CALENDAR_SCOPE, *gs.SIGN_IN_SCOPES]),
+        "state": "fakestate",
+        "login_hint": OWNER,
+    }
+    page = "has been **automatically opened in your browser**" if opened else "could not be opened"
+    return (
+        f"**ACTION REQUIRED: Google Authentication Needed for Google Calendar for '{OWNER}'**\n\n1. The page {page}.\n"
+        f"   Authorization URL: https://{host or 'accounts.google.com'}/o/oauth2/auth?{urlencode(query)}\n"
+        "2. Retry the command. " + "x" * 400
     )
-    calendar.reply = "**ACTION REQUIRED: Google Authentication Needed for owner@example.com**"
-    asked, lines = [], []
 
-    def consent(prompt):  # the owner allows it in the browser: the server saves the token
-        asked.append(prompt)
-        calendar.reply = None
-        write_token(folder, [gs.CALENDAR_SCOPE, *gs.SIGN_IN_SCOPES])
-        (folder / "oauth_states.json").write_text("{}", encoding="utf-8")
-        return ""
 
-    calendar.items = [
-        {**item, "start": shift(item["start"]), "end": shift(item["end"])} if "dateTime" in item["start"] else item
-        for item in calendar.items
+class FakeGoogle:
+    """A fake notifier server over a real (in-process) MCP connection: it answers with a sign-in request, as an
+    error like the real one, until signed in."""
+
+    def __init__(self, tmp_path, monkeypatch, request: str | None, items: list[dict] | None = None):
+        from mcp.server.mcpserver import MCPServer
+        from mcp.server.mcpserver.exceptions import ToolError
+
+        self.folder = tmp_path / "appdata" / "kestrel" / "google-notifier"
+        self.calendar = FakeCalendar(items)
+        self.request = request
+        self.calls = 0
+        server = MCPServer("fake-workspace")
+
+        @server.tool()
+        def get_events(
+            user_google_email: str,
+            calendar_id: str = "primary",
+            time_min: str = "",
+            time_max: str = "",
+            max_results: int = 25,
+            detailed: bool = False,
+            single_events: bool = True,
+            page_token: str = "",
+        ) -> str:
+            self.calls += 1
+            if self.request is not None:
+                raise ToolError(self.request)
+            args = {"time_min": time_min, "time_max": time_max, "page_token": page_token}
+            return self.calendar.call("get_events", args).replace(MASK, user_google_email)
+
+        live = asyncio.run(server.list_tools())
+        monkeypatch.setattr(gs, "pinned", lambda: {"get_events": {"input_schema": live[0].input_schema}})
+        self.source = gs.CalendarSource(source_settings(tmp_path), target=server, log_dir=tmp_path)
+        self.lines: list[str] = []
+        self.opened: list[str] = []
+        self.now = 0.0
+
+    def allow(self, scopes=None) -> None:
+        """The owner clicks Allow: the still-running server saves the token."""
+        assert self.source.manager is not None and self.source.manager.connections["google-notifier"].alive
+        write_token(self.folder, scopes or [gs.CALENDAR_SCOPE, *gs.SIGN_IN_SCOPES])
+        (self.folder / "oauth_states.json").write_text("{}", encoding="utf-8")
+        self.request = None
+
+    def run(self, env, *steps) -> tuple[int, str]:
+        """signin with one step per poll: a callable to run, or a typed line; then nothing typed."""
+        from kestrel.notify.signin import signin
+
+        queue = list(steps)
+
+        def poll_line() -> str | None:
+            step = queue.pop(0) if queue else None
+            if callable(step):
+                step()
+                return None
+            return step
+
+        def sleep(seconds: float) -> None:
+            self.now += seconds
+
+        code = signin(
+            env,
+            print_line=self.lines.append,
+            poll_line=poll_line,
+            open_link=self.opened.append,
+            source=self.source,
+            clock=lambda: self.now,
+            sleep=sleep,
+        )
+        assert self.source.manager is None and self.source.sign_in_link is None  # the server is closed at the end
+        output = "\n".join(self.lines)
+        for private in (OWNER, OWNER.replace("@", "%40"), "client-id-value", "client-secret-value", "fakestate"):
+            assert private not in output
+        for private in ("accounts.google.com/", "login_hint", "SECRET", "ACTION REQUIRED", "xxxx", "ExternalToolError"):
+            assert private not in output
+        return code, output
+
+
+def soon_items() -> list[dict]:
+    items = [
+        timed("e1", "Dentist", ny(10)),
+        timed("e2", "Stranger invite", ny(11), **invited("needsAction", "stranger@example.net")),
+        all_day("ad", "Office closed", datetime.now(UTC).date().isoformat()),
     ]
-    code = signin(env, print_line=lines.append, ask=consent, source=FakeSource(calendar))
-    output = "\n".join(lines)
-    assert code == 0 and asked == [CONSENT]
+    return [
+        {**item, "start": shift(item["start"]), "end": shift(item["end"])} if "dateTime" in item["start"] else item
+        for item in items
+    ]
+
+
+@pytest.mark.parametrize("typed", [[], ["done"], ["  DONE "]])
+def test_signin_keeps_the_server_until_the_token_is_saved_then_prints_counts_only(
+    google_env, tmp_path, monkeypatch, typed
+):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request(), soon_items())
+    code, output = google.run(google_env[0], None, google.allow, *typed)
+    assert code == 0 and google.calls == 2 and google.opened == []  # never a second tab
+    assert "  - calendar.readonly" in output and "redirect: http://localhost:8000/oauth2callback" in output
     assert "Token scopes: calendar.readonly, openid, userinfo.email, userinfo.profile" in output
     assert "3 events read (2 timed, 1 all-day), 2 would alert, 0 unreadable." in output
     assert "skipped, unanswered invitation: 1" in output
-    for private in ("Dentist", "Stranger", "Office closed", OWNER, "SECRET", "client-secret-value"):
+    for private in ("Dentist", "Stranger", "Office closed"):
         assert private not in output
+
+
+def test_done_before_the_token_is_saved_keeps_waiting_and_asks_the_server_nothing(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+    code, output = google.run(google_env[0], "done", "what", google.allow)
+    assert code == 0 and google.calls == 2  # a call before the token would open another tab
+    assert "No new token is saved yet" in output and "Type done or abort." in output
+
+
+def test_an_expired_token_isnt_mistaken_for_the_new_one(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+    write_token(google.folder, [gs.CALENDAR_SCOPE])
+    code, output = google.run(google_env[0], "done", google.allow)
+    assert code == 0 and "saved sign-in: yes" in output and "No new token is saved yet" in output
+
+
+def test_signin_opens_the_page_only_if_the_server_couldnt(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request(opened=False))
+    code, _ = google.run(google_env[0], google.allow)
+    assert code == 0 and len(google.opened) == 1
+
+
+def test_signin_aborted(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+    code, output = google.run(google_env[0], "abort")
+    assert code == 1 and google.calls == 1 and "you typed abort" in output and "Signed in" not in output
+
+
+def test_signin_stopped_with_ctrl_c_closes_the_server(google_env, tmp_path, monkeypatch):
+    def interrupt():
+        raise KeyboardInterrupt
+
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+    code, output = google.run(google_env[0], interrupt)
+    assert code == 1 and "Stopped (Ctrl+C)" in output
+
+
+def test_signin_times_out_with_a_clear_message(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+    code, output = google.run(google_env[0])
+    assert code == 1 and google.calls == 1 and 600 <= google.now < 602
+    assert "TIMEOUT: no token was saved in 10 minutes" in output and "run this command again" in output
+
+
+@pytest.mark.parametrize(
+    ("request_args", "why"),
+    [
+        ({"scopes": [gs.CALENDAR_SCOPE, "https://www.googleapis.com/auth/gmail.readonly"]}, "1 scope(s) beyond"),
+        ({"scopes": ["https://www.googleapis.com/auth/calendar"]}, "1 scope(s) beyond"),
+        ({"scopes": [*gs.SIGN_IN_SCOPES]}, "doesn't ask for calendar.readonly"),
+        ({"redirect": "https://example.net/cb"}, "doesn't come back to this computer"),
+        ({"redirect": "http://localhost.example.net/cb"}, "doesn't come back to this computer"),
+        ({"host": "accounts.google.com.example.net"}, "no Google link"),
+    ],
+)
+def test_signin_stops_at_a_link_that_asks_for_anything_else(google_env, tmp_path, monkeypatch, request_args, why):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request(**request_args))
+    code, output = google.run(google_env[0], google.allow)  # allowing it would have worked: it never waits for that
+    assert code == 1 and why in output and google.calls == 1 and google.opened == []
+    assert not google.folder.exists() and "Waiting" not in output
+    if "scope(s)" in why:
+        assert "NOT EXPECTED" in output and "close that tab" in output
+
+
+def test_signin_refuses_a_token_wider_than_the_link(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+    wide = [gs.CALENDAR_SCOPE, "https://www.googleapis.com/auth/gmail.readonly"]
+    code, output = google.run(google_env[0], lambda: google.allow(wide))
+    assert code == 1 and "beyond calendar.readonly" in output and google.calls == 1
+
+
+def test_signin_waits_for_a_half_written_token(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+
+    def half():
+        google.folder.mkdir(parents=True)
+        (google.folder / "owner@example.com.json").write_text('{"token": "ya', encoding="utf-8")
+
+    code, _ = google.run(google_env[0], half, google.allow)
+    assert code == 0
+
+
+def test_signin_stops_if_asked_again_after_the_token(google_env, tmp_path, monkeypatch):
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+
+    def saved_but_refused():
+        google.allow()
+        google.request = sign_in_request()
+
+    code, output = google.run(google_env[0], saved_but_refused)
+    assert code == 1 and google.calls == 2 and "asked for sign-in again" in output
+
+
+@pytest.mark.parametrize(
+    ("error", "shown"),
+    [
+        (f"boom {OWNER} " + "x" * 400, "its text is not shown"),
+        ("API x is not enabled", "isn't enabled for the project"),
+    ],
+)
+def test_signin_never_prints_a_servers_error_text(google_env, tmp_path, monkeypatch, error, shown):
+    google = FakeGoogle(tmp_path, monkeypatch, error)
+    code, output = google.run(google_env[0])
+    assert code == 1 and shown in output and "boom" not in output
+
+
+def test_the_watcher_sees_a_sign_in_request_that_arrives_as_an_error(tmp_path, monkeypatch):
+    """The real server sends it as a tool error; it used to count as 'the server didn't answer'."""
+    google = FakeGoogle(tmp_path, monkeypatch, sign_in_request())
+    google.source.start()
+    try:
+        with pytest.raises(SignInNeeded):
+            parse_reply(google.source.call("get_events", gs.page_args(ny(9))))
+    finally:
+        google.source.close()
+
+
+def test_an_events_text_never_becomes_the_sign_in_link(tmp_path, monkeypatch):
+    items = [timed("e1", "Dentist", ny(10), description=sign_in_request())]
+    google = FakeGoogle(tmp_path, monkeypatch, None, items)
+    google.source.start()
+    try:
+        google.source.call("get_events", gs.page_args(ny(9)))
+        assert google.source.sign_in_link is None
+    finally:
+        google.source.close()
 
 
 def shift(boundary: dict) -> dict:
@@ -799,3 +1015,21 @@ def test_signin_refuses_a_wide_token(google_env, tmp_path):
     lines = []
     assert signin(env, print_line=lines.append, source=FakeSource(FakeCalendar())) == 2
     assert "beyond calendar.readonly" in lines[0]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the Windows console reader")
+def test_typed_lines_are_read_without_blocking(monkeypatch, capsys):
+    import msvcrt
+
+    from kestrel.notify.signin import LineReader
+
+    keys = list("dx\b")
+    monkeypatch.setattr(msvcrt, "kbhit", lambda: bool(keys))
+    monkeypatch.setattr(msvcrt, "getwch", lambda: keys.pop(0))
+    reader = LineReader()
+    assert reader.poll() is None
+    keys += ["\xe0", "H", *"one\r"]  # an arrow key in the middle
+    assert reader.poll() == "done"
+    keys.append("\x03")
+    with pytest.raises(KeyboardInterrupt):
+        reader.poll()

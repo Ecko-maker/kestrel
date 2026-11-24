@@ -152,7 +152,9 @@ A message before each appointment in your primary Google Calendar, e.g.
    from the agent's: the notifier has its own token folder (`%LOCALAPPDATA%\kestrel\google-notifier`) and its own
    server, started with `--tools calendar --read-only`, so its token can only view your calendars. A browser opens
    with Google's consent screen. It must ask only to view your calendars (and your basic profile); if it asks for
-   more, stop. Allow, then press Enter in the terminal. The command prints the token's scopes and counts for the
+   more, type abort in the terminal. Leave the terminal open: the command keeps the notifier's server running to
+   receive Google's answer, checks the link's scopes first, and continues by itself once the token is saved
+   (or stops after 10 minutes). Use the tab the server opened, not a second one. The command prints the token's scopes and counts for the
    next 24 hours (events read, how many would alert, skipped per rule), never a title.
 4. Start `kestrel telegram` as usual. Its first lines say `Calendar alerts on: ...`.
 
