@@ -50,7 +50,7 @@ uv run kestrel bench run --split distill --dry-run --judge none   # what would r
 **Free-tier budget:** Groq's free tier allows gpt-oss-120b 1,000 requests, 8,000 tokens per minute and **200,000 tokens per day**, but [cached input tokens don't count](https://console.groq.com/docs/rate-limits). A full run measured ~310,000 raw agent tokens (~3,100 per task), yet most of each request is the same system prompt and tool list, which Groq serves from cache (82% of the prompt in a sample call). Results report both raw and billable (uncached) tokens. To stay safe, pass a budget in billable tokens:
 
 ```powershell
-uv run kestrel bench run --token-budget 180000                       # stops starting tasks at the budget
+uv run kestrel bench run --token-budget 180000                       # starts no task expected to pass the budget
 uv run kestrel bench run --resume evals/results/<file>.json          # next day: finishes skipped/errored tasks
 uv run kestrel bench run --shard 1/2                                 # or split the suite across two days
 ```

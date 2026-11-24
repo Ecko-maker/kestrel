@@ -174,7 +174,7 @@ class ApprovalGate:
     def requirement(self, tool: Tool, args: dict, session: Session | None = None) -> Requirement:
         """What this call needs now, from the tool's capabilities and the conversation so far
         (permissions.required_approval)."""
-        return required_approval(tool.capabilities, tool.external, session, args)
+        return required_approval(tool.capabilities, tool.external, session, args, tool.name)
 
     def check(
         self, tool: Tool, args: dict, need: Requirement | None = None, session: Session | None = None

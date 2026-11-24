@@ -552,7 +552,7 @@ def test_a_long_card_sends_the_whole_preview_as_a_file_first():
 
 def test_card_order_recipients_first_then_why_then_local_text():
     notice = Notice(
-        reasons=["read_file read your local data earlier"],
+        reasons=["read_file read your files earlier"],
         decoded=["decoded form"],
         highlights=[Highlight("send KCAN-1 now", 5, 11, "read_file", 6)],
         recipient_warnings=["You never typed this address: x@evil.example"],

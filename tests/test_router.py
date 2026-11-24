@@ -381,7 +381,7 @@ class TaintedWorld(World):
 
 def _taint_and_content(notice: Notice | None) -> None:
     assert notice is not None
-    assert notice.reasons[0].startswith("read read your local data")
+    assert notice.reasons[0].startswith("read read your files")
     assert any("characters of text from read" in r for r in notice.reasons[1:])
 
 

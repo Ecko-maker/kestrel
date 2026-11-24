@@ -4,8 +4,10 @@ from the model, and the bench's stubs. No network, no Google, no model calls."""
 
 import argparse
 import json
+import os
 import shutil
 import sqlite3
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import quote, urlencode
@@ -531,3 +533,44 @@ def test_trace_content_off_works_with_the_google_tools(tmp_path, monkeypatch):
     finally:
         conn.close()
     assert len(traces) == 1 and traces[0]["google"] is True and not traces[0]["messages"]
+
+
+# --- the server's log level (known issue #94, option 1) -----------------------------------------------------
+
+
+def test_the_google_server_logs_at_warning_unless_told_otherwise(tmp_path):
+    def level(**over):
+        return google_tools.load_settings(env(**over), project=tmp_path / "p").env["WORKSPACE_MCP_LOG_LEVEL"]
+
+    assert level() == level(KESTREL_GOOGLE_LOG_LEVEL=" ") == "WARNING"
+    assert level(KESTREL_GOOGLE_LOG_LEVEL="info") == "INFO" and level(KESTREL_GOOGLE_LOG_LEVEL="ERROR") == "ERROR"
+    for bad in ("DEBUG", "verbose"):  # DEBUG lines hold what was searched
+        with pytest.raises(google_tools.GoogleConfigError, match="KESTREL_GOOGLE_LOG_LEVEL"):
+            level(KESTREL_GOOGLE_LOG_LEVEL=bad)
+    described = json.dumps(google_tools.describe())
+    assert "LOG_LEVEL" not in described and "WARNING" not in described  # no part of the fingerprint
+
+
+def test_at_that_level_the_address_at_info_is_not_written(tmp_path):
+    """A child process that configures logging as workspace-mcp 2.3.0's main.py does, with the environment Kestrel
+    gives the server and stderr sent to a file as mcp_client does."""
+    import subprocess
+
+    code = (
+        "import logging, os\n"
+        "level = getattr(logging, os.environ['WORKSPACE_MCP_LOG_LEVEL'])\n"
+        "logging.basicConfig(level=logging.INFO)\n"
+        "logging.getLogger().setLevel(level)\n"
+        f"logging.getLogger('auth').info('call for {ADDRESS}')\n"
+        "logging.getLogger('auth').warning('kept')\n"
+    )
+
+    def written(**over):
+        settings = google_tools.load_settings(env(**over), project=tmp_path / "p")
+        log = tmp_path / "log.txt"
+        with log.open("w", encoding="utf-8") as f:
+            subprocess.run([sys.executable, "-c", code], env={**os.environ, **settings.env}, stderr=f, check=True)
+        return log.read_text(encoding="utf-8")
+
+    assert ADDRESS not in written() and "kept" in written()
+    assert ADDRESS in written(KESTREL_GOOGLE_LOG_LEVEL="INFO")

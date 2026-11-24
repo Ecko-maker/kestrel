@@ -85,7 +85,7 @@ def test_an_escalated_card_says_why_shows_the_decoded_url_and_highlights_the_loc
     )
     notice = approver.notices[0]
     assert notice is not None
-    assert notice.reasons[0].startswith("read read your local data")
+    assert notice.reasons[0].startswith("read read your files")
     assert "characters of text from read (decoded)" in notice.reasons[1]
     assert any(f"code {CODE}" in d for d in notice.decoded)  # e3: readable at a glance
     h = notice.highlights[0]
@@ -159,13 +159,13 @@ def test_the_terminal_shows_the_notice_before_the_preview():
     out: list[str] = []
     approver = TerminalApprover(input_fn=lambda prompt: "r", print_fn=lambda *a: out.append(" ".join(map(str, a))))
     notice = Notice(
-        reasons=["read_file read your local data"],
+        reasons=["read_file read your files"],
         decoded=["a b"],
         recipient_warnings=["You never typed this address: x@y"],
     )
     approver.review("web_search", {"query": "q"}, "PREVIEW", notice=notice)
     text = "\n".join(out)
-    assert text.index("Why: read_file read your local data") < text.index("PREVIEW")
+    assert text.index("Why: read_file read your files") < text.index("PREVIEW")
     assert "Decoded:" in text and "You never typed this address: x@y" in text
 
 

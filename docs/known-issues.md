@@ -551,6 +551,7 @@ On 2026-11-02 one of the two Python (windows-latest) jobs of docs-only PR #51 (r
 ### KI-pending-budget-checked-before-task. `--token-budget` is checked before each task, so the last task can overrun it
 **Labels:** `evals`, `low`
 `bench/runner.py` stops only when the tokens already spent reach the budget, so a task that starts under the budget runs to its end: section 9's run 4 (routed main suite, 2026-11-08) spent 9,941 against a budget of 9,589, an overrun of 352 (counted the KI-pending-budget-counts-local-tokens way).
+**Same fix as KI-pending-token-budget-between-tasks** (`fix/batch-after-google`, 2026-11-24).
 **Done when:** the owner decides to keep the overrun (bounded by one task) or to reserve a task's worst case before starting it, with a test.
 
 ### KI-pending-routed-resume-fingerprint. A routed run started with `--model` can't resume
@@ -716,6 +717,11 @@ you.
 
 ### 94. The Google server's log contains your address
 **Labels:** `google`, `privacy`, `low`
+**Option 1 built on `fix/batch-after-google`** (2026-11-24; stays open for option 2): the agent's server starts with
+`WORKSPACE_MCP_LOG_LEVEL=WARNING` (`KESTREL_GOOGLE_LOG_LEVEL=INFO` to debug). WARNING, ERROR and traceback lines
+can still hold the address, and lines already written stay. **Found the same day:** workspace-mcp also writes
+`~/.google_workspace_mcp/logs/mcp_server_debug.log`, outside the project (its root level is the same setting, so
+INFO lines stop there too). The notifier's server (`feature/notify-calendar`) needs the same line.
 **The issue:** workspace-mcp logs `user_google_email` on every call. Its stderr goes to `logs/mcp-google.log`
 (git-ignored, local only).
 **Why Kestrel can't filter it:** the server writes to that file through its process handle.
@@ -789,6 +795,10 @@ detection misses it too, as before the fix (`tests/test_egress.py::test_a_glued_
 
 ### 97. A card's "Why:" calls Gmail and Calendar results "your local data"
 **Labels:** `approval`, `cards`, `google`, `low`
+**Fixed on `fix/batch-after-google`** (2026-11-24; closes when it merges). The wording below, plus: a read by a kestrel-data tool
+says "your datasets"; another MCP server's read keeps "your local data" (it isn't always files); a Google call after a
+read of something else keeps that read's line, because its query does go to Google. Display only: same `escalated_by`,
+`tiers-v2.2`, fingerprint `8a8174d8f17d`.
 **The issue:** after a Google read taints the conversation, a later network call's card says
 `Why: google__search_gmail_messages read your local data earlier in this conversation, and this call sends data
 out` (`permissions.required_approval`). The text was written for `read_file`. Your mail and calendar aren't
@@ -885,6 +895,13 @@ noted in `evals/CHANGELOG.md`, or the owner accepts the warning as it is.
   one task (20,000, at least the most expensive single task measured) and never starts an attempt with a budget
   under it, or while free quota reads 0 or less.
 - Not fixed in the runner now: a `src/kestrel/` change starts a Groq CI run on its PR.
+
+**Fixed on `fix/batch-after-google`** (2026-11-24; closes when it merges): the runner starts no task if `spent +
+expected > token_budget`, and then skips the rest, as before. Expected is the most that task cost in
+`--estimate-from`, `--reuse`, `--resume`, the pinned run 2 or earlier in the same command, else the dry run's
+average. **What remains:** a started task runs to its end, so one that costs more than expected still passes the
+budget by the difference; an opt-in tool set costs more than the pinned run (schema factor 2.07 for Google), so
+pass `--estimate-from` a run with the same tools. Stopping inside a task would change what is measured.
 
 **Done when:** the runner checks the next task's estimated cost before starting it (`spent + estimate >
 token_budget` → skipped, and a first task that alone exceeds the budget isn't started). Measured as a normal PR

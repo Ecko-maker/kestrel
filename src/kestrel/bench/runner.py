@@ -321,6 +321,7 @@ def run_suite(
     on_result: Callable[[TaskResult], None] | None = None,
     expected_provider: str | None = None,
     token_budget: int | None = None,
+    costs: dict[str, int] | None = None,
     repeats: list[int] | None = None,
     stop_after_errors: int | None = None,
     setup: Setup | None = None,
@@ -331,7 +332,10 @@ def run_suite(
     """Run tasks in order (repeats[i] is task i's repeat number). The rest are marked "skipped", to
     resume later, once either:
     - token_budget: the agent + judge tokens spent (excluding cached input, which Groq doesn't
-      rate-limit) reach it, since free tiers cap tokens per day;
+      rate-limit) plus the next task's expected cost would pass it, since free tiers cap tokens per day.
+      The expected cost is costs[task id] (the CLI passes measured costs), or what the same task cost earlier
+      in this call if that is more. A task already started runs to its end, so one that costs more than
+      expected can still end past the budget, by the difference. Without costs, a first-time task counts as 0;
     - stop_after_errors: that many tasks in a row errored, which almost always means the provider's
       rate limit or an outage; carrying on would only turn the rest into errors too;
     - student_health_limit (routed runs): after HEALTH_MIN_TASKS tasks, the share of turns the router
@@ -342,14 +346,24 @@ def run_suite(
     (task, repeat) again. Its tokens still count toward token_budget: they were spent."""
     results: list[TaskResult] = []
     spent = 0
+    seen: dict[str, int] = {}  # the most a finished run of each task has cost in this call
     dropped = 0  # of spent: tokens of attempts dropped by wait-for-quota
     errors_in_a_row = 0
+    over_budget: str | None = None
     routed_tasks = routed_turns = health_turns = 0
     for i, task in enumerate(tasks):
         repeat = repeats[i] if repeats else 1
         stop = None
-        if token_budget is not None and spent >= token_budget:
-            stop = f"token budget reached ({spent:,} of {token_budget:,})"
+        expected = max((costs or {}).get(task.id, 0), seen.get(task.id, 0))
+        if token_budget is not None and (spent >= token_budget or spent + expected > token_budget):
+            # over_budget stays set: the rest is skipped too, so a partial file is never the cheap tasks only
+            over_budget = over_budget or (
+                f"token budget reached ({spent:,} of {token_budget:,})"
+                if spent >= token_budget
+                else f"token budget reached ({spent:,} of {token_budget:,}; {task.id} is expected to cost {expected:,})"
+            )
+        if over_budget:
+            stop = over_budget
         elif stop_after_errors and errors_in_a_row >= stop_after_errors:
             stop = f"stopped after {errors_in_a_row} errors in a row (likely a rate limit)"
         elif student_unhealthy(routed_tasks, routed_turns, health_turns, student_health_limit):
@@ -381,7 +395,8 @@ def run_suite(
                 if quota is None or wait is None:
                     break
                 dropped += cost
-                if token_budget is not None and spent >= token_budget:  # dropped attempts spend tokens too
+                # dropped attempts spend tokens too
+                if token_budget is not None and (spent >= token_budget or spent + expected > token_budget):
                     stop = (
                         f"token budget reached while waiting for quota ({spent:,} of {token_budget:,}; "
                         f"{dropped:,} spent by dropped attempts)"
@@ -394,6 +409,7 @@ def run_suite(
                 if quota.checkpoint:
                     quota.checkpoint(results)  # resumable if the process dies while it sleeps
                 quota.wait(wait, len(results), task.id, repeat, result.error, cost)
+            seen[task.id] = max(seen.get(task.id, 0), billable_tokens(result))
             errors_in_a_row = errors_in_a_row + 1 if result.status == "error" else 0
             if result.routing:
                 routed_tasks += 1

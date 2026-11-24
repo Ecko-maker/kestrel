@@ -421,7 +421,7 @@ def offline_cli(tmp_path, monkeypatch):
 def test_resume_keeps_finished_tasks_and_runs_the_rest(offline_cli, monkeypatch):
     out = offline_cli / "r.json"
     ids = ["--task", "arith-percent", "--task", "files-contact-email", "--task", "notool-capital"]
-    run_cli(monkeypatch, "--provider", "demo", "--judge", "none", *ids, "--out", str(out), "--token-budget", "1")
+    run_cli(monkeypatch, "--provider", "demo", "--judge", "none", *ids, "--out", str(out), "--token-budget", "2900")
     first = {t["id"]: t["status"] for t in json.loads(out.read_text(encoding="utf-8"))["tasks"]}
     assert list(first.values()).count("skipped") == 2  # the budget stopped after the first task
 

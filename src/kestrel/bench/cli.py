@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -169,8 +170,10 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     run.add_argument(
         "--token-budget",
         type=int,
-        help="start no new task once billable (uncached) agent + judge tokens reach this; the rest are 'skipped' "
-        "(Groq's free tier allows 200,000 tokens/day for gpt-oss-120b)",
+        help="start no task whose expected cost would take billable (uncached) agent + judge tokens past this; "
+        "it and the rest are 'skipped'. Expected = the most that task cost in --estimate-from / --reuse / "
+        "--resume or the pinned run 2, else an average (Groq's free tier allows 200,000 tokens/day for "
+        "gpt-oss-120b)",
     )
     run.add_argument(
         "--stop-after-errors",
@@ -441,14 +444,10 @@ def _estimate(jobs: list[tuple[Task, int]], refs: list[Path]) -> dict[str, int]:
     # those with 0 cached (fully billable in that run). Files from before cache recording have 0
     # everywhere, so only their agent tokens are used.
     measured: dict[str, tuple[dict[str, Any], bool]] = {}
-    for path in refs:
-        rows = _load(path)["tasks"]
-        recorded = any(d.get("cached_tokens", 0) > 0 for d in rows)
-        for d in rows:
-            if d["status"] in REUSABLE and d["tokens"]:
-                best = measured.get(d["id"])
-                if best is None or (recorded and not best[1]):
-                    measured[d["id"]] = (d, recorded)
+    for row, caching in _reference_rows(refs):
+        best = measured.get(row["id"])
+        if best is None or (caching and not best[1]):
+            measured[row["id"]] = (row, caching)
     raw = billable = requests = 0
     for task, _ in jobs:
         d, recorded = measured.get(task.id, (None, False))
@@ -462,6 +461,33 @@ def _estimate(jobs: list[tuple[Task, int]], refs: list[Path]) -> dict[str, int]:
             billable += round((agent + judge_raw) * BILLABLE_SHARE)
         requests += (d["steps"] if d else 3) + (1 if task.rubric else 0)
     return {"raw": raw, "billable": billable, "requests": requests, "measured": sum(t.id in measured for t, _ in jobs)}
+
+
+def _task_costs(tasks: Iterable[Task], refs: list[Path], rows: Iterable[TaskResult] = ()) -> dict[str, int]:
+    """--token-budget's expected billable cost per task: the most it cost in any graded run in these files or rows,
+    so a task that varies isn't started on its cheapest day; else the dry run's average for an unmeasured task."""
+    worst: dict[str, int] = {}
+    measured = [(d["id"], _estimated_billable(d, recorded)) for d, recorded in _reference_rows(refs)]
+    measured += [(r.id, billable_tokens(r)) for r in rows if r.status in REUSABLE and r.tokens]
+    for task_id, cost in measured:
+        worst[task_id] = max(worst.get(task_id, 0), cost)
+    return {t.id: worst[t.id] if t.id in worst else _estimate([(t, 1)], [])["billable"] for t in tasks}
+
+
+def _reference_rows(refs: list[Path]) -> list[tuple[dict[str, Any], bool]]:
+    """Every graded row with tokens, and whether its file records caching (see _estimate)."""
+    found: list[tuple[dict[str, Any], bool]] = []
+    for path in refs:
+        rows = _load(path)["tasks"]
+        recorded = any(d.get("cached_tokens", 0) > 0 for d in rows)
+        found += [(d, recorded) for d in rows if d["status"] in REUSABLE and d["tokens"]]
+    return found
+
+
+def _estimated_billable(d: dict[str, Any], recorded: bool) -> int:
+    if recorded:
+        return billable_tokens(TaskResult(**d))
+    return round((d["tokens"] + d.get("judge_tokens", 0)) * BILLABLE_SHARE)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -597,7 +623,9 @@ def _run(args: argparse.Namespace) -> int:
     all_jobs = [(t, k, u) for u in users for k in range(1, args.repeat + 1) for t in tasks]
     todo = [(t, k, u) for t, k, u in all_jobs if (t.id, k, u) not in previous]
     refs = args.estimate_from or [p for p in (args.reuse, args.resume) if p]
-    est = _estimate([(t, k) for t, k, _ in todo], refs or _default_reference(args.split, args.provider, model))
+    default_ref = _default_reference(args.split, args.provider, model)
+    est = _estimate([(t, k) for t, k, _ in todo], refs or default_ref)
+    cost_refs = list(dict.fromkeys([*refs, *default_ref]))  # all of them: the cap uses each task's worst cost
     times = f"{args.repeat}" + (f" x {len(users)} users ({', '.join(str(u) for u in users)})" if safety else "")
     name = {"safety": "KestrelBench safety split", "distill": f"Distill set {DISTILL_VERSION} (not KestrelBench)"}.get(
         args.split, "KestrelBench"
@@ -743,6 +771,7 @@ def _run(args: argparse.Namespace) -> int:
             on_result=functools.partial(finished_run, user, []) if args.wait_for_quota else _progress,
             expected_provider=None if args.scripted else args.provider,
             token_budget=None if args.token_budget is None else max(0, args.token_budget - spent),
+            costs=None if args.token_budget is None else _task_costs([t for t, _ in jobs], cost_refs, fresh),
             repeats=[k for _, k in jobs],
             stop_after_errors=args.stop_after_errors or None,
             student_health_limit=router_config.max_student_health if routed else None,

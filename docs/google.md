@@ -79,6 +79,9 @@ KESTREL_TOOLS=google            # optional: on for every run
   `uvx --python 3.13 workspace-mcp==2.3.0`, and the first start downloads it (~190 MB installed; measured
   2026-11-17).
 
+- `KESTREL_GOOGLE_LOG_LEVEL`: the server's log level, `WARNING` (default), `INFO` (to debug a sign-in; its lines
+  hold your address) or `ERROR`.
+
 **3. First use:** `uv run kestrel --tools google`, then ask about your mail. The first call opens a browser for
 Google's consent screen on the computer Kestrel runs on (the server opens it; the model, traces and cards get the
 answer with the link removed, so the console and Telegram can't show it). It must list only reading your email,
@@ -147,8 +150,10 @@ They also showed two setup steps: tick both boxes, and enable both APIs.
   - **Distillation** never trains on these traces. `kestrel distill build`'s `google_tool` filter drops any trace
     that called a Google tool or was tainted by one, and every later trace in that session, even with
     `KESTREL_TRACE_CONTENT=off` (it reads the spans).
-  - **The server's own log** (`logs/mcp-google.log`, git-ignored) contains your address, because workspace-mcp
-    logs it. Kestrel can't filter it (known issue #94).
+  - **The server's own logs** (`logs/mcp-google.log`, git-ignored, and workspace-mcp's
+    `~/.google_workspace_mcp/logs/mcp_server_debug.log`) are written at WARNING, so the per-call lines with
+    your address are gone; warnings, errors and tracebacks can still hold it, and older lines stay (known
+    issue #94).
   - **Tokens** live in the credentials folder, outside the project, and are never in git.
 
 ## For the bench (no Google, no keys)

@@ -138,8 +138,36 @@ class Session:
         return bool(values) and all(any(v in s for s in said) for v in values)
 
 
+GOOGLE, DATA = "google__", "data__"  # the opt-in tool sets' name prefixes (google_tools.py; kestrel-data)
+
+
+def _what_was_read(source: str) -> str:
+    """How a card names an earlier read (known issue #97). Display only: no rule depends on it."""
+    if source.startswith(GOOGLE):
+        return "your Gmail or Calendar"
+    if source.startswith(DATA):
+        return "your datasets"
+    return "your local data" if "__" in source else "your files"  # another MCP server's data isn't always files
+
+
+def taint_reason(tool: str, sources: list[str]) -> str:
+    """The card's "Why:" for a network call after a read. Display only (`escalated_by` doesn't use it)."""
+    source = sources[0]
+    if tool.startswith(GOOGLE):
+        # a Google call sends its query to Google: name a read of anything else before an earlier Google read
+        other = [s for s in sources if not s.startswith(GOOGLE)]
+        if not other:
+            return "this call reads your Google account again after an earlier read"
+        source = other[0]
+    return f"{source} read {_what_was_read(source)} earlier in this conversation; this call sends data out"
+
+
 def required_approval(
-    caps: frozenset[str], external: bool = False, session: Session | None = None, args: dict | None = None
+    caps: frozenset[str],
+    external: bool = False,
+    session: Session | None = None,
+    args: dict | None = None,
+    tool: str = "",
 ) -> Requirement:
     """The one place approval is decided: capabilities plus the conversation so far.
 
@@ -147,6 +175,7 @@ def required_approval(
     user's approval, unless the user typed its URL or query themselves.
     b: a network_egress call carrying local text read this conversation needs approval, and the
     card shows the text (content hits are cards, never blocks: owner decision 4).
+    `tool` (the call's name) only words the reason on the card.
     Forbidden stays forbidden. A tool that needs approval anyway (an unconfigured MCP tool) is marked
     escalated too, so a "yes for this session" given before can't skip the card."""
     need = Requirement(base_level(caps, external))
@@ -156,7 +185,7 @@ def required_approval(
     if not session.user_named(args):
         source = session.taint_sources[0]
         need.escalated_by.append(f"taint:{source}")
-        need.reasons.append(f"{source} read your local data earlier in this conversation, and this call sends data out")
+        need.reasons.append(taint_reason(tool, session.taint_sources))
     for m in session.content_matches(args):
         need.matches.append(m)
         need.escalated_by.append(m.tag())

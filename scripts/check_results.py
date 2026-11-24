@@ -13,7 +13,8 @@ Safety split files (meta.split == "safety") are checked against the safety split
 no judge, every (task, repeat, user) at most once, only users and repeats the meta names, every task
 of the chosen kinds present for each user and repeat (unfiltered runs only: --tasks, --sample, --subset,
 --category and --shard runs are partial by design; so are --task runs, which the meta doesn't record: pass
---partial for those), each row's safety kind matching its task, and one
+--partial for those; nor are tasks a run leaves out without --tools google / --tools data missing), each
+row's safety kind matching its task, and one
 task fingerprint per task within the file (graded rows only: an errored row never reaches the safety
 grader, so it keeps the main suite's kind of fingerprint; known issue #55).
 """
@@ -73,6 +74,12 @@ def check(path: Path, suite: str | None, judge: str, safety: str = SAFETY_VERSIO
     return problems
 
 
+def opt_in_tools(task_meta: Any) -> set[str]:
+    """The opt-in tool sets a safety task needs (cli._pick_tasks skips it without them)."""
+    fields = {"google": "google", "data": "datasets"}
+    return {tool for tool, name in fields.items() if getattr(task_meta, name, None)}
+
+
 def check_safety(meta: dict[str, Any], tasks: list[dict[str, Any]], version: str, partial: bool = False) -> list[str]:
     problems: list[str] = []
     if meta.get("split_version") != version:
@@ -82,8 +89,12 @@ def check_safety(meta: dict[str, Any], tasks: list[dict[str, Any]], version: str
     users = meta.get("users") or [meta.get("user")]
     repeats = range(1, (meta.get("repeat") or 1) + 1)
     kinds = meta.get("kinds") or "all"
-    split = {st.id: st.meta.kind for st in load_safety().tasks}
-    chosen = {tid for tid, kind in split.items() if kinds in ("all", kind)}
+    loaded = load_safety().tasks
+    split = {st.id: st.meta.kind for st in loaded}
+    tools = meta.get("tools") or []
+    # what `bench run` leaves out: email tasks without --tools google, data tasks (s1.2) without --tools data
+    needs = {st.id: opt_in_tools(st.meta) for st in loaded}
+    chosen = {tid for tid, kind in split.items() if kinds in ("all", kind) and needs[tid] <= set(tools)}
 
     runs = Counter((t["id"], t.get("repeat", 1), t.get("user")) for t in tasks)
     problems += [f"{tid} (repeat {k}, user {u}) appears {n} times" for (tid, k, u), n in runs.items() if n > 1]

@@ -17,7 +17,9 @@ What the model gets, whatever the server offers:
   address as login_hint). So the address never reaches the model, a trace, an approval card or the audit log
   (all of them see only the model's arguments and the masked result).
 
-The server's own log (logs/mcp-google.log, git-ignored) does contain the address: workspace-mcp logs it.
+The server's own logs (logs/mcp-google.log, git-ignored, and workspace-mcp's own file in the home folder) are
+kept at WARNING, so its per-call INFO lines, which hold the address, aren't written. Warnings, errors and
+tracebacks can still hold it (known issue #94). KESTREL_GOOGLE_LOG_LEVEL=INFO brings INFO back.
 """
 
 from __future__ import annotations
@@ -67,6 +69,10 @@ MASK = "[your Google account]"
 SCHEMAS_FILE = Path(__file__).with_name("google_tools_schemas.json")
 ADDRESS = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 ENV_NAMES = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "USER_GOOGLE_EMAIL")
+
+
+# Not DEBUG: at 2.3.0 those lines add the text of what was searched (its main.py says so).
+LOG_LEVELS = ("INFO", "WARNING", "ERROR")
 
 
 class GoogleConfigError(ValueError):
@@ -214,8 +220,17 @@ def load_settings(
         "GOOGLE_OAUTH_CLIENT_ID": env["GOOGLE_OAUTH_CLIENT_ID"].strip(),
         "GOOGLE_OAUTH_CLIENT_SECRET": env["GOOGLE_OAUTH_CLIENT_SECRET"].strip(),
         "WORKSPACE_MCP_CREDENTIALS_DIR": str(creds),
+        "WORKSPACE_MCP_LOG_LEVEL": log_level(env),
     }
     return GoogleSettings(address, command or "uvx", args, server_env, creds)
+
+
+def log_level(env: Mapping[str, str]) -> str:
+    """The server's WORKSPACE_MCP_LOG_LEVEL: WARNING, or KESTREL_GOOGLE_LOG_LEVEL (INFO to debug a sign-in)."""
+    level = (env.get("KESTREL_GOOGLE_LOG_LEVEL") or "").strip().upper() or "WARNING"
+    if level not in LOG_LEVELS:
+        raise GoogleConfigError(f"KESTREL_GOOGLE_LOG_LEVEL must be one of {', '.join(LOG_LEVELS)} (default WARNING)")
+    return level
 
 
 # --- registration -------------------------------------------------------------------------------

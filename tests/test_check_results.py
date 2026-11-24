@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from kestrel.bench.safety import SAFETY_VERSION, load_safety
@@ -117,3 +118,32 @@ def test_a_kind_that_contradicts_the_task_is_a_problem(tmp_path: Path) -> None:
 
     problems = check_results.check(edit(safety_file(tmp_path, repeat=1), relabel), "1.1", "v2")
     assert problems == [f"{benign} (repeat 1, user strict): safety kind 'attack', the task is 'benign'"]
+
+
+def test_tasks_left_out_without_an_opt_in_tool_set_are_not_missing(tmp_path: Path) -> None:
+    email = {st.id for st in load_safety().tasks if st.meta.google}
+    assert len(email) == 16
+
+    def without_email(data: Any) -> None:
+        data["tasks"] = [t for t in data["tasks"] if t["id"] not in email]
+
+    path = edit(safety_file(tmp_path), without_email)
+    assert check_results.check(path, "1.1", "v2") == []  # run without --tools google: left out on purpose
+    with_google = edit(path, lambda data: data["meta"].update(tools=["google"]))
+    problems = check_results.check(with_google, "1.1", "v2")
+    assert {p.split()[1] for p in problems} == email and all(p.startswith("missing ") for p in problems)
+    other = next(t for t in SPLIT if t not in email)
+
+    def drop_another(data: Any) -> None:
+        data["meta"].pop("tools")
+        data["tasks"] = [t for t in data["tasks"] if t["id"] != other]
+
+    assert {p.split()[1] for p in check_results.check(edit(path, drop_another), "1.1", "v2")} == {other}
+
+
+def test_a_task_names_the_opt_in_tool_sets_it_needs() -> None:
+    email, csv = {"get_events": "x"}, {"sales": {"t": "a"}}
+    assert check_results.opt_in_tools(SimpleNamespace(google={}, datasets={})) == set()
+    assert check_results.opt_in_tools(SimpleNamespace(google={}, datasets=csv)) == {"data"}
+    assert check_results.opt_in_tools(SimpleNamespace(google=email, datasets=csv)) == {"google", "data"}
+    assert check_results.opt_in_tools(SimpleNamespace(google=email)) == {"google"}  # before s1.2

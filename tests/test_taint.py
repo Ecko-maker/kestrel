@@ -383,3 +383,58 @@ def test_an_earlier_session_approval_does_not_cover_an_escalated_call(tmp_path):
     approver = FakeApprover(Decision("approved", for_session=True), Decision("rejected"))
     agent(llm, reg, approver, tmp_path).run("go")
     assert [r["allow_session"] for r in approver.requests] == [True, False]  # asked again after the read
+
+
+# --- the card's "Why:" names what was read (known issue #97): display only ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("sources", "tool", "reason"),
+    [
+        (
+            ["read_file"],
+            "web_search",
+            "read_file read your files earlier in this conversation; this call sends data out",
+        ),
+        (
+            ["google__get_events"],
+            "web_search",
+            "google__get_events read your Gmail or Calendar earlier in this conversation; this call sends data out",
+        ),
+        (
+            ["data__query"],
+            "web_search",
+            "data__query read your datasets earlier in this conversation; this call sends data out",
+        ),
+        (
+            ["crm__lookup"],
+            "web_search",
+            "crm__lookup read your local data earlier in this conversation; this call sends data out",
+        ),
+        (
+            ["google__get_events"],
+            "google__search_gmail_messages",
+            "this call reads your Google account again after an earlier read",
+        ),
+        (  # the query goes to Google: an earlier file read is never hidden behind an earlier Google read
+            ["google__get_events", "read_file"],
+            "google__search_gmail_messages",
+            "read_file read your files earlier in this conversation; this call sends data out",
+        ),
+    ],
+)
+def test_the_reason_names_what_was_read_and_changes_no_rule(sources, tool, reason):
+    s = Session(user_texts=["hi"], taint_sources=list(sources))
+    need = required_approval(EGRESS, session=s, args={"query": "x"}, tool=tool)
+    assert need.reasons == [reason]
+    unnamed = required_approval(EGRESS, session=s, args={"query": "x"})
+    assert (need.level, need.escalated_by) == (unnamed.level, unnamed.escalated_by)
+    assert (need.level, need.escalated_by) == ("confirm", [f"taint:{sources[0]}"])
+
+
+def test_the_gate_passes_the_tools_name_to_the_reason(tmp_path):
+    reg = ToolRegistry()
+    reg.register_external("google__get_events", lambda: "x", "d", {"type": "object", "properties": {}}, server="google")
+    s = Session(user_texts=["hi"], taint_sources=["google__search_gmail_messages"])
+    need = ApprovalGate(log_path=tmp_path / "a.jsonl").requirement(reg.tools["google__get_events"], {"a": "b"}, s)
+    assert need.reasons == ["this call reads your Google account again after an earlier read"]
