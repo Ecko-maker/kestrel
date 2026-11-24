@@ -4,8 +4,7 @@ Changed only through docs PRs to `main`; feature branches never edit this file. 
 
 ## Updated
 
-2026-11-21, from the Google part 2a merge and before-side session (log below); presentation copilot roadmap item
-added after it. `main` = `3c9d700` before this PR.
+2026-11-24, from the after-queue fix session (log below). `main` = `27a9db9` before this PR.
 
 ## Now
 
@@ -44,24 +43,35 @@ frozen").
   (2.19 on agent tokens alone, the figure for the judge-free safety runs). Calibration result in the approvals table
   below.
 
-**After-side queue ready, not started** (PR #122, `a3a1547`): `scripts/google_after_queue.ps1` runs A1, A2, A3, then
-A4 only if `scripts/google_gate.py` prints PASS for G1 and G2 (plan 4.2), with the 20k margin, from a frozen copy at
-`C:\kestrel-queue\` (made from `a3a1547`, helpers pinned by SHA-256, `MANIFEST.txt`). Same code and tag as the
-before side, with `--tools google` (plan 4, "Sides": no separate after tag). **A1-A4 approved by the owner
-2026-11-23** (caps 738,000 / 458,000 / 60,000 / 637,000, 1.89M in all; approvals table). The stricter drift reading
-is kept: A1 must start by 2026-11-29 23:36:45 EST. Before side backed up to `C:\kestrel-backup\2026-11-23\`.
+**After-side queue ready, not started** (last look 2026-11-24 08:22 EST). `scripts/google_after_queue.ps1` (PR #122,
+fixed in PR #129) runs A1, A2, A3, then A4 only if `scripts/google_gate.py` prints PASS for G1 and G2 (plan 4.2), with
+the 20k margin, from a frozen copy at `C:\kestrel-queue\` (**made from `27a9db9`**, helpers pinned by SHA-256,
+`MANIFEST.txt`). Same code and tag as the before side, with `--tools google` (plan 4, "Sides": no separate after tag).
+**A1-A4 approved by the owner 2026-11-23** (caps 738,000 / 458,000 / 60,000 / 637,000, 1.89M in all; approvals table).
+**A1 must start by 2026-11-29 23:36:45 EST** (the stricter drift reading is kept). Its two starts on 11-24 (07:42 and
+07:49) failed at the first helper call, with no Groq calls; after the fix its `-DryRun` passes from `..\kestrel-runs`
+in Windows PowerShell 5.1 and PowerShell 7. Before side backed up to `C:\kestrel-backup6-11-23\`.
 
-**`feature/kestrel-data` rebased onto `main`** (11-21, `0245591`; no PR): both opt-in tool sets side by side
-(`--tools google data`), safety split s1.2 = s1.1 + the 10 data tasks, distill filters `google_tool` then `data_tool`;
-1772 tests pass; fingerprints unchanged (default `8a8174d8f17d`, `--tools google` `b76a43765a4f`, `--tools data`
-`05beb66a49d3`). The worksheet for the 11 data slots (6 CSV cells, 5 rca integrity notes) is on the branch
-(`evals/kestrelbench/safety/DATA_ATTACK_WORKSHEET.md`, `ca09630`); the texts are the owner's to write.
+**Google verdict script in `main`** (PR #128, `4c9def3`): `scripts/google_verdict.py`, the frozen rule of plan section 4.
+
+**Data step on `feature/kestrel-data-numbers`** (`adf1586`, no PR; replaces `feature/kestrel-data`, archived as the tag
+`archive/feature/kestrel-data`, `28819af`, branch deleted 11-23): both opt-in tool sets side by side (`--tools google
+data`), safety split s1.2, the verdict (`scripts/rca_verdict.py`), the R1/R2 gate (`scripts/data_gate.py`), the run queue
+(`scripts/data_queue.ps1`) and the estimates (`scripts/data_estimate.py`: ~1.95M planning, against the design's
+~1.29M; no approval lines). 2043 tests pass; fingerprints unchanged (default `8a8174d8f17d`, `--tools google`
+`b76a43765a4f`, `--tools data` `05beb66a49d3`). Its queue still needs PR #129's stderr fix and the new `groq_quota.py`
+pin, at its next rebase.
+
+**Notifications stage 2 on `feature/notify-calendar`** (`7b4ccb2`, no PR): calendar alerts, rules only, the notifier's own
+read-only Google sign-in. 11-24: it no longer refuses its own token folder because of the server's `oauth_states.json`.
+Next: the owner's phone test (demo provider, no Groq). Its PR waits for the Google after side (it touches
+`src/kestrel/`) and has conflicts with `main` in `docs/design-decisions.md` and `docs/known-issues.md`.
 
 **Open:**
-- **Notifications stages 2-3** (calendar alerts, email triage) come with the Google step; their measurement budget
-  needs its own approval line.
+- **Notifications stage 2** is built on its branch (above); **stage 3** (email triage) comes with the Google step. Their
+  measurement budget needs its own approval line.
 - **kestrel-data RCA design accepted** (PR #94, 2026-11-17; owner decision 8): opt-in, queued after the Google
-  step's after side; offline build next, no approval lines yet.
+  step's after side; built offline on its branch (above), no approval lines yet.
 - **Future roadmap item (not scheduled, no approval lines): analytics reports.** Kestrel sends you reports
   (e.g. from kestrel-data or the traces). **Telegram first**, to your own chat. **Email-to-self** comes as its
   own measured step later (a send tool, gated, with its own plan and approval lines). Sending to free-form
@@ -75,7 +85,11 @@ is kept: A1 must start by 2026-11-29 23:36:45 EST. Before side backed up to `C:\
   post-meeting summary; recording-consent note. Each stage pre-registered and measured.
 - **Merged branches not yet deleted:** 16 on `origin` (Branches, below), plus the branches of PRs #105-#114.
 
-**To do, owner** (nothing here spends quota):
+**To do, owner** (item 0 spends quota, approved 11-23; nothing else does):
+
+0. **Start the Google after queue** by 2026-11-29 23:36:45 EST: `& C:\kestrel-queue\google_after_queue.ps1` from a
+   standalone PowerShell window in `..\kestrel-runs`, on mains power. `C:\kestrel-queue-failed-2026-11-24\` (the old copy)
+   and `C:\kestrel-queue-pr129\` (a test copy) can be deleted; never run them.
 1. **Fork-PR approval** (checklist 6.3): the repo setting is still `first_time_contributors` (read 11-21), not
    "all outside collaborators"; change it in Settings, Actions, General, or keep it (your call).
 2. **Off-laptop backup copy:** `C:\kestrel-backup\` is on the same disk; copy it to a USB drive or private cloud
@@ -83,6 +97,19 @@ is kept: A1 must start by 2026-11-29 23:36:45 EST. Before side backed up to `C:\
 3. **Release checklist section 7** (`docs/release-checklist.md`): the stranger check in a private window, publish
    blog post 2 (`docs/blog/02-distillation.md`), and the YouTube description update.
 4. **Restore the laptop's sleep setting** once the Google runs are done.
+
+## 2026-11-24 (after-queue fix session; no Groq, no model calls)
+
+1. **Failure:** `groq_quota.py` read `parents[2]` of its own path for a default even with `--runs` given, so it raised
+   `IndexError` from `C:\kestrel-queue\`; and in Windows PowerShell 5.1 under `Stop`, the first stderr line of a captured
+   command ended the script (it could have ended the queue in the middle of a run).
+2. **PR #129 merged** (squash, `27a9db9`): the defaults, one wrapper for every captured uv call, and a `-DryRun` that also
+   runs the gate, each run's budget decision and the other-job check. Caps, run arguments, gate and deadline unchanged.
+   1713 tests pass; CI green on the PR and on `main`, "KestrelBench not run".
+3. **New frozen copy** from `27a9db9`; `-DryRun` exit 0 in both shells, 185,000 free, runs folder at `google-before` with no
+   tracked changes. The start, resume and deadline paths were run with a fake `uv` in both shells.
+4. **`feature/notify-calendar`** `7b4ccb2`: `oauth_states.json` is skipped by exact name; any other file without scopes, and
+   any token wider than `calendar.readonly`, is still refused. 1697 tests pass; branch CI green, Groq not run.
 
 ## 2026-11-20 and 11-21 (Google part 2a merge and before-side session; Groq only through the approved runs)
 
@@ -333,12 +360,13 @@ In order; detail is in the linked files (all on `phase3/tiers-v2` unless marked)
 
 ## Branches
 
-**Live branches** (2026-11-13, on `origin`):
+**Live branches** (the `main`, data and notify rows 2026-11-24; the rest 2026-11-13, on `origin`):
 
 | Branch | Holds | Next |
 |---|---|---|
-| `main` | everything merged, up to PR #114 (`0245591`; tag `v1.0.0` on `c8b72e5`, tag `google-before` on `74c9892`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
-| `feature/kestrel-data` | kestrel-data RCA tools, rca split, s1.2 data tasks, the data-slot worksheet (`ca09630`; rebased onto `0245591` 11-21) | the owner writes the 11 data texts; the PR waits until after the Google step's after side |
+| `main` | everything merged, up to PR #129 (`27a9db9`; tag `v1.0.0` on `c8b72e5`, tag `google-before` on `74c9892`); rules `tiers-v2.2`, default agent fingerprint `8a8174d8f17d` | – |
+| `feature/kestrel-data-numbers` | kestrel-data RCA tools, rca split, s1.2 data tasks, verdict, gate, queue, estimates (`adf1586`) | rebase on `main` (PR #129's fixes in its queue); the PR waits until after the Google step's after side |
+| `feature/notify-calendar` | notifications stage 2, calendar alerts (`7b4ccb2`) | the owner's phone test; the PR waits until after the Google step's after side |
 | `scripts/google-before-queue` | `scripts/google_before_queue.ps1` (PR #115, green, KestrelBench not run) | merge (scripts only) |
 | `design/data-rca` | the kestrel-data RCA design, PR #94 (docs only; decision 35, accepted 2026-11-17) | merged by squash 2026-11-17 (`098c0a1`); deleted on `origin` 2026-11-17 |
 | merged, not deleted (16): `release/v1.0` (#98, squash), `docs/readme-architecture` (#99, squash), `feature/telegram` (#96, squash), `design/telegram-google` (#93, squash), `phase4/tainted-to-teacher`, `post-s9/combined`, `phase4/integration`, `fix/fetch-private-block`, `fix/voice-console-week`, `docs/readme-v1`, `docs/blog-phase4`, `docs/privacy-cleanup`, `docs/s9-verdict`, `docs/approval-79-combined`, `docs/status-mcp-combined`, `docs/status-2026-11-08` | all in `main` (checked 2026-11-12 with `git merge-base --is-ancestor`, or the PR for the two squashes) | delete with the owner's OK (`docs/release-checklist.md` 1.5) |
@@ -487,6 +515,6 @@ Clashes (bold): decisions **16, 17, 18, 19, 20**; issues **25, 26**. Phase4 skip
 | The 19 test-written audit-log lines (moved out of `logs/approvals.jsonl`, 2026-11-12) | `logs/approvals.test-pollution-2026-11-12.jsonl` | the original file, `C:\kestrel-backup\2026-11-12\approvals.jsonl.orig` (SHA-256 `58f1f0ab…82b0`) |
 | Reminders (stage 1 notifications): reminder text, private, git-ignored | `logs/notify.db` | no |
 | Google before side (B2, B4, A0): results, reports, queue and run logs, traces | `..\kestrel-runs\evals\results\google-*`, `..\kestrel-runs\logs\bench.db` | B2, B4 and A0 results and `logs/bench.db`: yes, `C:\kestrel-backup\2026-11-23\` (4 files, 35.9 MB, `MANIFEST.txt`); the queue and run logs and the `.md` reports: no |
-| Google after-side queue, frozen copy (`google_after_queue.ps1`, `groq_quota.py`, `google_gate.py`, `MANIFEST.txt`) | `C:\kestrel-queue\` (from `a3a1547`; each file's SHA-256 in `MANIFEST.txt`) | in git at `a3a1547` (byte for byte) |
+| Google after-side queue, frozen copy (`google_after_queue.ps1`, `groq_quota.py`, `google_gate.py`, `MANIFEST.txt`) | `C:\kestrel-queue\` (from `27a9db9`; each file's SHA-256 in `MANIFEST.txt`) | in git at `27a9db9` (byte for byte) |
 
 Backup: `C:\kestrel-backup\2026-10-26\` (116 files, 172.5 MB, `MANIFEST.txt` with SHA-256 per file). `C:\kestrel-backup\2026-10-31\` (32 files, 3.2 MB, option c evidence, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-02\` (6 files, 2.2 MB, option a collection and training set, `MANIFEST.txt`). **Off-laptop copy: not yet.** The backup is on the same disk, so copy it to a USB drive or private cloud storage. `.env` (both folders) is never backed up here. `C:\kestrel-backup\2026-11-03\` (7 files, 24.8 MB: the student-alone results and `bench.db`, `MANIFEST.txt`). `C:\kestrel-backup\2026-11-23\` (4 files, 35.9 MB: the Google before side B2, B4, A0 and `bench.db`, `MANIFEST.txt`; off-laptop copy not yet).
