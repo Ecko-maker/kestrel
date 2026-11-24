@@ -5,8 +5,8 @@ lines**. Decision: **36** (`docs/design-decisions.md`, was `D-pending-presentati
 2026-11-23:** recommendations 1-10, 12 and 13 of section 9 accepted as written; question 11 decided by an amendment
 (section 9). Nothing is frozen. Building stage 1 waits for the data-rca verdict (question 1).
 
-**It builds on `kestrel-data` (decision 35), which is built but not measured.** The tools are on
-`feature/kestrel-data`, not on `main`; R1-R5 (`docs/data-rca-design.md` 5.2) haven't run. So:
+**It builds on `kestrel-data` (decision 35), which is built but not measured.** The tools are in
+the data build (`feature/kestrel-data-numbers`), not measured; R1-R5 (`docs/data-rca-design.md` 5.2) haven't run. So:
 - everything here that relies on those tools is an assumption until then;
 - no build starts before the data-rca verdict (section 7.5);
 - if data-rca is FAIL, this design doesn't start: its evidence layer would be unshipped.
@@ -187,7 +187,7 @@ compares it (`labels_match`).
 | Anything else | none | **needs checking**, parked |
 
 **"Is it noise?" has a trap.** `|z| < 2` doesn't show that nothing happened: on dev seeds about a
-third of price-change datasets don't show their planted cause, mostly because of this gate (KI-pending-data-total-gate). So the honest card is "not
+third of price-change datasets don't show their planted cause, mostly because of this gate (known issue #106). So the honest card is "not
 distinguishable from normal variation", never "nothing changed". It is marked needs checking, as your rule requires,
 but still shows the measured numbers: a grounded negative is useful. "Fact" is a fourth status, for a lookup with no
 cause in it: question 3.

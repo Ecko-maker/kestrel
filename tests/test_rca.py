@@ -194,7 +194,7 @@ def test_hole_3_on_the_real_tool(split: rca.RcaSplit) -> None:
 
 
 def test_the_grader_reads_full_results_not_the_cut_events(split: rca.RcaSplit) -> None:
-    """KI-pending-rca-truncated-events: a split by customer prints more than the events' 2,000 characters. On
+    """known issue #108: a split by customer prints more than the events' 2,000 characters. On
     r1.0 the cut takes numbers of its last line, not candidate rows."""
     from kestrel.agent import MAX_EVENT_RESULT_CHARS
 

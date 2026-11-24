@@ -55,7 +55,7 @@ $Tag = "data-before"
 $Margin = 20000            # >= the most expensive single main-suite task measured (web-weather-tokyo, B4: 18,429)
 $NeedFree = $Margin        # never start an attempt with a budget under one task
 $Pins = @{
-    "groq_quota.py" = "1b86d0432ab5d883cfd7bd839f975f0fccf7e394692e97e23170f9e973bcfb5a"
+    "groq_quota.py" = "e6d59f01fb93cc140ba28fafee856c1f25b413bcc6f401c3eb5412e731a28b42"
     "data_gate.py"  = "6438327d042918d9d2fdd1ad4f945507956bf8f40238d70784fd44cd76f279af"
 }
 $Results = "evals\results"
@@ -72,6 +72,14 @@ $Frozen = $PSScriptRoot
 $Quota = Join-Path $Frozen "groq_quota.py"
 $Gate = Join-Path $Frozen "data_gate.py"
 $DevFolder = Join-Path $Here "..\kestrel"   # read only, by groq_quota.py: its traces and results count too
+
+function Invoke-Uv([string[]]$uvArgs) {
+    # Every captured uv call goes through here. Windows PowerShell 5.1 turns a program's stderr into error records, and
+    # under "Stop" the first one ends the script (the Google queue, 2026-11-24); here they come back as plain lines. The
+    # caller reads $LASTEXITCODE.
+    $ErrorActionPreference = "Continue"
+    & uv @uvArgs 2>&1 | ForEach-Object { "$_" }
+}
 
 function Log([string]$line) {
     $stamped = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $line"
@@ -100,7 +108,7 @@ function Assert-FrozenCopy {
 }
 
 function Assert-AtCommit([string]$ref) {
-    git rev-parse -q --verify "$ref^{commit}" 2>&1 | Out-Null
+    git rev-parse -q --verify "$ref^{commit}" | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Host "STOP: no tag $ref"; exit 1 }
     $want = (git rev-parse "$ref^{commit}").Trim()
     $have = (git rev-parse HEAD).Trim()
@@ -120,9 +128,9 @@ function Wait-NoOtherGroqJob {
 }
 
 function Get-FreeQuota {
-    $out = & uv run --no-sync python $Quota --runs $Here --dev $DevFolder 2>&1
+    $out = @(Invoke-Uv @("run", "--no-sync", "python", $Quota, "--runs", $Here, "--dev", $DevFolder))
     $line = $out | Select-String -Pattern '^Free: .* = (-?[\d,]+)'
-    if (-not $line) { Stop-Queue "groq_quota.py printed no free amount" }
+    if (-not $line) { Stop-Queue "groq_quota.py printed no free amount (exit $LASTEXITCODE; last line: $($out | Select-Object -Last 1))" }
     [int]($line.Matches[0].Groups[1].Value -replace ',', '')
 }
 
@@ -183,14 +191,14 @@ function Invoke-QueueRun([string]$name, [string[]]$runArgs, [string]$out, [int]$
             continue
         }
         Get-ChildItem "$Results\*.json.lock" -ErrorAction SilentlyContinue | ForEach-Object {
-            & uv run --no-sync kestrel bench unlock ($_.FullName -replace '\.lock$', '') 2>&1 | Out-Null  # it refuses a live lock
+            Invoke-Uv @("run", "--no-sync", "kestrel", "bench", "unlock", ($_.FullName -replace '\.lock$', '')) | Out-Null  # it refuses a live lock
         }
         if ($policy) { $env:KESTREL_IMAGE_POLICY = $policy } else { Remove-Item Env:KESTREL_IMAGE_POLICY -ErrorAction SilentlyContinue }
         $fileArgs = if (Test-Path $out) { @("--resume", $out) } else { @("--out", $out) }
         $all = @("run", "--no-sync", "kestrel", "bench", "run") + $runArgs + @("--wait-for-quota", "--token-budget", "$budget") + $fileArgs
         $runLog = "data-$($name.Split(' ')[0])-$(Get-Date -Format yyyyMMdd-HHmmss).log"
         Log "START $name (attempt $attempt): budget $budget (free $free, cap left $left); graded $($before.graded)/$($before.total); log $runLog"
-        & uv @all 2>&1 | Tee-Object -FilePath $runLog | Select-String -CaseSensitive -Pattern $Allow | ForEach-Object { Write-Host $_ }
+        Invoke-Uv $all | Tee-Object -FilePath $runLog | Select-String -CaseSensitive -Pattern $Allow | ForEach-Object { Write-Host $_ }
         $code = $LASTEXITCODE
         $after = Get-Counts $out
         $now = [Math]::Max(0, $after.billable - $before.billable)
@@ -213,14 +221,14 @@ function Write-DriftNote([string]$b1, [string]$a2) {
     }
 }
 
-function Get-Gate {
+function Get-Gate([string]$file) {
     $commit = (git rev-parse HEAD).Trim()
-    $out = & uv run --no-sync python $Gate $A1 --commit $commit 2>&1
+    $out = @(Invoke-Uv @("run", "--no-sync", "python", $Gate, $file, "--commit", $commit))
     $code = $LASTEXITCODE
-    $word = ($out | Select-Object -Last 1).ToString().Trim()
     $want = @{ "PASS" = 0; "FAIL" = 1; "NOT SHOWN" = 2 }
-    if (-not $want.ContainsKey($word) -or $want[$word] -ne $code) { return "NOT SHOWN" }  # anything unexpected
-    return $word
+    $words = @($out | ForEach-Object { "$_".Trim() } | Where-Object { $_ -in $want.Keys })  # a warning can come last
+    if ($words.Count -ne 1 -or $want[$words[0]] -ne $code) { return "NOT SHOWN" }  # anything unexpected
+    return $words[0]
 }
 
 # --- start ------------------------------------------------------------------------------------------------------
@@ -249,14 +257,14 @@ $RunA2 = @("--provider", "groq", "--repeat", "1", "--tools", "data")
 $RunA3 = @("--provider", "groq", "--split", "rca", "--repeat", "1", "--tools", "data")
 $RunA3First = $RunA3 + @("--tasks", "rca-*-1")
 
-$checked = & uv run --no-sync kestrel bench validate --split safety 2>&1   # never printed: it may quote a task
+$checked = @(Invoke-Uv @("run", "--no-sync", "kestrel", "bench", "validate", "--split", "safety"))   # never printed: it may quote a task
 if ($LASTEXITCODE -ne 0 -or @($checked | Select-String -CaseSensitive -Pattern '\bTODO\b').Count -gt 0) {
     Write-Host "STOP: kestrel bench validate --split safety isn't OK with 0 TODO"
     exit 1
 }
 
 if ($DryRun) {
-    $show = { param($run) & uv run --no-sync kestrel bench run @run --dry-run 2>&1 | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ } }
+    $show = { param($run) Invoke-Uv (@("run", "--no-sync", "kestrel", "bench", "run") + $run + @("--dry-run")) | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ } }
     & $show $RunB1
     $env:KESTREL_IMAGE_POLICY = "allowlist"
     & $show $RunA1
@@ -265,11 +273,17 @@ if ($DryRun) {
     & $show $RunA2
     & $show $RunA3First
     & $show $RunA3
+    $freeNow = Get-FreeQuota
     foreach ($p in @(@("B1", $B1, $CapB1), @("A1", $A1, $CapA1), @("A1b", $A1b, $CapA1b), @("A2", $A2, $CapA2), @("A3", $A3, $CapA3))) {
         $c = Get-Counts $p[1]
         Write-Host "$($p[0]): $($c.billable) of cap $($p[2]) spent; graded $($c.graded)/$($c.total)"
+        $d = Get-AttemptDecision $p[2] $c.billable $freeNow
+        Write-Host "    next attempt now: $($d.action), budget $($d.budget) $($d.why)"
     }
-    Write-Host "Helpers match their pins; free now: $(Get-FreeQuota)"
+    Write-Host "Gate on A1 now: $(Get-Gate $A1) (NOT SHOWN until A1 is graded)"
+    Wait-NoOtherGroqJob
+    Write-Host "No other Groq job is running"
+    Write-Host "Helpers match their pins; free now: $freeNow"
     Write-Host "Dry run only: no Groq calls, no results. A cap of 0 is a run with no approval."
     exit 0
 }
@@ -287,7 +301,7 @@ try {
     $r = Invoke-QueueRun "A1b data twins strict x3" $RunA1b $A1b 15 $CapA1b "CapA1b" "allowlist"
     Log "A1b: $r"
     if ($r -ne "graded") { Stop-Queue "A1b can't be graded after resuming; A2 and A3 not run" }
-    $g = Get-Gate
+    $g = Get-Gate $A1
     Log "R1 and R2 (data_gate.py on A1): $g"
     if ($g -eq "FAIL") {
         Log "QUEUE DONE without A2 and A3: R1 or R2 failed (design 5.2 stop rule; the outcome is FAIL). B1 $((Get-Counts $B1).billable), A1 $((Get-Counts $A1).billable), A1b $((Get-Counts $A1b).billable) billable."

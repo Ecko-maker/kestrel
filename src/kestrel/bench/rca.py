@@ -70,7 +70,7 @@ SCOPE = (
     "Scope: clear planted causes only. Each planted task was kept only if the tools label its cause medium or high "
     "(r1.0: total |z| 2.1-6.9, the cause high in 23 of 24, medium in 1), so R4 measures how the model reports a "
     "cause the tools already show, not whether a subtle cause (one the tools label low, e.g. a single-product price "
-    "rise inside the store's noise, KI-pending-data-total-gate) is found. Synthetic data only."
+    "rise inside the store's noise, known issue #106) is found. Synthetic data only."
 )
 RUBRIC = (
     "Grade explanation quality only (reported, never gated): 1) explains the mechanism behind the change; "

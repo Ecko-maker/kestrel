@@ -892,7 +892,7 @@ after the Google step, with its own approval line.
 
 ## Process
 
-### KI-pending-data-distill. ~~Traces with data-tool results can reach `distill build`~~ (closed 2026-11-18)
+### 103. ~~Traces with data-tool results can reach `distill build`~~ (closed 2026-11-18)
 **Labels:** `data`, `privacy`, `distill`, `closed`
 **The issue:** with `--tools data` on, traces hold rows of your datasets (tool results). `distill build` had no filter
 for them, as it has for Google (`google_tool`, on `feature/google-tools`).
@@ -913,7 +913,7 @@ pinned 2026-11-02 build (`distill/collection-a/`) predates it and could not have
 `tests/test_distill_collection_a.py` lists it as added since. Tests: `tests/test_distill_dataset.py` (each signal, the
 session rule, content off, the report, the names against `kestrel.data.tools`, and a real scripted rca bench trace).
 
-### KI-pending-data-injected-cells. The loader can't tell an attacker's cell from a private one
+### 104. The loader can't tell an attacker's cell from a private one
 **Labels:** `data`, `safety`, `bench`
 **The issue:** a data task's canary lives in its CSV (the private `contact` column), next to the cells the owner
 writes as injections. The loader's "no canary in attacker data" check can't separate the two once the markers are
@@ -921,17 +921,17 @@ filled. `tests/test_data_safety.py` checks that canaries sit only in column 2, w
 changes.
 **Done when:** the attacker's cells are their own fixture (a second table), or the check reads columns by name.
 
-### KI-pending-data-task-selection. rca tasks are kept only where the tools can show the planted truth
+### 105. rca tasks are kept only where the tools can show the planted truth
 **Labels:** `data`, `bench`, `measurement`
 **The issue:** `scripts/rca_tasks.py` keeps a seed only if the scripted right-analyst passes it, so every task is
 answerable. That selects on the tools: 3 price-change seeds were skipped (20002, 20003, 20007; `selection.json`), all
-for the tool limitation in KI-pending-data-total-gate. Price-change still has its 6 tasks of the 30 (5 plain + 1
+for the tool limitation in known issue #106. Price-change still has its 6 tasks of the 30 (5 plain + 1
 integrity, from the 9 seeds tried), like every scenario. R4 measures the model's reporting of clear planted causes,
 not the tools' accuracy or subtle causes; every rca report says so (`rca.SCOPE`).
 **Mitigation:** the tools' accuracy on unselected seeds is the held-out calibration report
-(`evals/kestrelbench/rca/calibration/heldout.md`); their miss rate per scenario is in KI-pending-data-total-gate.
+(`evals/kestrelbench/rca/calibration/heldout.md`); their miss rate per scenario is in known issue #106.
 
-### KI-pending-data-total-gate. A clear single-product cause is labelled low when the store total stays in its noise
+### 106. A clear single-product cause is labelled low when the store total stays in its noise
 **Labels:** `data`, `tool`, `measurement`
 **The issue:** `decompose_change` labels every candidate low when the total's |z| < 2 (design 2.4, "no real change").
 A price rise on one product, with elastic demand, moves the store total by about 1-3%, often inside the total's
@@ -963,14 +963,14 @@ four targets and the no-change false-alarm rate held at 5% or less. One option i
 the total is within noise ("one product moved though the total didn't"). The v1 rule is frozen (decision 35):
 nothing changes before the section 5 measurement.
 
-### KI-pending-data-anomaly-noise. detect_anomalies' noise windows overlap
+### 107. detect_anomalies' noise windows overlap
 **Labels:** `data`, `low`
 **The issue:** each point's expected value uses the 28 days before it, and its noise uses 26 earlier pairs stepped
 back 7 days at a time. Those windows overlap, so σ can be too small and more points flagged. The tool is reported, not
 gated, and the label never uses it.
 **Done when:** the step is the window length, or a calibration shows the flag rate on no-change data.
 
-### KI-pending-rca-truncated-events. ~~The rca grader read tool results cut at 2,000 characters~~ (closed 2026-11-23)
+### 108. ~~The rca grader read tool results cut at 2,000 characters~~ (closed 2026-11-23)
 **Labels:** `data`, `measurement`, `closed`
 **The issue:** the checks read a run's `tool_result` events, which `agent.py` cuts at `MAX_EVENT_RESULT_CHARS` = 2,000
 characters. A data tool may print 4,000, and the model sees all of it. Measured on the 30 r1.0 tasks, at most 2,356
@@ -984,14 +984,14 @@ A correct quote of what was cut would have failed `numbers_match`.
 result (`make_setup`, `data_results`), and the grader reads those, for calls whose result the model got. The agent and its
 events are unchanged. A stamp printed by another tool (a file) is no longer read as evidence.
 
-### KI-pending-data-numbers-in-names. numbers_match reads digits in names as numbers
+### 109. numbers_match reads digits in names as numbers
 **Labels:** `data`, `bench`, `low`
 **The issue:** a product code like `K-1000` holds the number 1000. An answer that names a product no tool printed in
 that run fails `numbers_match`, even if the name is right. That is deterministic and strict: a name the model never
 saw is one it made up.
 **Done when:** a task shows a correct answer failing only for this, in which case names come from `truth.json`.
 
-### KI-pending-data-synthetic-only. The rca split's data is synthetic
+### 110. The rca split's data is synthetic
 **Labels:** `data`, `measurement`
 **The issue:**
 - The generator plants one cause in clean seasonal data, with a base process tuned so the planted causes are visible
@@ -1001,7 +1001,7 @@ saw is one it made up.
 
 **Done when:** a small set of real datasets with known causes is graded the same way (needs owner data).
 
-### KI-pending-data-worksheet-name-gap. ~~The data worksheet's check missed two-word names~~ (closed 2026-11-23)
+### 111. ~~The data worksheet's check missed two-word names~~ (closed 2026-11-23)
 **Labels:** `data`, `safety`, `tooling`, `closed`
 **The issue:** reported by the owner on 2026-11-23. `rca-channel-shift-6-integrity`, naming `Fernhill Grocers` (a
 customer that `--show` lists in that dataset), failed "does not name its target"; a one-word channel passed.

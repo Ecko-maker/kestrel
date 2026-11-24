@@ -109,7 +109,7 @@ def test_the_first_five_are_one_per_scenario() -> None:
 
 def functions() -> str:
     """The functions only: nothing that starts a run."""
-    return QUEUE[QUEUE.index("function Log(") : QUEUE.index("# --- start ---")]
+    return QUEUE[QUEUE.index("function Invoke-Uv(") : QUEUE.index("# --- start ---")]
 
 
 def powershell(shell: str, body: str, folder: Path) -> str:
@@ -196,6 +196,66 @@ def test_it_refuses_to_run_from_the_repo(shell: str) -> None:
         check=False,
     )
     assert got.returncode == 1 and "frozen copy" in got.stdout
+
+
+# --- the queue's calls, as in test_google_after_queue.py (PR #129) ----------------------------------------------------
+
+
+def ps(path: Path | str) -> str:
+    return "'" + str(path).replace("'", "''") + "'"
+
+
+UV = f"function uv {{ $rest = @($args | Select-Object -Skip 3); & {ps(sys.executable)} @rest }}\n"  # no environment
+
+
+def test_every_captured_uv_call_goes_through_the_wrapper() -> None:
+    lines = [x.strip() for x in QUEUE.splitlines() if "2>&1" in x and not x.strip().startswith("#")]
+    assert lines == ['& uv @uvArgs 2>&1 | ForEach-Object { "$_" }']
+
+
+@pytest.mark.skipif(not SHELLS, reason="no PowerShell")
+@pytest.mark.parametrize("shell", SHELLS)
+def test_stderr_from_a_helper_does_not_end_the_queue(shell: str, tmp_path: Path) -> None:
+    noisy = tmp_path / "noisy.py"
+    noisy.write_text("import sys\nprint('w', file=sys.stderr)\nprint('Free: 1 - 2 = 12,345')\nsys.exit(3)\n", "utf-8")
+    body = (
+        f"{UV}$Quota = {ps(noisy)}\n$Here = '.'\n$DevFolder = '.'\nWrite-Output \"free $(Get-FreeQuota)\"\n"
+        f"Invoke-Uv @('run', '--no-sync', 'python', {ps(noisy)}) | Tee-Object -FilePath run.log | Out-Null\n"
+        'Write-Output "end $LASTEXITCODE"\n'
+    )
+    out = powershell(shell, body, tmp_path)
+    assert "free 12345" in out and "end 3" in out
+
+
+@pytest.mark.skipif(not SHELLS, reason="no PowerShell")
+@pytest.mark.parametrize("shell", SHELLS)
+def test_a_crashing_quota_helper_stops_the_queue_with_its_reason(shell: str, tmp_path: Path) -> None:
+    bad = tmp_path / "bad.py"
+    bad.write_text("raise IndexError(2)\n", "utf-8")
+    body = f"{UV}$Quota = {ps(bad)}\n$Here = '.'\n$DevFolder = '.'\nGet-FreeQuota\nWrite-Output REACHED\n"
+    out = powershell(shell, body, tmp_path)
+    assert "QUEUE STOPPED" in out and "IndexError: 2" in out and "REACHED" not in out
+
+
+@pytest.mark.skipif(not SHELLS, reason="no PowerShell")
+@pytest.mark.parametrize("shell", SHELLS)
+def test_only_the_gates_word_with_its_exit_code_counts(shell: str, tmp_path: Path) -> None:
+    gate = tmp_path / "gate.py"
+    gate.write_text(
+        "import sys\nprint('a warning', file=sys.stderr)\nword, code = sys.argv[1].split('=')\nprint(word)\n"
+        "sys.exit(int(code))\n",
+        "utf-8",
+    )
+    cases = {
+        "PASS=0": "PASS",
+        "FAIL=1": "FAIL",
+        "NOT SHOWN=2": "NOT SHOWN",
+        "PASS=1": "NOT SHOWN",
+        "odd=0": "NOT SHOWN",
+    }
+    body = f"{UV}function git {{ 'abc' }}\n$Gate = {ps(gate)}\n"
+    body += "".join(f"Write-Output \"$(Get-Gate '{c}')\"\n" for c in cases)
+    assert powershell(shell, body, tmp_path).split("\n")[: len(cases)] == list(cases.values())
 
 
 # --- the estimates --------------------------------------------------------------------------------------------------

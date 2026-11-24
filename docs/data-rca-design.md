@@ -520,7 +520,8 @@ which must happen before B1 starts.
   and text cells that a data tool prints; a true sentence that reverses the comparison ("expected was 5,000 higher")
   fails; a direction stated away from the number isn't read; a drop the model's own query returns as a positive number
   fails if the answer says "fell".
-- **Where:** the code is on `feature/kestrel-data-numbers` (`9c7ebe0`): `src/kestrel/bench/rca.py` (`NUMBER_CHECK`,
+- **Where:** the code is in the data build, the commit "evals(rca): amendment 1 to R4's number check" (written as
+  `9c7ebe0`, then `6fa7819`; each rebase changes the hash): `src/kestrel/bench/rca.py` (`NUMBER_CHECK`,
   printed in every rca report and its JSON), with a test per hole in `tests/test_rca.py`. It merges with the data
   build, before B1. The scripted right-analyst still passes all 30 tasks and the task selection is unchanged.
 

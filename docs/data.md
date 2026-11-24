@@ -96,7 +96,7 @@ The full method is in design section 2. In short:
   - **Medium** needs share ≥ 25%, |z| ≥ 2 and consistent ≥ 50%.
   - Anything else is **low**.
 - **Every measure must clear its bar:** one strong number can't hide a weak one.
-- **The cost of the first gate is recall** (KI-pending-data-total-gate): a cause in one product can be labelled low
+- **The cost of the first gate is recall** (known issue #106): a cause in one product can be labelled low
   when the store total stays inside its noise. On dev seeds, the planted cause is shown (medium or high) in 67.6% of
   price-change datasets, 83.8% of stockouts, 91.7% of channel shifts and 92.3% of lost customers. Most misses are
   this gate alone: the cause's own measures would clear the bar.
@@ -112,7 +112,7 @@ The full method is in design section 2. In short:
   - low: 1,995 / 68,856 = 2.9%;
   - no-change false alarm: 25 / 1,000 = 2.5% (1.6-3.7%).
 
-  These hold for this generator only (KI-pending-data-synthetic-only).
+  These hold for this generator only (known issue #110).
 
 ## For the bench (no network, no keys)
 
@@ -155,7 +155,7 @@ The full method is in design section 2. In short:
     separates price from volume correctly, and the raised product's own measures would be high (share 78-100%, z
     -3.3 to -5.4, 4 of 4 weeks). But the store total's z (-2.0 as printed, just under 2; -0.8; -1.1) is inside its
     noise, so the tool labels everything low. That is a limit of the tool, not just of the split:
-    KI-pending-data-total-gate.
+    known issue #106.
   - **Price-change still has 6 of the 30 tasks** (5 plain + 1 integrity), from the 9 seeds tried, like every
     scenario.
   - The tools' own accuracy on unselected seeds is the held-out report.
