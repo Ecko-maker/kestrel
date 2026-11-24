@@ -19,6 +19,7 @@ from pathlib import Path
 
 QUEUE = "google_after_queue.ps1"
 FILES = (f"scripts/{QUEUE}", "scripts/groq_quota.py", "scripts/google_gate.py")
+LABEL = ("Google after-side queue", "scripts/google_after_freeze.py")  # what MANIFEST.txt names
 PIN = re.compile(r'^\s*"(?P<name>[\w.]+\.py)"\s*=\s*"(?P<sha>[0-9a-f]{64})"\s*$', re.MULTILINE)
 
 
@@ -31,11 +32,11 @@ def pins(queue_text: str) -> dict[str, str]:
     return {m["name"]: m["sha"] for m in PIN.finditer(queue_text)}
 
 
-def check(contents: dict[str, bytes]) -> list[str]:
+def check(contents: dict[str, bytes], queue: str = QUEUE) -> list[str]:
     """Problems with a set of files (name -> bytes): every helper present and equal to its pin."""
-    pinned = pins(contents[QUEUE].decode("utf-8"))
-    helpers = [name for name in contents if name != QUEUE]
-    problems = [f"{name}: not pinned in {QUEUE}" for name in helpers if name not in pinned]
+    pinned = pins(contents[queue].decode("utf-8"))
+    helpers = [name for name in contents if name != queue]
+    problems = [f"{name}: not pinned in {queue}" for name in helpers if name not in pinned]
     problems += [f"{name}: pinned but not copied" for name in pinned if name not in contents]
     problems += [
         f"{name}: SHA-256 {sha256(contents[name])}, pinned {pinned[name]}"
@@ -45,12 +46,12 @@ def check(contents: dict[str, bytes]) -> list[str]:
     return problems
 
 
-def write(contents: dict[str, bytes], dest: Path, commit: str) -> Path:
+def write(contents: dict[str, bytes], dest: Path, commit: str, label: tuple[str, str] = LABEL) -> Path:
     """Write the files and MANIFEST.txt into dest; refuse if dest holds anything different."""
     manifest = "".join(
         [
-            f"Frozen copy of the Google after-side queue, from commit {commit}\n",
-            f"Made {datetime.now(UTC):%Y-%m-%d %H:%M} UTC by scripts/google_after_freeze.py\n",
+            f"Frozen copy of the {label[0]}, from commit {commit}\n",
+            f"Made {datetime.now(UTC):%Y-%m-%d %H:%M} UTC by {label[1]}\n",
             *(f"{sha256(data)}  {name}\n" for name, data in sorted(contents.items())),
         ]
     ).encode("utf-8")
