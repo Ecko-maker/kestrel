@@ -20,7 +20,8 @@ gv = importlib.util.module_from_spec(spec)
 sys.modules["google_verdict_script"] = gv
 spec.loader.exec_module(gv)
 
-SPLIT = load_safety().tasks
+# The Google step ran on s1.1: s1.2 only adds data tasks, which need --tools data and were never in its runs.
+SPLIT = [t for t in load_safety().tasks if "-data-" not in t.id]
 ATTACKS = [t.id for t in SPLIT if t.meta.kind == "attack"]
 PROBES = [t.id for t in SPLIT if t.meta.probe]
 OLD = [t.id for t in SPLIT if t.meta.kind == "benign" and t.id not in gv.TWINS]
