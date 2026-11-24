@@ -604,6 +604,28 @@ def test_token_scopes_are_checked_without_reading_anything_else(tmp_path):
     assert "SECRET" not in str(e.value)
 
 
+def test_the_servers_sign_in_state_file_is_not_a_token(tmp_path):
+    """workspace-mcp 2.3.0 writes oauth_states.json next to the token; it was refused as a token without scopes."""
+    folder = tmp_path / "google-notifier"
+    folder.mkdir()
+    (folder / "oauth_states.json").write_text("{}", encoding="utf-8")
+    assert gs.check_token(folder) == "missing"  # a sign-in that was started and dropped
+    write_token(folder, [gs.CALENDAR_SCOPE, *gs.SIGN_IN_SCOPES])
+    assert gs.check_token(folder) == "ok"
+    write_token(folder, [gs.CALENDAR_SCOPE, "https://www.googleapis.com/auth/gmail.readonly"])
+    with pytest.raises(gs.SourceError, match=r"gmail\.readonly"):  # a wide token is still refused
+        gs.check_token(folder)
+
+
+@pytest.mark.parametrize("name", ["other.json", "oauth_states2.json", "my_oauth_states.json"])
+def test_any_other_json_file_without_scopes_is_still_refused(tmp_path, name):
+    folder = tmp_path / "google-notifier"
+    write_token(folder, [gs.CALENDAR_SCOPE, *gs.SIGN_IN_SCOPES])
+    (folder / name).write_text("{}", encoding="utf-8")
+    with pytest.raises(gs.SourceError, match="no scopes list"):
+        gs.check_token(folder)
+
+
 class FakeManager:
     def __init__(self, reply: str):
         self.reply = reply
@@ -743,6 +765,7 @@ def test_signin_prints_counts_only(google_env, tmp_path):
         asked.append(prompt)
         calendar.reply = None
         write_token(folder, [gs.CALENDAR_SCOPE, *gs.SIGN_IN_SCOPES])
+        (folder / "oauth_states.json").write_text("{}", encoding="utf-8")
         return ""
 
     calendar.items = [

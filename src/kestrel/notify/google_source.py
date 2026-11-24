@@ -38,6 +38,7 @@ ALLOWED_SCOPES = frozenset({CALENDAR_SCOPE, *SIGN_IN_SCOPES})
 WINDOW = timedelta(hours=24)
 PAGE_SIZE = 50
 MAX_PAGES = 10
+STATES_FILE = "oauth_states.json"  # written by workspace-mcp when a sign-in starts; its own store skips it too
 GOOGLE_LINES = ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "USER_GOOGLE_EMAIL")
 
 
@@ -107,9 +108,10 @@ def load_source_settings(env: Mapping[str, str], *, project: Path, workspace: Pa
 
 def token_scopes(folder: Path) -> list[str] | None:
     """The scopes of the saved sign-in in the folder, or None if there is none. Reads only each token file's
-    `scopes` field: nothing else in it is read into a variable that outlives this function."""
+    `scopes` field: nothing else in it is read into a variable that outlives this function. STATES_FILE holds no
+    credential and is never opened; any other .json file must be a readable token."""
     found: set[str] = set()
-    files = sorted(folder.glob("*.json")) if folder.is_dir() else []
+    files = sorted(p for p in folder.glob("*.json") if p.name != STATES_FILE) if folder.is_dir() else []
     for path in files:
         try:
             scopes = json.loads(path.read_text(encoding="utf-8")).get("scopes")
