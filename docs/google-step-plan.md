@@ -387,6 +387,106 @@ The before side runs after 2a merges and the 16 tasks are written (section 5).
 - it is reported, not a gate;
 - a gross-drift reading puts a caveat on G3b in the report. The rule above stays as written.
 
+### 4.4 Operational note, 2026-11-24: reading the gate at the A3 -> A4 moment (the rule is unchanged)
+
+**What can go wrong.** The running queue is the frozen copy from `27a9db9` (`google_after_queue.ps1` `ccd48745…`,
+`google_gate.py` `d5d72733…`). It captures the gate's stdout and stderr together and reads the **last line**; the
+word counts only with its own exit code (PASS 0, FAIL 1, NOT SHOWN 2). A message that lands after the word makes a
+PASS or a FAIL read as NOT SHOWN, which **stops** the queue. It can't turn anything into PASS or FAIL, so it can't
+start A4 wrongly.
+
+**How likely** (frozen files on synthetic results, both PowerShells, 6 runs per word and case): the gate prints only
+its word, and nothing on stderr in the three outcomes. With a clean environment the word was right every time, also
+after uv's and Python's start-up warnings. It was lost every time with `RUST_LOG=uv=debug` or `PYTHONVERBOSE=1` (both
+print after it). A bare line printed within milliseconds of the word landed last in up to 16 of 20 runs. None of those
+variables is set for this user or machine, there is no PowerShell profile, and `uv` prints nothing in the runs folder,
+so none is expected.
+
+**Step 1: check by hand**, once the queue log has its `G1 and G2 (google_gate.py on A1): <word>` line. Use a second
+standalone PowerShell window (Start menu). It prints one word, an exit code and counts; it calls no model.
+
+```powershell
+cd C:\Users\noahi\Documents\kestrel-runs
+(Get-FileHash C:\kestrel-queue\google_gate.py).Hash -eq "d5d7273313904612e62869d336b4a457187509f5825e31f081c07f6cb32076dd"
+.\.venv\Scripts\python.exe -B C:\kestrel-queue\google_gate.py evals\results\google-after-a1-attacks-strict-x3.json; "exit $LASTEXITCODE"
+foreach ($f in "a1-attacks-strict-x3", "a2-benign-strict-x3", "a3-rubber-email-x1") {
+    $rows = @((Get-Content "evals\results\google-after-$f.json" -Raw -Encoding UTF8 | ConvertFrom-Json).tasks)
+    "$f graded $(@($rows | Where-Object { $_.status -in 'pass', 'fail', 'excluded' }).Count)/$($rows.Count)"
+}
+Select-String evals\results\google-after-queue.log -Pattern "G1 and G2|QUEUE (STOPPED|DONE)" | Select-Object -Last 3 -ExpandProperty Line
+```
+
+Expect `True`; a word with its own exit code; 114/114, 78/78 and 8/8. The gate reads A1 only: on A2 or A3 it prints
+NOT SHOWN by design, so for those the check is that they are complete.
+
+**Step 2: compare**
+
+| Queue log | By hand | Do |
+|---|---|---|
+| PASS | PASS (exit 0) | Nothing. The queue waits for the next day and starts A4. |
+| FAIL | FAIL (exit 1) | Nothing. A4 isn't run (4.2). |
+| NOT SHOWN | NOT SHOWN (exit 2) | A4 isn't run; an owner decision (4.2). |
+| NOT SHOWN | **PASS (exit 0)** | This note's case: step 3. |
+| NOT SHOWN | **FAIL (exit 1)** | A4 isn't run; the outcome is FAIL (4.2). Nothing to start. |
+| PASS | not PASS | Not this weakness. **Stop:** Ctrl+C in the queue's window (safe while it waits for the next day; a started A4 keeps its finished runs). Start nothing until the cause is known. |
+| FAIL | not FAIL | Not this weakness. The queue has ended; start nothing until the cause is known. |
+
+If the hash isn't `True`, a file is incomplete, or the word and exit code don't match: start nothing.
+
+**Step 3: start A4** (only NOT SHOWN in the log, PASS by hand, and the hash `True`). It is the same A4 under its
+existing approval (STATUS, 2026-11-23: cap 637,000 with a 20k margin, skipped if G1 or G2 fails): the hand check is the
+same gate file on the same A1.
+
+**3a, first choice: restart the queue** in a new standalone PowerShell window. It skips the finished A1-A3 without
+model calls, reads the gate again, and applies the next-day wait, cap, margin and tag check itself.
+
+```powershell
+cd C:\Users\noahi\Documents\kestrel-runs
+Get-ChildItem env: | Where-Object Name -match "^(RUST_LOG|PYTHON.*|VIRTUAL_ENV|UV_.*)$" | Select-Object Name   # expect nothing
+& C:\kestrel-queue\google_after_queue.ps1
+```
+
+**3b, only if the restart logs NOT SHOWN again** and step 1 still says PASS: run A4 by hand, on a later day than the
+last safety run (section 5), with no queue running. Paste the block again for each attempt until it says A4 is
+complete. It keeps the queue's arguments, settings, margin and cap, and prints STOP instead of starting when one of
+them doesn't hold.
+
+```powershell
+cd C:\Users\noahi\Documents\kestrel-runs
+& {
+    $out = "evals\results\google-after-a4-main-x1.json"; $cap = 637000; $margin = 20000
+    $a1 = "evals\results\google-after-a1-attacks-strict-x3.json"
+    if (Test-Path evals\results\google-after-queue.lock) { "STOP: the queue's lock is present"; return }
+    if (@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'kestrel(\.exe)?"?\s+bench\s+(run|rejudge|calibrate)\b' }).Count) { "STOP: another bench run is live"; return }
+    if ((git rev-parse HEAD) -ne (git rev-parse "google-before^{commit}")) { "STOP: not at google-before"; return }
+    if (git status --porcelain --untracked-files=no) { "STOP: tracked files changed"; return }
+    $last = Get-ChildItem evals\results\google-after-a[123]-*.json | Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($last.LastWriteTime.Date -ge (Get-Date).Date) { "STOP: a safety run ended today; A4 runs on a later day"; return }
+    $word = .\.venv\Scripts\python.exe -B C:\kestrel-queue\google_gate.py $a1
+    if ($LASTEXITCODE -ne 0 -or $word -cne "PASS") { "STOP: the gate isn't PASS"; return }
+    $spent = 0
+    if (Test-Path $out) {
+        $data = Get-Content $out -Raw -Encoding UTF8 | ConvertFrom-Json
+        $rows = @($data.tasks)
+        if ($rows.Count -eq 100 -and @($rows | Where-Object { $_.status -in "pass", "fail", "excluded" }).Count -eq 100) { "A4 is complete"; return }
+        $spent = [int]$data.summary.billable_tokens_total
+    }
+    $line = .\.venv\Scripts\python.exe -B C:\kestrel-queue\groq_quota.py --runs . --dev ..\kestrel | Select-String '^Free: .* = (-?[\d,]+)'
+    if (-not $line) { "STOP: no free quota amount"; return }
+    $free = [int]($line.Matches[0].Groups[1].Value -replace ",", "")
+    $budget = [Math]::Min($free, $cap - $spent - $margin)
+    if ($budget -lt $margin) { "STOP: budget $budget is under $margin (free $free, spent $spent of $cap): wait for quota, or the cap is reached"; return }
+    $env:KESTREL_MCP = "off"
+    Remove-Item Env:KESTREL_IMAGE_POLICY, Env:KESTREL_REQUEST_TIMEOUT, Env:KESTREL_PROVIDERS, Env:KESTREL_TOOLS -ErrorAction SilentlyContinue
+    $file = if (Test-Path $out) { @("--resume", $out) } else { @("--out", $out) }
+    "A4 by hand: budget $budget (free $free, spent $spent of $cap)"
+    uv run --no-sync kestrel bench run --provider groq --repeat 1 --tools google --wait-for-quota --token-budget $budget @file
+}
+```
+
+If a run was killed and its `.json.lock` is left: `uv run --no-sync kestrel bench unlock <file>` (it refuses a live one).
+**Record it** in the report either way: the log's word, the hand word and exit code, and whether 3a or 3b was used.
+
 ## 5. Before side
 
 **When:** after step 2a merges and your 16 tasks are written and committed (decided 2026-11-17).
