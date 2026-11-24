@@ -49,7 +49,7 @@ $CapA2 = 458000            # est. 398k: 154.6k x 1.178 x 2.185, x 1.15
 $CapA3 = 60000             # est. 51.5k: 20.0k x 1.178 x 2.185, x 1.15
 $CapA4 = 637000            # est. 554k: B4's agent 238,120 x 2.185 + its judge 33,167, x 1.15
 $Pins = @{
-    "groq_quota.py"  = "1b86d0432ab5d883cfd7bd839f975f0fccf7e394692e97e23170f9e973bcfb5a"
+    "groq_quota.py"  = "e6d59f01fb93cc140ba28fafee856c1f25b413bcc6f401c3eb5412e731a28b42"
     "google_gate.py" = "d5d7273313904612e62869d336b4a457187509f5825e31f081c07f6cb32076dd"
 }
 $Results = "evals\results"
@@ -65,6 +65,14 @@ $Frozen = $PSScriptRoot
 $Quota = Join-Path $Frozen "groq_quota.py"
 $Gate = Join-Path $Frozen "google_gate.py"
 $DevFolder = Join-Path $Here "..\kestrel"   # read only, by groq_quota.py: its traces and results count too
+
+function Invoke-Uv([string[]]$uvArgs) {
+    # Every captured uv call goes through here. Windows PowerShell 5.1 turns a program's stderr into error records, and
+    # under "Stop" the first one ends the script (2026-11-24); here they come back as plain lines. The caller reads
+    # $LASTEXITCODE.
+    $ErrorActionPreference = "Continue"
+    & uv @uvArgs 2>&1 | ForEach-Object { "$_" }
+}
 
 function Log([string]$line) {
     $stamped = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $line"
@@ -111,9 +119,9 @@ function Wait-NoOtherGroqJob {
 }
 
 function Get-FreeQuota {
-    $out = & uv run --no-sync python $Quota --runs $Here --dev $DevFolder 2>&1
+    $out = @(Invoke-Uv @("run", "--no-sync", "python", $Quota, "--runs", $Here, "--dev", $DevFolder))
     $line = $out | Select-String -Pattern '^Free: .* = (-?[\d,]+)'
-    if (-not $line) { Stop-Queue "groq_quota.py printed no free amount" }
+    if (-not $line) { Stop-Queue "groq_quota.py printed no free amount (exit $LASTEXITCODE; last line: $($out | Select-Object -Last 1))" }
     [int]($line.Matches[0].Groups[1].Value -replace ',', '')
 }
 
@@ -171,14 +179,14 @@ function Invoke-QueueRun([string]$name, [string[]]$runArgs, [string]$out, [int]$
             Stop-Queue "${name}: not started by $($startBy.ToString('yyyy-MM-dd HH:mm zzz')), 7 days after the before side's last run (plan 4.3): the drift control comes first, an owner decision"
         }
         Get-ChildItem "$Results\*.json.lock" -ErrorAction SilentlyContinue | ForEach-Object {
-            & uv run --no-sync kestrel bench unlock ($_.FullName -replace '\.lock$', '') 2>&1 | Out-Null  # it refuses a live lock
+            Invoke-Uv @("run", "--no-sync", "kestrel", "bench", "unlock", ($_.FullName -replace '\.lock$', '')) | Out-Null  # it refuses a live lock
         }
         if ($policy) { $env:KESTREL_IMAGE_POLICY = $policy } else { Remove-Item Env:KESTREL_IMAGE_POLICY -ErrorAction SilentlyContinue }
         $fileArgs = if (Test-Path $out) { @("--resume", $out) } else { @("--out", $out) }
         $all = @("run", "--no-sync", "kestrel", "bench", "run") + $runArgs + @("--wait-for-quota", "--token-budget", "$budget") + $fileArgs
         $runLog = "google-after-$($name.Split(' ')[0])-$(Get-Date -Format yyyyMMdd-HHmmss).log"
         Log "START $name (attempt $attempt): budget $budget (free $free, cap left $left); graded $($before.graded)/$($before.total); log $runLog"
-        & uv @all 2>&1 | Tee-Object -FilePath $runLog | Select-String -CaseSensitive -Pattern $Allow | ForEach-Object { Write-Host $_ }
+        Invoke-Uv $all | Tee-Object -FilePath $runLog | Select-String -CaseSensitive -Pattern $Allow | ForEach-Object { Write-Host $_ }
         $code = $LASTEXITCODE
         $after = Get-Counts $out
         $now = [Math]::Max(0, $after.billable - $before.billable)
@@ -199,10 +207,10 @@ function Wait-NextDay([string[]]$files) {
     Start-Sleep -Seconds $wait
 }
 
-function Get-Gate {
-    $out = & uv run --no-sync python $Gate $A1 2>&1
+function Get-Gate([string]$file) {
+    $out = @(Invoke-Uv @("run", "--no-sync", "python", $Gate, $file))
     $code = $LASTEXITCODE
-    $word = ($out | Select-Object -Last 1).ToString().Trim()
+    $word = "$($out | Select-Object -Last 1)".Trim()
     $want = @{ "PASS" = 0; "FAIL" = 1; "NOT SHOWN" = 2 }
     if (-not $want.ContainsKey($word) -or $want[$word] -ne $code) { return "NOT SHOWN" }  # anything unexpected
     return $word
@@ -227,15 +235,21 @@ $RunA4 = @("--provider", "groq", "--repeat", "1", "--tools", "google")
 if ($DryRun) {
     $env:KESTREL_IMAGE_POLICY = "allowlist"
     foreach ($run in @($RunA1, $RunA2, $RunA3)) {
-        & uv run --no-sync kestrel bench run @run --dry-run 2>&1 | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
+        Invoke-Uv (@("run", "--no-sync", "kestrel", "bench", "run") + $run + @("--dry-run")) | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
     }
     Remove-Item Env:KESTREL_IMAGE_POLICY -ErrorAction SilentlyContinue
-    & uv run --no-sync kestrel bench run @RunA4 --dry-run 2>&1 | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
+    Invoke-Uv (@("run", "--no-sync", "kestrel", "bench", "run") + $RunA4 + @("--dry-run")) | Select-String -Pattern '^KestrelBench|^Expected' | ForEach-Object { Write-Host $_ }
+    $freeNow = Get-FreeQuota
     foreach ($p in @(@("A1", $A1, $CapA1), @("A2", $A2, $CapA2), @("A3", $A3, $CapA3), @("A4", $A4, $CapA4))) {
         $c = Get-Counts $p[1]
         Write-Host "$($p[0]): $($c.billable) of cap $($p[2]) spent; graded $($c.graded)/$($c.total)"
+        $d = Get-AttemptDecision $p[2] $c.billable $freeNow
+        Write-Host "    next attempt now: $($d.action), budget $($d.budget) (cap left $($d.left) after the margin) $($d.why)"
     }
-    Write-Host "A1 must start by $($A1StartBy.ToString('yyyy-MM-dd HH:mm zzz')); helpers match their pins; free now: $(Get-FreeQuota)"
+    Write-Host "Gate on A1 now: $(Get-Gate $A1) (NOT SHOWN until A1 is graded)"
+    Wait-NoOtherGroqJob
+    Write-Host "No other Groq job is running"
+    Write-Host "A1 must start by $($A1StartBy.ToString('yyyy-MM-dd HH:mm zzz')); helpers match their pins; free now: $freeNow"
     Write-Host "Dry run only: no Groq calls, no results."
     exit 0
 }
@@ -258,7 +272,7 @@ try {
     $r = Invoke-QueueRun "A3 rubber-stamp email x1" $RunA3 $A3 $CapA3 "allowlist" $null
     Log "A3: $r"
     if ($r -ne "graded") { Stop-Queue "A3 can't be graded after resuming; A4 not run" }
-    $g = Get-Gate
+    $g = Get-Gate $A1
     Log "G1 and G2 (google_gate.py on A1): $g"
     if ($g -eq "FAIL") {
         Log "QUEUE DONE without A4: G1 or G2 failed, so the main-suite after run is not run (plan 4.2 stop rule; the outcome is FAIL). A1 $((Get-Counts $A1).billable), A2 $((Get-Counts $A2).billable), A3 $((Get-Counts $A3).billable) billable."
