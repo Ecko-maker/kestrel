@@ -148,12 +148,13 @@ def free(used: int) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--runs", type=Path, default=Path(__file__).resolve().parents[2] / "kestrel-runs")
+    here = Path(__file__).resolve().parent  # .parent never fails; parents[2] did from C:\kestrel-queue (2026-11-24)
+    parser.add_argument("--runs", type=Path, default=here.parent.parent / "kestrel-runs")
     parser.add_argument("--need", type=int, help="exit 1 unless at least this much is free")
     parser.add_argument(
         "--dev",
         type=Path,
-        default=Path(__file__).resolve().parents[1],
+        default=here.parent,
         help="the development folder whose logs/ and evals/results count too (default: this script's repo; "
         "a frozen copy outside the repo, e.g. the after-side queue's, passes it)",
     )

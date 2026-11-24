@@ -6,6 +6,8 @@ No network, no model calls, no git commits: synthetic results files and tmp fold
 import importlib.util
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -13,6 +15,7 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+SHELLS = [s for s in ("pwsh", "powershell") if shutil.which(s)]
 
 
 def load(name: str) -> ModuleType:
@@ -198,3 +201,84 @@ def test_quota_counts_the_dev_folder_it_is_given(
     monkeypatch.setattr(quota, "ci_billable", lambda since: ([], []))
     assert quota.main(["--runs", str(runs), "--dev", str(dev)]) == 0
     assert "= 183,800" in capsys.readouterr().out  # 200,000 - 1,200 - 15,000
+
+
+def test_quota_runs_from_a_folder_at_the_drive_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch
+) -> None:
+    """2026-11-24: the queue died at its first call: a default read parents[2] of a file in C:/kestrel-queue."""
+    monkeypatch.setattr(quota, "__file__", str(Path(tmp_path.anchor) / "kestrel-queue" / "groq_quota.py"))
+    monkeypatch.setattr(quota, "ci_billable", lambda since: ([], []))
+    assert quota.main(["--runs", str(tmp_path / "runs"), "--dev", str(tmp_path)]) == 0
+    assert "= 185,000" in capsys.readouterr().out
+
+
+# --- the queue's calls, in PowerShell ---------------------------------------------------------------------------
+
+
+def queue_text() -> str:
+    return (ROOT / "scripts" / freeze.QUEUE).read_text(encoding="utf-8")
+
+
+def ps(path: Path | str) -> str:
+    return "'" + str(path).replace("'", "''") + "'"
+
+
+def powershell(shell: str, body: str, folder: Path) -> str:
+    """Run the queue's functions (nothing that starts a run) under its own "Stop" preference. `uv` is a function that
+    runs this Python on the script it is given: no environment, no downloads."""
+    text = queue_text()
+    functions = text[text.index("function Invoke-Uv(") : text.index("# --- start ---")]
+    script = folder / "t.ps1"
+    script.write_text(
+        '$ErrorActionPreference = "Stop"\n$Results = "."\n$QueueLog = "q.log"\n$QueueLock = "q.lock"\n'
+        "$Margin = 20000\n$NeedFree = $Margin\n"
+        f"function uv {{ $rest = @($args | Select-Object -Skip 3); & {ps(sys.executable)} @rest }}\n"
+        + functions
+        + body,
+        encoding="utf-8",
+    )
+    args = [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+    got = subprocess.run(args, capture_output=True, text=True, cwd=folder, timeout=180, check=False)
+    return got.stdout + got.stderr
+
+
+def test_every_captured_uv_call_goes_through_the_wrapper() -> None:
+    lines = [x.strip() for x in queue_text().splitlines() if "2>&1" in x and not x.strip().startswith("#")]
+    assert lines == ['& uv @uvArgs 2>&1 | ForEach-Object { "$_" }']
+
+
+@pytest.mark.skipif(not SHELLS, reason="no PowerShell")
+@pytest.mark.parametrize("shell", SHELLS)
+def test_stderr_from_a_helper_does_not_end_the_queue(shell: str, tmp_path: Path) -> None:
+    noisy = tmp_path / "noisy.py"
+    noisy.write_text("import sys\nprint('w', file=sys.stderr)\nprint('Free: 1 - 2 = 12,345')\nsys.exit(3)\n", "utf-8")
+    body = (
+        f"$Quota = {ps(noisy)}\n$Here = '.'\n$DevFolder = '.'\nWrite-Output \"free $(Get-FreeQuota)\"\n"
+        f"Invoke-Uv @('run', '--no-sync', 'python', {ps(noisy)}) | Tee-Object -FilePath run.log | Out-Null\n"
+        'Write-Output "end $LASTEXITCODE"\n'
+    )
+    out = powershell(shell, body, tmp_path)
+    assert "free 12345" in out and "end 3" in out
+
+
+@pytest.mark.skipif(not SHELLS, reason="no PowerShell")
+@pytest.mark.parametrize("shell", SHELLS)
+def test_a_crashing_quota_helper_stops_the_queue_with_its_reason(shell: str, tmp_path: Path) -> None:
+    bad = tmp_path / "bad.py"
+    bad.write_text("raise IndexError(2)\n", "utf-8")
+    body = f"$Quota = {ps(bad)}\n$Here = '.'\n$DevFolder = '.'\nGet-FreeQuota\nWrite-Output REACHED\n"
+    out = powershell(shell, body, tmp_path)
+    assert "QUEUE STOPPED" in out and "IndexError: 2" in out and "REACHED" not in out
+
+
+@pytest.mark.skipif(not SHELLS, reason="no PowerShell")
+@pytest.mark.parametrize("shell", SHELLS)
+def test_the_queue_reads_the_gate_s_three_words(shell: str, tmp_path: Path) -> None:
+    files = {"pass": a1(), "fail": a1(hit="atk-email-note-plant#1"), "open": a1(status={"atk-old-1#1": "skipped"})}
+    body = f"$Gate = {ps(ROOT / 'scripts' / 'google_gate.py')}\n"
+    for name, data in files.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(data), "utf-8")
+        body += f'Write-Output "$(Get-Gate {name}.json)"\n'
+    body += 'Write-Output "$(Get-Gate missing.json)"\n'
+    assert powershell(shell, body, tmp_path).split("\n")[:4] == ["PASS", "FAIL", "NOT SHOWN", "NOT SHOWN"]
